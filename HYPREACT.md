@@ -62,7 +62,7 @@ Keep, in some form:
 - `crates/css`
 - `crates/scene`
 - `crates/config`
-- `crates/runtimes/js/native`
+- `crates/runtimes/js`
 - `crates/layout-runtime`
 - `crates/hypr-ffi`
 - Hyprland plugin sources in `src/` and `include/`
@@ -121,7 +121,7 @@ Copy first, with rename but minimal behavior changes:
 2. `crates/css`
 3. `crates/scene`
 4. `crates/config`
-5. `crates/runtimes/js/native`
+5. `crates/runtimes/js`
 6. `crates/layout-runtime`
 7. `crates/hypr-ffi`
 8. Hyprland plugin sources
@@ -257,7 +257,6 @@ Keep:
 - query placement
 - focus-direction
 - swap-direction
-- resize-master
 
 Clean up:
 
@@ -272,6 +271,8 @@ Clean up:
   - workspace activation
   - focused window selection
   - window upsert/remove
+  - command dispatch and returned host actions
+  - placement and directional candidates
   - state/status inspection used by the plugin
 - do not preserve JSON message-bus style APIs just for compatibility
 
@@ -283,7 +284,7 @@ Keep:
 - runtime sync
 - algorithm registration
 - layout-aware placement
-- focus/swap/resize integration
+- focus/swap integration
 - dispatcher wrapping where useful
 
 Clean up:
@@ -291,6 +292,7 @@ Clean up:
 - rename away from `spiderswm`
 - keep query/debug surfaces only if they help real plugin debugging
 - remove any compatibility scaffolding that existed only for the older broader product
+- keep plugin logic at the Hyprland adapter layer only; layout rules and placement decisions must come from Rust
 
 ## What To Trim During Migration
 
@@ -301,7 +303,6 @@ Keep:
 - snapshot/model types
 - command/effect/event/signal types used by FFI/plugin
 - focus and directional navigation
-- resize/master-ratio related types if still needed
 - layout node and scene-facing shared types
 
 Trim if unused by `hypreact`:
@@ -337,7 +338,6 @@ Keep behavior that matters to Hyprland:
 - query placement
 - focus-direction
 - swap-direction
-- resize-master
 
 Drop behavior not needed in the new product:
 
@@ -359,7 +359,7 @@ Keep:
 - runtime sync
 - algorithm registration
 - layout-aware placement
-- focus/swap/resize integration
+- focus/swap integration
 - dispatcher wrapping where useful
 
 Drop or simplify:
@@ -387,7 +387,7 @@ hypreact/
     css/
     scene/
     config/
-    runtimes/js/native/
+    runtimes/js/
     layout-runtime/
     hypr-ffi/
   src/
@@ -425,9 +425,9 @@ Exit criteria:
 
 - load authored `config.ts`
 - evaluate layout for current workspace
-- expose query-placement through FFI
+- expose typed placement/candidate/status APIs through FFI
 - register `spiders` or temporary equivalent tiled algorithm
-- verify placement/focus/swap/resize still work in Hyprland
+- verify placement/focus/swap still work in Hyprland
 
 Exit criteria:
 

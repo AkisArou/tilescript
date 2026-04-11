@@ -11,9 +11,9 @@ oxc_resolver.workspace = true
 rquickjs = { workspace = true, features = ["loader"] }
 serde.workspace = true
 serde_json.workspace = true
-hypreact-config = { path = "../../../config" }
-hypreact-core = { path = "../../../core" }
-hypreact-scene = { path = "../../../scene" }
+hypreact-config = { path = "../../config" }
+hypreact-core = { path = "../../core" }
+hypreact-scene = { path = "../../scene" }
 thiserror.workspace = true
 tracing.workspace = true
 

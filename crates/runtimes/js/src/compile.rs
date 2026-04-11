@@ -360,11 +360,11 @@ fn strip_stylesheet_imports(path: &Path, source: &str) -> Result<String, Compile
 fn read_virtual_module_source(specifier: &str) -> Result<String, CompileError> {
     let source = match specifier {
         "@hypreact/sdk/commands" => {
-            include_str!("../../../../../packages/sdk/js/src/commands.js")
+            include_str!("../../../../packages/sdk/js/src/commands.js")
         }
         "@hypreact/sdk/config" => include_str!("virtual/config.js"),
         "@hypreact/sdk/jsx-runtime" => {
-            include_str!("../../../../../packages/sdk/js/src/jsx-runtime.js")
+            include_str!("../../../../packages/sdk/js/src/jsx-runtime.js")
         }
         "@hypreact/sdk/layout" => include_str!("virtual/layout.js"),
         "@hypreact/sdk/api" => include_str!("virtual/api.js"),

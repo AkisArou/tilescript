@@ -8,6 +8,15 @@ use hypreact_core::wm::WmModel;
 use crate::response::FfiError;
 use crate::types::{HypreactRuntimeHandle, LayoutRuntimeState, LayoutRuntimeStatus, WindowGeometryEntry};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacementGeometry {
+    pub window_id: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
 pub fn load_layout_config(
     handle: &mut HypreactRuntimeHandle,
     config_path: String,
@@ -20,7 +29,6 @@ pub fn load_layout_config(
     handle.layout_runtime = Some(LayoutRuntimeState {
         config_path: std::path::PathBuf::from(config_path),
         service,
-        workspace_overrides: std::collections::BTreeMap::new(),
     });
 
     Ok(layout_runtime_status(handle))
@@ -47,7 +55,6 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             layout: None,
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
-            master_ratio: None,
             error: None,
         };
     };
@@ -64,7 +71,6 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
                 layout: None,
                 window_geometries: Vec::new(),
                 ordered_window_ids: Vec::new(),
-                master_ratio: None,
                 error: Some(error.to_string()),
             };
         }
@@ -83,7 +89,6 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             layout: None,
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
-            master_ratio: None,
             error: None,
         };
     };
@@ -129,10 +134,6 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
                         .collect()
                 })
                 .unwrap_or_default(),
-            master_ratio: layout_runtime
-                .workspace_overrides
-                .get(workspace.name.as_str())
-                .and_then(|override_state| override_state.master_ratio),
             error: None,
         },
         Err(error) => LayoutRuntimeStatus {
@@ -143,39 +144,23 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             layout: None,
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
-            master_ratio: layout_runtime
-                .workspace_overrides
-                .get(workspace.name.as_str())
-                .and_then(|override_state| override_state.master_ratio),
             error: Some(error.to_string()),
         },
     }
 }
 
-pub fn layout_runtime_resize_master(
-    handle: &mut HypreactRuntimeHandle,
-    delta: f64,
-) -> Result<LayoutRuntimeStatus, FfiError> {
-    let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
-        return Ok(layout_runtime_status(handle));
-    };
-
-    let current_workspace_name = handle
-        .model
-        .current_workspace_id()
-        .and_then(|workspace_id| handle.model.workspaces.get(workspace_id))
-        .map(|workspace| workspace.name.clone())
-        .unwrap_or_else(|| "1".to_string());
-
-    let override_state = layout_runtime
-        .workspace_overrides
-        .entry(current_workspace_name)
-        .or_default();
-
-    let current = override_state.master_ratio.unwrap_or(0.6);
-    override_state.master_ratio = Some((current + delta).clamp(0.2, 0.8));
-
-    Ok(layout_runtime_status(handle))
+pub fn layout_runtime_placement(handle: &mut HypreactRuntimeHandle) -> Vec<PlacementGeometry> {
+    layout_runtime_status(handle)
+        .window_geometries
+        .into_iter()
+        .map(|entry| PlacementGeometry {
+            window_id: entry.window_id,
+            x: entry.x,
+            y: entry.y,
+            width: entry.width,
+            height: entry.height,
+        })
+        .collect()
 }
 
 pub fn layout_focus_candidate(

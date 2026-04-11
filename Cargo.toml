@@ -5,7 +5,7 @@ members = [
   "crates/css",
   "crates/scene",
   "crates/config",
-  "crates/runtimes/js/native",
+  "crates/runtimes/js",
   "crates/layout-runtime",
   "crates/hypr-ffi",
 ]

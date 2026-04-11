@@ -391,7 +391,7 @@ mod tests {
     }
 
     fn fixture_root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../config/tests/fixtures")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/tests/fixtures")
     }
 
     #[test]

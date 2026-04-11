@@ -513,7 +513,7 @@ mod tests {
                     },
                     JavaScriptModule {
                         specifier: "@hypreact/sdk/jsx-runtime".into(),
-                        source: include_str!("../../../../../packages/sdk/js/src/jsx-runtime.js")
+                        source: include_str!("../../../../packages/sdk/js/src/jsx-runtime.js")
                             .into(),
                         resolved_imports: BTreeMap::new(),
                     },
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn prepared_test_config_master_stack_layout_evaluates() {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let authored_config = repo_root.join("test_config/test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-{}",
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn checked_in_prepared_test_config_master_stack_layout_evaluates() {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let authored_config = repo_root.join("test_config/test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-checked-in-{}",
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn prepared_template_config_loads() {
-        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let authored_config = repo_root.join("test_config/test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-template-{}",

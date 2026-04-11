@@ -8,6 +8,6 @@ publish.workspace = true
 [dependencies]
 hypreact-config = { path = "../config" }
 hypreact-core = { path = "../core" }
-hypreact-runtime-js = { path = "../runtimes/js/native" }
+hypreact-runtime-js = { path = "../runtimes/js" }
 hypreact-scene = { path = "../scene" }
 thiserror.workspace = true

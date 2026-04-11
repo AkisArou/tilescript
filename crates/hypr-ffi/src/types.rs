@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::ffi::c_char;
 use std::path::PathBuf;
 
@@ -16,12 +15,6 @@ pub struct HypreactRuntimeHandle {
 pub struct LayoutRuntimeState {
     pub config_path: PathBuf,
     pub service: LayoutRuntimeService,
-    pub workspace_overrides: BTreeMap<String, WorkspaceLayoutOverride>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct WorkspaceLayoutOverride {
-    pub master_ratio: Option<f64>,
 }
 
 #[repr(C)]
@@ -72,8 +65,6 @@ pub struct LayoutRuntimeStatus {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ordered_window_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub master_ratio: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -85,4 +76,142 @@ pub struct WindowGeometryEntry {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+#[repr(C)]
+pub struct HypreactPlacementGeometry {
+    pub window_id: *const c_char,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[repr(C)]
+pub struct HypreactPlacementResult {
+    pub geometries: *mut HypreactPlacementGeometry,
+    pub geometry_count: usize,
+}
+
+#[repr(C)]
+pub struct HypreactStringResult {
+    pub value: *mut c_char,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HypreactDirection {
+    Left = 0,
+    Right = 1,
+    Up = 2,
+    Down = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HypreactLayoutCycleDirection {
+    Next = 0,
+    Previous = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HypreactCommandKind {
+    Spawn = 0,
+    ReloadConfig = 1,
+    SetLayout = 2,
+    CycleLayout = 3,
+    ViewWorkspace = 4,
+    ActivateWorkspace = 5,
+    ToggleFloating = 6,
+    ToggleFullscreen = 7,
+    AssignFocusedWindowToWorkspace = 8,
+    ToggleAssignFocusedWindowToWorkspace = 9,
+    FocusWindow = 10,
+    FocusDirection = 11,
+    SwapDirection = 12,
+    ResizeDirection = 13,
+    ResizeTiledDirection = 14,
+    MoveDirection = 15,
+    FocusNextWindow = 16,
+    FocusPreviousWindow = 17,
+    SelectNextWorkspace = 18,
+    SelectPreviousWorkspace = 19,
+    SelectWorkspace = 20,
+    CloseFocusedWindow = 21,
+}
+
+#[repr(C)]
+pub struct HypreactCommandInput {
+    pub kind: HypreactCommandKind,
+    pub string_value: *const c_char,
+    pub workspace: u8,
+    pub direction: HypreactDirection,
+    pub cycle_direction: HypreactLayoutCycleDirection,
+    pub has_cycle_direction: bool,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HypreactActionKind {
+    SpawnCommand = 0,
+    ReloadConfig = 1,
+    SetLayout = 2,
+    CycleLayout = 3,
+    ActivateWorkspace = 4,
+    AssignFocusedWindowToWorkspace = 5,
+    ToggleAssignFocusedWindowToWorkspace = 6,
+    ToggleFloating = 7,
+    ToggleFullscreen = 8,
+    FocusWindow = 9,
+    FocusDirection = 10,
+    FocusNextWindow = 11,
+    FocusPreviousWindow = 12,
+    SwapDirection = 13,
+    MoveDirection = 14,
+    ResizeDirection = 15,
+    ResizeTiledDirection = 16,
+    CloseFocusedWindow = 17,
+}
+
+#[repr(C)]
+pub struct HypreactAction {
+    pub kind: HypreactActionKind,
+    pub string_value: *mut c_char,
+    pub workspace: u8,
+    pub direction: HypreactDirection,
+    pub cycle_direction: HypreactLayoutCycleDirection,
+    pub has_cycle_direction: bool,
+}
+
+#[repr(C)]
+pub struct HypreactActionResult {
+    pub actions: *mut HypreactAction,
+    pub action_count: usize,
+    pub error: *mut c_char,
+}
+
+#[repr(C)]
+pub struct HypreactStateResult {
+    pub workspace_names: *mut *mut c_char,
+    pub workspace_name_count: usize,
+    pub current_workspace_id: *mut c_char,
+    pub current_output_id: *mut c_char,
+    pub focused_window_id: *mut c_char,
+}
+
+#[repr(C)]
+pub struct HypreactLayoutStatusResult {
+    pub loaded: bool,
+    pub config_path: *mut c_char,
+    pub selected_layout_name: *mut c_char,
+    pub error: *mut c_char,
+    pub workspace_names: *mut *mut c_char,
+    pub workspace_name_count: usize,
+}
+
+#[repr(C)]
+pub struct HypreactStatusResult {
+    pub changed: bool,
+    pub error: *mut c_char,
 }

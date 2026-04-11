@@ -41,8 +41,8 @@ class Runtime {
         }
     }
 
-    [[nodiscard]] std::string sendCommand(const std::string& json) const {
-        return take(hypreact_runtime_handle_command(handle_, json.c_str()));
+    [[nodiscard]] HypreactActionResult dispatchCommand(const HypreactCommandInput& command) const {
+        return hypreact_runtime_dispatch_command(handle_, &command);
     }
 
     [[nodiscard]] std::string resetState() const {
@@ -73,36 +73,50 @@ class Runtime {
         return take(hypreact_runtime_upsert_window(handle_, &window));
     }
 
-    [[nodiscard]] std::string loadLayoutConfig(const std::string& configPath) const {
-        return take(hypreact_runtime_load_layout_config(handle_, configPath.c_str()));
+    [[nodiscard]] HypreactStatusResult loadLayoutConfig(const std::string& configPath) const {
+        return hypreact_runtime_load_layout_config_result(handle_, configPath.c_str());
     }
 
-    [[nodiscard]] std::string reloadLayoutConfig() const {
-        return take(hypreact_runtime_reload_layout_config(handle_));
+    [[nodiscard]] HypreactStatusResult reloadLayoutConfig() const {
+        return hypreact_runtime_reload_layout_config_result(handle_);
     }
 
-    [[nodiscard]] std::string layoutStatus() const {
-        return take(hypreact_runtime_layout_status(handle_));
+    [[nodiscard]] HypreactLayoutStatusResult layoutStatusResult() const {
+        return hypreact_runtime_layout_status_result(handle_);
     }
 
-    [[nodiscard]] std::string layoutPlacement() const {
-        return take(hypreact_runtime_layout_placement(handle_));
+    [[nodiscard]] HypreactPlacementResult layoutPlacement() const {
+        return hypreact_runtime_layout_placement(handle_);
     }
 
-    [[nodiscard]] std::string layoutFocusCandidate(const std::string& direction) const {
-        return take(hypreact_runtime_layout_focus_candidate(handle_, direction.c_str()));
+    [[nodiscard]] std::optional<std::string> layoutFocusCandidate(const std::string& direction) const {
+        const auto result = hypreact_runtime_layout_focus_candidate(handle_, direction.c_str());
+        if (result.value == nullptr) {
+            return std::nullopt;
+        }
+
+        std::string value(result.value);
+        hypreact_string_free(result.value);
+        return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
     }
 
-    [[nodiscard]] std::string layoutSwapCandidate(const std::string& direction) const {
-        return take(hypreact_runtime_layout_swap_candidate(handle_, direction.c_str()));
-    }
+    [[nodiscard]] std::optional<std::string> layoutSwapCandidate(const std::string& direction) const {
+        const auto result = hypreact_runtime_layout_swap_candidate(handle_, direction.c_str());
+        if (result.value == nullptr) {
+            return std::nullopt;
+        }
 
-    [[nodiscard]] std::string layoutResizeMaster(double delta) const {
-        return take(hypreact_runtime_layout_resize_master(handle_, delta));
+        std::string value(result.value);
+        hypreact_string_free(result.value);
+        return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
     }
 
     [[nodiscard]] std::string state() const {
         return take(hypreact_runtime_state(handle_));
+    }
+
+    [[nodiscard]] HypreactStateResult stateResult() const {
+        return hypreact_runtime_state_result(handle_);
     }
 
   private:
@@ -142,6 +156,11 @@ struct OutputSyncPayload {
     HypreactOutputSync ffi;
 };
 
+struct CommandPayload {
+    std::string stringValue;
+    HypreactCommandInput ffi;
+};
+
 std::vector<PendingWorkspaceRecalculation> g_pendingWorkspaceRecalculations;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
 Hyprlang::CConfigValue* g_enabledDispatchersConfig = nullptr;
@@ -151,6 +170,12 @@ bool g_registeredSpidersAlgo = false;
 
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
+}
+
+void logStatusResult(const char* label, const HypreactStatusResult& result) {
+    if (result.error != nullptr) {
+        std::cerr << "[hypreact] " << label << " failed: " << result.error << std::endl;
+    }
 }
 
 std::optional<Json::Value> parseJson(const std::string& json) {
@@ -247,6 +272,74 @@ void removeWindow(const PHLWINDOW& window);
 void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace);
 
+HypreactDirection toFfiDirection(const std::string& direction) {
+    if (direction == "left") {
+        return HYPREACT_DIRECTION_LEFT;
+    }
+    if (direction == "right") {
+        return HYPREACT_DIRECTION_RIGHT;
+    }
+    if (direction == "up") {
+        return HYPREACT_DIRECTION_UP;
+    }
+    return HYPREACT_DIRECTION_DOWN;
+}
+
+std::string fromFfiDirection(HypreactDirection direction) {
+    switch (direction) {
+        case HYPREACT_DIRECTION_LEFT:
+            return "left";
+        case HYPREACT_DIRECTION_RIGHT:
+            return "right";
+        case HYPREACT_DIRECTION_UP:
+            return "up";
+        case HYPREACT_DIRECTION_DOWN:
+            return "down";
+    }
+
+    return "left";
+}
+
+HypreactCommandInput makeCommandInput(HypreactCommandKind kind) {
+    return HypreactCommandInput {
+        .kind = kind,
+        .string_value = nullptr,
+        .workspace = 0,
+        .direction = HYPREACT_DIRECTION_LEFT,
+        .cycle_direction = HYPREACT_LAYOUT_CYCLE_NEXT,
+        .has_cycle_direction = false,
+    };
+}
+
+CommandPayload makeCommandPayload(HypreactCommandKind kind) {
+    return CommandPayload {
+        .stringValue = {},
+        .ffi = makeCommandInput(kind),
+    };
+}
+
+std::unordered_map<std::string, CBox> geometryMapFromPlacement(const HypreactPlacementResult& placement) {
+    std::unordered_map<std::string, CBox> byWindowId;
+    byWindowId.reserve(placement.geometry_count);
+    for (size_t i = 0; i < placement.geometry_count; ++i) {
+        const auto& entry = placement.geometries[i];
+        if (entry.window_id == nullptr) {
+            continue;
+        }
+
+        byWindowId.emplace(
+            entry.window_id,
+            CBox {
+                static_cast<double>(entry.x),
+                static_cast<double>(entry.y),
+                static_cast<double>(entry.width),
+                static_cast<double>(entry.height),
+            }
+        );
+    }
+    return byWindowId;
+}
+
 class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
   public:
     void newTarget(SP<Layout::ITarget> target) override {
@@ -261,43 +354,7 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
         recalculate();
     }
 
-    void resizeTarget(const Vector2D& Δ, SP<Layout::ITarget> target, Layout::eRectCorner corner = Layout::CORNER_NONE) override {
-        const auto parent = m_parent.lock();
-        if (!parent || !target || !target->window()) {
-            return;
-        }
-
-        const auto workspace = parent->space() ? parent->space()->workspace() : nullptr;
-        if (!workspace) {
-            return;
-        }
-
-        const auto currentId = makeWindowId(target->window());
-        const auto responseText = g_runtime->layoutPlacement();
-        const auto response = parseJson(responseText);
-        if (!response.has_value() || !(*response)["ok"].asBool()) {
-            return;
-        }
-
-        const auto& ordered = (*response)["data"]["orderedWindowIds"];
-        if (!ordered.isArray() || ordered.empty()) {
-            return;
-        }
-
-        const bool isMaster = ordered[0].asString() == currentId;
-        const auto workArea = parent->space()->workArea();
-        if (workArea.w <= 0 || workArea.h <= 0) {
-            return;
-        }
-
-        const bool verticalSplit = workArea.w >= workArea.h;
-        const double delta = verticalSplit ? (Δ.x / workArea.w) : (Δ.y / workArea.h);
-        const double signedDelta = isMaster ? delta : -delta;
-
-        logJson("layout-resize", g_runtime->layoutResizeMaster(signedDelta));
-
-        recalculate();
-    }
+    void resizeTarget(const Vector2D&, SP<Layout::ITarget>, Layout::eRectCorner = Layout::CORNER_NONE) override {}
 
     void recalculate() override {
         const auto parent = m_parent.lock();
@@ -305,81 +362,13 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return;
         }
 
-        const auto responseText = g_runtime->layoutPlacement();
-        const auto response = parseJson(responseText);
-        if (!response.has_value() || !(*response)["ok"].asBool()) {
-            logJson("layout-recalculate", responseText);
-            return;
-        }
-
-        const auto& geometries = (*response)["data"]["windowGeometries"];
-        if (!geometries.isArray()) {
-            return;
-        }
-
-        std::unordered_map<std::string, CBox> byWindowId;
-        byWindowId.reserve(geometries.size());
-        for (const auto& entry : geometries) {
-            byWindowId.emplace(
-                entry["windowId"].asString(),
-                CBox {
-                    static_cast<double>(entry["x"].asInt()),
-                    static_cast<double>(entry["y"].asInt()),
-                    static_cast<double>(entry["width"].asInt()),
-                    static_cast<double>(entry["height"].asInt()),
-                }
-            );
-        }
+        const auto placement = g_runtime->layoutPlacement();
+        const auto byWindowId = geometryMapFromPlacement(placement);
+        hypreact_runtime_free_placement_result(placement);
 
         const auto space = parent->space();
         if (!space) {
             return;
-        }
-
-        const auto workArea = space->workArea();
-        const auto& ordered = (*response)["data"]["orderedWindowIds"];
-        const auto ratioValue = (*response)["data"]["masterRatio"];
-
-        if (ratioValue.isDouble() && ordered.isArray() && ordered.size() >= 2) {
-            const auto masterId = ordered[0].asString();
-            const bool verticalSplit = workArea.w >= workArea.h;
-            const double ratio = std::clamp(ratioValue.asDouble(), 0.2, 0.8);
-
-            for (Json::ArrayIndex i = 0; i < ordered.size(); ++i) {
-                const auto id = ordered[i].asString();
-                auto it = byWindowId.find(id);
-                if (it == byWindowId.end()) {
-                    continue;
-                }
-
-                if (id == masterId) {
-                    if (verticalSplit) {
-                        it->second = CBox {workArea.x, workArea.y, workArea.w * ratio, workArea.h};
-                    } else {
-                        it->second = CBox {workArea.x, workArea.y, workArea.w, workArea.h * ratio};
-                    }
-                    continue;
-                }
-
-                const auto stackCount = static_cast<double>(ordered.size() - 1);
-                if (stackCount <= 0) {
-                    continue;
-                }
-
-                if (verticalSplit) {
-                    const double stackX = workArea.x + workArea.w * ratio;
-                    const double stackW = workArea.w - workArea.w * ratio;
-                    const double eachH = workArea.h / stackCount;
-                    const double stackIndex = static_cast<double>(i - 1);
-                    it->second = CBox {stackX, workArea.y + eachH * stackIndex, stackW, eachH};
-                } else {
-                    const double stackY = workArea.y + workArea.h * ratio;
-                    const double stackH = workArea.h - workArea.h * ratio;
-                    const double eachW = workArea.w / stackCount;
-                    const double stackIndex = static_cast<double>(i - 1);
-                    it->second = CBox {workArea.x + eachW * stackIndex, stackY, eachW, stackH};
-                }
-            }
         }
 
         for (const auto& weakTarget : space->targets()) {
@@ -412,14 +401,9 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return;
         }
 
-        const auto responseText = g_runtime->layoutFocusCandidate(Math::toString(dir));
-        const auto response = parseJson(responseText);
-        if (!response.has_value() || !(*response)["ok"].asBool()) {
-            return;
-        }
-        const auto& target = (*response)["data"];
-        if (target.isString() && !target.asString().empty()) {
-            callDispatcher("focuswindow", "address:" + target.asString());
+        const auto target = g_runtime->layoutFocusCandidate(Math::toString(dir));
+        if (target.has_value()) {
+            callDispatcher("focuswindow", "address:" + *target);
         }
     }
 
@@ -429,21 +413,16 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return old;
         }
 
-        const auto responseText = g_runtime->layoutPlacement();
-        const auto response = parseJson(responseText);
-        if (!response.has_value() || !(*response)["ok"].asBool()) {
-            return old;
-        }
-
-        const auto& ordered = (*response)["data"]["orderedWindowIds"];
-        if (!ordered.isArray() || ordered.empty()) {
+        const auto placement = g_runtime->layoutPlacement();
+        if (placement.geometry_count == 0 || placement.geometries == nullptr) {
             return old;
         }
 
         const auto currentId = makeWindowId(old->window());
-        Json::ArrayIndex currentIndex = ordered.size();
-        for (Json::ArrayIndex i = 0; i < ordered.size(); ++i) {
-            if (ordered[i].asString() == currentId) {
+        size_t currentIndex = placement.geometry_count;
+        for (size_t i = 0; i < placement.geometry_count; ++i) {
+            const auto windowId = placement.geometries[i].window_id;
+            if (windowId != nullptr && currentId == windowId) {
                 currentIndex = i;
                 break;
             }
@@ -454,20 +433,25 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return old;
         }
 
-        for (Json::ArrayIndex step = 1; step <= ordered.size(); ++step) {
-            const auto candidateIndex = currentIndex < ordered.size() ? (currentIndex + step) % ordered.size() : step - 1;
-            const auto candidateId = ordered[candidateIndex].asString();
+        for (size_t step = 1; step <= placement.geometry_count; ++step) {
+            const auto candidateIndex = currentIndex < placement.geometry_count ? (currentIndex + step) % placement.geometry_count : step - 1;
+            const auto candidateId = placement.geometries[candidateIndex].window_id;
+            if (candidateId == nullptr) {
+                continue;
+            }
             for (const auto& weakTarget : space->targets()) {
                 const auto target = weakTarget.lock();
                 if (!target || target->floating() || !target->window()) {
                     continue;
                 }
                 if (makeWindowId(target->window()) == candidateId) {
+                    hypreact_runtime_free_placement_result(placement);
                     return target;
                 }
             }
         }
 
+        hypreact_runtime_free_placement_result(placement);
         return old;
     }
 };
@@ -630,76 +614,9 @@ void applyPlacementForWorkspace(const PHLWORKSPACE& workspace) {
         return;
     }
 
-    const auto responseText = g_runtime->layoutPlacement();
-    const auto response = parseJson(responseText);
-    if (!response.has_value() || !(*response)["ok"].asBool()) {
-        return;
-    }
-
-    const auto& geometries = (*response)["data"]["windowGeometries"];
-    if (!geometries.isArray()) {
-        return;
-    }
-
-    std::unordered_map<std::string, CBox> byWindowId;
-    byWindowId.reserve(geometries.size());
-    for (const auto& entry : geometries) {
-        byWindowId.emplace(
-            entry["windowId"].asString(),
-            CBox {
-                static_cast<double>(entry["x"].asInt()),
-                static_cast<double>(entry["y"].asInt()),
-                static_cast<double>(entry["width"].asInt()),
-                static_cast<double>(entry["height"].asInt()),
-            }
-        );
-    }
-
-    const auto workArea = workspace->m_space->workArea();
-    const auto& ordered = (*response)["data"]["orderedWindowIds"];
-    const auto ratioValue = (*response)["data"]["masterRatio"];
-
-    if (ratioValue.isDouble() && ordered.isArray() && ordered.size() >= 2) {
-        const auto masterId = ordered[0].asString();
-        const bool verticalSplit = workArea.w >= workArea.h;
-        const double ratio = std::clamp(ratioValue.asDouble(), 0.2, 0.8);
-
-        for (Json::ArrayIndex i = 0; i < ordered.size(); ++i) {
-            const auto id = ordered[i].asString();
-            auto it = byWindowId.find(id);
-            if (it == byWindowId.end()) {
-                continue;
-            }
-
-            if (id == masterId) {
-                if (verticalSplit) {
-                    it->second = CBox {workArea.x, workArea.y, workArea.w * ratio, workArea.h};
-                } else {
-                    it->second = CBox {workArea.x, workArea.y, workArea.w, workArea.h * ratio};
-                }
-                continue;
-            }
-
-            const auto stackCount = static_cast<double>(ordered.size() - 1);
-            if (stackCount <= 0) {
-                continue;
-            }
-
-            if (verticalSplit) {
-                const double stackX = workArea.x + workArea.w * ratio;
-                const double stackW = workArea.w - workArea.w * ratio;
-                const double eachH = workArea.h / stackCount;
-                const double stackIndex = static_cast<double>(i - 1);
-                it->second = CBox {stackX, workArea.y + eachH * stackIndex, stackW, eachH};
-            } else {
-                const double stackY = workArea.y + workArea.h * ratio;
-                const double stackH = workArea.h - workArea.h * ratio;
-                const double eachW = workArea.w / stackCount;
-                const double stackIndex = static_cast<double>(i - 1);
-                it->second = CBox {workArea.x + eachW * stackIndex, stackY, eachW, stackH};
-            }
-        }
-    }
+    const auto placement = g_runtime->layoutPlacement();
+    const auto byWindowId = geometryMapFromPlacement(placement);
+    hypreact_runtime_free_placement_result(placement);
 
     for (const auto& window : g_pCompositor->m_windows) {
         if (!window || !window->m_isMapped || window->m_isFloating || !window->m_target) {
@@ -836,7 +753,9 @@ void loadLayoutRuntimeConfig() {
         return;
     }
 
-    logJson("layout-runtime", g_runtime->loadLayoutConfig(configPath));
+    const auto result = g_runtime->loadLayoutConfig(configPath);
+    logStatusResult("layout-runtime", result);
+    hypreact_runtime_free_status_result(result);
 }
 
 void registerHypreactAlgorithm() {
@@ -918,12 +837,11 @@ std::optional<unsigned> parseWorkspaceNumber(const std::string& arg) {
     }
 }
 
-std::optional<Json::Value> commandFromDispatcher(const std::string& name, const std::string& arg) {
-    Json::Value command;
-
+std::optional<CommandPayload> commandFromDispatcher(const std::string& name, const std::string& arg) {
     if (name == "exec") {
-        command["type"] = "spawn";
-        command["command"] = arg;
+        auto command = makeCommandPayload(HYPREACT_COMMAND_SPAWN);
+        command.stringValue = arg;
+        command.ffi.string_value = command.stringValue.c_str();
         return command;
     }
 
@@ -932,8 +850,8 @@ std::optional<Json::Value> commandFromDispatcher(const std::string& name, const 
         if (!direction.has_value()) {
             return std::nullopt;
         }
-        command["type"] = "focus-direction";
-        command["direction"] = *direction;
+        auto command = makeCommandPayload(HYPREACT_COMMAND_FOCUS_DIRECTION);
+        command.ffi.direction = toFfiDirection(*direction);
         return command;
     }
 
@@ -942,29 +860,28 @@ std::optional<Json::Value> commandFromDispatcher(const std::string& name, const 
         if (!direction.has_value()) {
             return std::nullopt;
         }
-        command["type"] = "swap-direction";
-        command["direction"] = *direction;
+        auto command = makeCommandPayload(HYPREACT_COMMAND_SWAP_DIRECTION);
+        command.ffi.direction = toFfiDirection(*direction);
         return command;
     }
 
     if (name == "workspace") {
         const auto value = trim(arg);
         if (value == "e+1" || value == "m+1" || value == "+1") {
-            command["type"] = "select-next-workspace";
-            return command;
+            return makeCommandPayload(HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE);
         }
         if (value == "e-1" || value == "m-1" || value == "-1") {
-            command["type"] = "select-previous-workspace";
-            return command;
+            return makeCommandPayload(HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE);
         }
         if (const auto workspace = parseWorkspaceNumber(value)) {
-            command["type"] = "view-workspace";
-            command["workspace"] = *workspace;
+            auto command = makeCommandPayload(HYPREACT_COMMAND_VIEW_WORKSPACE);
+            command.ffi.workspace = static_cast<unsigned char>(*workspace);
             return command;
         }
         if (!value.empty()) {
-            command["type"] = "activate-workspace";
-            command["workspace_id"] = value;
+            auto command = makeCommandPayload(HYPREACT_COMMAND_ACTIVATE_WORKSPACE);
+            command.stringValue = value;
+            command.ffi.string_value = command.stringValue.c_str();
             return command;
         }
         return std::nullopt;
@@ -972,48 +889,50 @@ std::optional<Json::Value> commandFromDispatcher(const std::string& name, const 
 
     if (name == "movetoworkspace" || name == "movetoworkspacesilent") {
         if (const auto workspace = parseWorkspaceNumber(arg)) {
-            command["type"] = name == "movetoworkspacesilent" ? "toggle-assign-focused-window-to-workspace" : "assign-focused-window-to-workspace";
-            command["workspace"] = *workspace;
+            auto command = makeCommandPayload(
+                name == "movetoworkspacesilent"
+                    ? HYPREACT_COMMAND_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE
+                    : HYPREACT_COMMAND_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE
+            );
+            command.ffi.workspace = static_cast<unsigned char>(*workspace);
             return command;
         }
         return std::nullopt;
     }
 
     if (name == "togglefloating") {
-        command["type"] = "toggle-floating";
-        return command;
+        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FLOATING);
     }
 
     if (name == "fullscreen") {
-        command["type"] = "toggle-fullscreen";
-        return command;
+        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FULLSCREEN);
     }
 
     if (name == "killactive") {
-        command["type"] = "close-focused-window";
-        return command;
+        return makeCommandPayload(HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW);
     }
 
     if (name == "cyclenext") {
-        command["type"] = trim(arg) == "prev" ? "focus-previous-window" : "focus-next-window";
-        return command;
+        return makeCommandPayload(trim(arg) == "prev" ? HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW : HYPREACT_COMMAND_FOCUS_NEXT_WINDOW);
     }
 
     if (name == "layoutmsg") {
         const auto value = trim(arg);
         if (value == "cyclenext") {
-            command["type"] = "cycle-layout";
+            auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
             return command;
         }
         if (value == "cycleprev") {
-            command["type"] = "cycle-layout";
-            command["direction"] = "previous";
+            auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
+            command.ffi.cycle_direction = HYPREACT_LAYOUT_CYCLE_PREVIOUS;
+            command.ffi.has_cycle_direction = true;
             return command;
         }
         constexpr auto prefix = "layout ";
         if (value.rfind(prefix, 0) == 0 && value.size() > std::char_traits<char>::length(prefix)) {
-            command["type"] = "set-layout";
-            command["name"] = value.substr(std::char_traits<char>::length(prefix));
+            auto command = makeCommandPayload(HYPREACT_COMMAND_SET_LAYOUT);
+            command.stringValue = value.substr(std::char_traits<char>::length(prefix));
+            command.ffi.string_value = command.stringValue.c_str();
             return command;
         }
         return std::nullopt;
@@ -1022,57 +941,177 @@ std::optional<Json::Value> commandFromDispatcher(const std::string& name, const 
     return std::nullopt;
 }
 
-SDispatchResult applyActions(const Json::Value& response) {
-    const auto& actions = response["data"]["actions"];
-    if (!actions.isArray()) {
-        return {};
+std::optional<CommandPayload> commandFromHypreactInput(const std::string& input) {
+    const auto value = trim(input);
+    if (value.empty()) {
+        return std::nullopt;
     }
 
-    for (const auto& action : actions) {
-        const auto type = action["type"].asString();
+    if (value == "reload-config") {
+        return makeCommandPayload(HYPREACT_COMMAND_RELOAD_CONFIG);
+    }
+    if (value == "toggle-floating") {
+        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FLOATING);
+    }
+    if (value == "toggle-fullscreen") {
+        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FULLSCREEN);
+    }
+    if (value == "close-focused-window") {
+        return makeCommandPayload(HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW);
+    }
+    if (value == "focus-next-window") {
+        return makeCommandPayload(HYPREACT_COMMAND_FOCUS_NEXT_WINDOW);
+    }
+    if (value == "focus-previous-window") {
+        return makeCommandPayload(HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW);
+    }
+    if (value == "select-next-workspace") {
+        return makeCommandPayload(HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE);
+    }
+    if (value == "select-previous-workspace") {
+        return makeCommandPayload(HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE);
+    }
+
+    constexpr auto prefixes = std::array {
+        std::pair {"spawn ", HYPREACT_COMMAND_SPAWN},
+        std::pair {"set-layout ", HYPREACT_COMMAND_SET_LAYOUT},
+        std::pair {"activate-workspace ", HYPREACT_COMMAND_ACTIVATE_WORKSPACE},
+        std::pair {"select-workspace ", HYPREACT_COMMAND_SELECT_WORKSPACE},
+        std::pair {"focus-window ", HYPREACT_COMMAND_FOCUS_WINDOW},
+    };
+
+    for (const auto& [prefix, kind] : prefixes) {
+        const auto prefixLength = std::char_traits<char>::length(prefix);
+        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
+            auto command = makeCommandPayload(kind);
+            command.stringValue = value.substr(prefixLength);
+            command.ffi.string_value = command.stringValue.c_str();
+            return command;
+        }
+    }
+
+    constexpr auto directionPrefixes = std::array {
+        std::pair {"focus-direction ", HYPREACT_COMMAND_FOCUS_DIRECTION},
+        std::pair {"swap-direction ", HYPREACT_COMMAND_SWAP_DIRECTION},
+        std::pair {"move-direction ", HYPREACT_COMMAND_MOVE_DIRECTION},
+        std::pair {"resize-direction ", HYPREACT_COMMAND_RESIZE_DIRECTION},
+        std::pair {"resize-tiled-direction ", HYPREACT_COMMAND_RESIZE_TILED_DIRECTION},
+    };
+
+    for (const auto& [prefix, kind] : directionPrefixes) {
+        const auto prefixLength = std::char_traits<char>::length(prefix);
+        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
+            const auto direction = normalizeDirection(value.substr(prefixLength));
+            if (!direction.has_value()) {
+                return std::nullopt;
+            }
+            auto command = makeCommandPayload(kind);
+            command.ffi.direction = toFfiDirection(*direction);
+            return command;
+        }
+    }
+
+    constexpr auto workspacePrefixes = std::array {
+        std::pair {"view-workspace ", HYPREACT_COMMAND_VIEW_WORKSPACE},
+        std::pair {"assign-focused-window-to-workspace ", HYPREACT_COMMAND_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE},
+        std::pair {"toggle-assign-focused-window-to-workspace ", HYPREACT_COMMAND_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE},
+    };
+
+    for (const auto& [prefix, kind] : workspacePrefixes) {
+        const auto prefixLength = std::char_traits<char>::length(prefix);
+        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
+            const auto workspace = parseWorkspaceNumber(value.substr(prefixLength));
+            if (!workspace.has_value()) {
+                return std::nullopt;
+            }
+            auto command = makeCommandPayload(kind);
+            command.ffi.workspace = static_cast<unsigned char>(*workspace);
+            return command;
+        }
+    }
+
+    if (value == "cycle-layout") {
+        return makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
+    }
+    if (value == "cycle-layout previous") {
+        auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
+        command.ffi.cycle_direction = HYPREACT_LAYOUT_CYCLE_PREVIOUS;
+        command.ffi.has_cycle_direction = true;
+        return command;
+    }
+
+    return std::nullopt;
+}
+
+SDispatchResult applyActions(const HypreactActionResult& response) {
+    if (response.error != nullptr) {
+        return {.passEvent = false, .success = false, .error = std::string(response.error)};
+    }
+
+    for (size_t i = 0; i < response.action_count; ++i) {
+        const auto& action = response.actions[i];
         SDispatchResult result;
 
-        if (type == "spawn-command") {
-            result = callDispatcher("exec", action["command"].asString());
-        } else if (type == "activate-workspace") {
-            result = callDispatcher("workspace", action["workspaceId"].asString());
-        } else if (type == "assign-focused-window-to-workspace") {
-            result = callDispatcher("movetoworkspace", std::to_string(action["workspace"].asInt()));
-        } else if (type == "toggle-assign-focused-window-to-workspace") {
-            result = callDispatcher("movetoworkspacesilent", std::to_string(action["workspace"].asInt()));
-        } else if (type == "focus-window") {
-            result = callDispatcher("focuswindow", "address:" + action["windowId"].asString());
-        } else if (type == "focus-direction") {
-            result = callDispatcher("movefocus", action["direction"].asString());
-        } else if (type == "focus-next-window") {
-            result = callDispatcher("cyclenext", "");
-        } else if (type == "focus-previous-window") {
-            result = callDispatcher("cyclenext", "prev");
-        } else if (type == "close-focused-window") {
-            result = callDispatcher("killactive", "");
-        } else if (type == "reload-config") {
-            HyprlandAPI::reloadConfig();
-        } else if (type == "toggle-floating") {
-            result = callDispatcher("togglefloating", "");
-        } else if (type == "toggle-fullscreen") {
-            result = callDispatcher("fullscreen", "1");
-        } else if (type == "swap-focused-window") {
-            result = callDispatcher("swapwindow", action["direction"].asString());
-        } else if (type == "swap-direction") {
-            result = callDispatcher("swapwindow", action["direction"].asString());
-        } else if (type == "move-direction") {
-            result = callDispatcher("moveactive", action["direction"].asString());
-        } else if (type == "resize-direction") {
-            result = callDispatcher("resizeactive", action["direction"].asString());
-        } else if (type == "resize-tiled-direction") {
-            result = callDispatcher("resizewindow", action["direction"].asString());
-        } else if (type == "set-layout") {
-            result = callDispatcher("layoutmsg", "layout " + action["name"].asString());
-        } else if (type == "cycle-layout") {
-            result = callDispatcher(
-                "layoutmsg",
-                action["direction"].asString() == "previous" ? "cycleprev" : "cyclenext"
-            );
+        switch (action.kind) {
+            case HYPREACT_ACTION_SPAWN_COMMAND:
+                result = callDispatcher("exec", action.string_value ? action.string_value : "");
+                break;
+            case HYPREACT_ACTION_RELOAD_CONFIG:
+                HyprlandAPI::reloadConfig();
+                break;
+            case HYPREACT_ACTION_SET_LAYOUT:
+                result = callDispatcher("layoutmsg", "layout " + std::string(action.string_value ? action.string_value : ""));
+                break;
+            case HYPREACT_ACTION_CYCLE_LAYOUT:
+                result = callDispatcher(
+                    "layoutmsg",
+                    action.has_cycle_direction && action.cycle_direction == HYPREACT_LAYOUT_CYCLE_PREVIOUS
+                        ? "cycleprev"
+                        : "cyclenext"
+                );
+                break;
+            case HYPREACT_ACTION_ACTIVATE_WORKSPACE:
+                result = callDispatcher("workspace", action.string_value ? action.string_value : "");
+                break;
+            case HYPREACT_ACTION_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
+                result = callDispatcher("movetoworkspace", std::to_string(action.workspace));
+                break;
+            case HYPREACT_ACTION_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
+                result = callDispatcher("movetoworkspacesilent", std::to_string(action.workspace));
+                break;
+            case HYPREACT_ACTION_TOGGLE_FLOATING:
+                result = callDispatcher("togglefloating", "");
+                break;
+            case HYPREACT_ACTION_TOGGLE_FULLSCREEN:
+                result = callDispatcher("fullscreen", "1");
+                break;
+            case HYPREACT_ACTION_FOCUS_WINDOW:
+                result = callDispatcher("focuswindow", "address:" + std::string(action.string_value ? action.string_value : ""));
+                break;
+            case HYPREACT_ACTION_FOCUS_DIRECTION:
+                result = callDispatcher("movefocus", fromFfiDirection(action.direction));
+                break;
+            case HYPREACT_ACTION_FOCUS_NEXT_WINDOW:
+                result = callDispatcher("cyclenext", "");
+                break;
+            case HYPREACT_ACTION_FOCUS_PREVIOUS_WINDOW:
+                result = callDispatcher("cyclenext", "prev");
+                break;
+            case HYPREACT_ACTION_SWAP_DIRECTION:
+                result = callDispatcher("swapwindow", fromFfiDirection(action.direction));
+                break;
+            case HYPREACT_ACTION_MOVE_DIRECTION:
+                result = callDispatcher("moveactive", fromFfiDirection(action.direction));
+                break;
+            case HYPREACT_ACTION_RESIZE_DIRECTION:
+                result = callDispatcher("resizeactive", fromFfiDirection(action.direction));
+                break;
+            case HYPREACT_ACTION_RESIZE_TILED_DIRECTION:
+                result = callDispatcher("resizewindow", fromFfiDirection(action.direction));
+                break;
+            case HYPREACT_ACTION_CLOSE_FOCUSED_WINDOW:
+                result = callDispatcher("killactive", "");
+                break;
         }
 
         if (!result.success) {
@@ -1188,7 +1227,13 @@ void registerHooks() {
 
     g_listeners.push_back(events.config.reloaded.listen([] {
         if (g_runtime) {
-            logJson("command", g_runtime->sendCommand(R"({"type":"reload-config"})"));
+            const auto command = makeCommandInput(HYPREACT_COMMAND_RELOAD_CONFIG);
+            const auto response = g_runtime->dispatchCommand(command);
+            const auto result = applyActions(response);
+            hypreact_runtime_free_action_result(response);
+            if (!result.success) {
+                std::cerr << "[hypreact] reload-config dispatch failed: " << result.error << std::endl;
+            }
         }
         loadLayoutRuntimeConfig();
         Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
@@ -1207,17 +1252,15 @@ SDispatchResult hypreactDispatcher(std::string arg) {
         return {};
     }
 
-    const auto responseText = g_runtime->sendCommand(arg);
-    logJson("command", responseText);
-    const auto response = parseJson(responseText);
-    if (!response.has_value()) {
-        return {.passEvent = false, .success = false, .error = "invalid ffi response"};
-    }
-    if (!(*response)["ok"].asBool()) {
-        return {.passEvent = false, .success = false, .error = (*response)["error"].asString()};
+    const auto command = commandFromHypreactInput(arg);
+    if (!command.has_value()) {
+        return {.passEvent = false, .success = false, .error = "unsupported hypreact command"};
     }
 
-    return applyActions(*response);
+    const auto response = g_runtime->dispatchCommand(command->ffi);
+    const auto result = applyActions(response);
+    hypreact_runtime_free_action_result(response);
+    return result;
 }
 
 SDispatchResult interceptDispatcher(const std::string& name, std::string arg) {
@@ -1228,14 +1271,9 @@ SDispatchResult interceptDispatcher(const std::string& name, std::string arg) {
     if (name == "movefocus") {
         const auto direction = normalizeDirection(arg);
         if (direction.has_value()) {
-            const auto focusResponseText = g_runtime->layoutFocusCandidate(*direction);
-            logJson("layout-focus", focusResponseText);
-            const auto focusResponse = parseJson(focusResponseText);
-            if (focusResponse.has_value() && (*focusResponse)["ok"].asBool()) {
-                const auto& target = (*focusResponse)["data"];
-                if (target.isString() && !target.asString().empty()) {
-                    return focusWindowByAddress(target.asString());
-                }
+            const auto target = g_runtime->layoutFocusCandidate(*direction);
+            if (target.has_value()) {
+                return focusWindowByAddress(*target);
             }
         }
     }
@@ -1243,14 +1281,9 @@ SDispatchResult interceptDispatcher(const std::string& name, std::string arg) {
     if (name == "swapwindow") {
         const auto direction = normalizeDirection(arg);
         if (direction.has_value()) {
-            const auto swapResponseText = g_runtime->layoutSwapCandidate(*direction);
-            logJson("layout-swap", swapResponseText);
-            const auto swapResponse = parseJson(swapResponseText);
-            if (swapResponse.has_value() && (*swapResponse)["ok"].asBool()) {
-                const auto& target = (*swapResponse)["data"];
-                if (target.isString() && !target.asString().empty()) {
-                    return swapWindowByAddress(target.asString());
-                }
+            const auto target = g_runtime->layoutSwapCandidate(*direction);
+            if (target.has_value()) {
+                return swapWindowByAddress(*target);
             }
         }
     }
@@ -1263,17 +1296,10 @@ SDispatchResult interceptDispatcher(const std::string& name, std::string arg) {
         return {.passEvent = false, .success = false, .error = "unsupported hypreact translation for dispatcher: " + name};
     }
 
-    const auto responseText = g_runtime->sendCommand(stringify(*command));
-    logJson(name.c_str(), responseText);
-    const auto response = parseJson(responseText);
-    if (!response.has_value()) {
-        return {.passEvent = false, .success = false, .error = "invalid ffi response"};
-    }
-    if (!(*response)["ok"].asBool()) {
-        return {.passEvent = false, .success = false, .error = (*response)["error"].asString()};
-    }
-
-    return applyActions(*response);
+    const auto response = g_runtime->dispatchCommand(command->ffi);
+    const auto result = applyActions(response);
+    hypreact_runtime_free_action_result(response);
+    return result;
 }
 
 void installDispatcherWrappers() {
@@ -1311,24 +1337,79 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
 
     if (command == "layouts") {
         loadLayoutRuntimeConfig();
-        return g_runtime->layoutStatus();
+        const auto layout = g_runtime->layoutStatusResult();
+        Json::Value response;
+        response["ok"] = true;
+        response["data"]["loaded"] = layout.loaded;
+        if (layout.config_path != nullptr) {
+            response["data"]["configPath"] = layout.config_path;
+        }
+        if (layout.selected_layout_name != nullptr) {
+            response["data"]["selectedLayoutName"] = layout.selected_layout_name;
+        }
+        if (layout.error != nullptr) {
+            response["data"]["error"] = layout.error;
+        }
+        for (size_t i = 0; i < layout.workspace_name_count; ++i) {
+            if (layout.workspace_names[i] != nullptr) {
+                response["data"]["workspaceNames"].append(layout.workspace_names[i]);
+            }
+        }
+        hypreact_runtime_free_layout_status_result(layout);
+        return stringify(response);
     }
 
     if (command == "reload-layouts") {
         loadLayoutRuntimeConfig();
-        return g_runtime->reloadLayoutConfig();
+        const auto result = g_runtime->reloadLayoutConfig();
+        Json::Value response;
+        response["ok"] = result.error == nullptr;
+        response["data"]["changed"] = result.changed;
+        if (result.error != nullptr) {
+            response["error"] = result.error;
+        }
+        hypreact_runtime_free_status_result(result);
+        return stringify(response);
     }
 
     Json::Value response;
     response["ok"] = true;
 
-    if (const auto runtimeJson = parseJson(g_runtime->state()); runtimeJson.has_value()) {
-        response["data"]["runtime"] = (*runtimeJson)["data"];
+    const auto state = g_runtime->stateResult();
+    if (state.current_workspace_id != nullptr) {
+        response["data"]["runtime"]["currentWorkspaceId"] = state.current_workspace_id;
     }
+    if (state.current_output_id != nullptr) {
+        response["data"]["runtime"]["currentOutputId"] = state.current_output_id;
+    }
+    if (state.focused_window_id != nullptr) {
+        response["data"]["runtime"]["focusedWindowId"] = state.focused_window_id;
+    }
+    for (size_t i = 0; i < state.workspace_name_count; ++i) {
+        if (state.workspace_names[i] != nullptr) {
+            response["data"]["runtime"]["workspaceNames"].append(state.workspace_names[i]);
+        }
+    }
+    hypreact_runtime_free_state_result(state);
+
     loadLayoutRuntimeConfig();
-    if (const auto layoutJson = parseJson(g_runtime->layoutStatus()); layoutJson.has_value()) {
-        response["data"]["layouts"] = (*layoutJson)["data"];
+    const auto layout = g_runtime->layoutStatusResult();
+    response["data"]["layouts"]["loaded"] = layout.loaded;
+    if (layout.config_path != nullptr) {
+        response["data"]["layouts"]["configPath"] = layout.config_path;
     }
+    if (layout.selected_layout_name != nullptr) {
+        response["data"]["layouts"]["selectedLayoutName"] = layout.selected_layout_name;
+    }
+    if (layout.error != nullptr) {
+        response["data"]["layouts"]["error"] = layout.error;
+    }
+    for (size_t i = 0; i < layout.workspace_name_count; ++i) {
+        if (layout.workspace_names[i] != nullptr) {
+            response["data"]["layouts"]["workspaceNames"].append(layout.workspace_names[i]);
+        }
+    }
+    hypreact_runtime_free_layout_status_result(layout);
 
     return stringify(response);
 }
