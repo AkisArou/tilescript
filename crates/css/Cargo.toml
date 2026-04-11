@@ -1,0 +1,18 @@
+[package]
+name = "hypreact-css"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hypreact-core = { path = "../core" }
+cssparser.workspace = true
+precomputed-hash = "0.1"
+selectors = "0.36.1"
+stylo = "0.14.0"
+style_traits = { package = "stylo_traits", version = "0.14.0" }
+keyframe = "1.1.1"
+url = "2.5"
+serde.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "hypreact-scene"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hypreact-core = { path = "../core" }
+hypreact-css = { path = "../css" }
+cssparser = "0.36"
+precomputed-hash = "0.1"
+selectors = "0.36.1"
+stylo = "0.14.0"
+style_traits = { package = "stylo_traits", version = "0.14.0" }
+taffy = "0.9.2"
+thiserror.workspace = true
+keyframe = "1.1.1"
+url = "2.5"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

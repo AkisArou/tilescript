@@ -1,0 +1,17 @@
+[package]
+name = "hypreact-hypr-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+hypreact-config = { path = "../config" }
+hypreact-core = { path = "../core" }
+hypreact-layout-runtime = { path = "../layout-runtime" }
+thiserror.workspace = true

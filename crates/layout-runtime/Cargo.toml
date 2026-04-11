@@ -1,0 +1,13 @@
+[package]
+name = "hypreact-layout-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hypreact-config = { path = "../config" }
+hypreact-core = { path = "../core" }
+hypreact-runtime-js = { path = "../runtimes/js/native" }
+hypreact-scene = { path = "../scene" }
+thiserror.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "hypreact-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hypreact-scene = { path = "../scene" }
+hypreact-core = { path = "../core" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

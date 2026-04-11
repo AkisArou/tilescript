@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/core",
+  "crates/css",
+  "crates/scene",
+  "crates/config",
+  "crates/runtimes/js/native",
+  "crates/layout-runtime",
+  "crates/hypr-ffi",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+cssparser = "0.36"
+lsp-types = "0.94"
+oxc = "0.119.0"
+oxc_resolver = "11.19.1"
+regex = "1"
+rquickjs = "0.11.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"

@@ -1,0 +1,14 @@
+.stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-basis: 0;
+  flex-grow: 2;
+  min-width: 0;
+}
+
+.stack-group__item {
+  flex-basis: 0;
+  flex-grow: 1;
+  min-height: 0;
+}

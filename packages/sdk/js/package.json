@@ -1,0 +1,37 @@
+{
+  "name": "@hypreact/sdk",
+  "private": true,
+  "version": "0.0.0",
+  "exports": {
+    ".": "./src",
+    "./api": {
+      "types": "./src/api.d.ts",
+      "default": "./src/api.js"
+    },
+    "./api.d.ts": "./src/api.d.ts",
+    "./commands": {
+      "types": "./src/commands.d.ts",
+      "default": "./src/commands.js"
+    },
+    "./commands.d.ts": "./src/commands.d.ts",
+    "./config": "./src/config.d.ts",
+    "./config.d.ts": "./src/config.d.ts",
+    "./css": "./src/css.d.ts",
+    "./css.d.ts": "./src/css.d.ts",
+    "./jsx-dev-runtime": {
+      "types": "./src/jsx-dev-runtime.d.ts",
+      "default": "./src/jsx-dev-runtime.js"
+    },
+    "./jsx-dev-runtime.d.ts": "./src/jsx-dev-runtime.d.ts",
+    "./jsx-runtime": {
+      "types": "./src/jsx-runtime.d.ts",
+      "default": "./src/jsx-runtime.js"
+    },
+    "./jsx-runtime.d.ts": "./src/jsx-runtime.d.ts",
+    "./layout": "./src/layout.d.ts",
+    "./layout.d.ts": "./src/layout.d.ts"
+  },
+  "devDependencies": {
+    "tsconfig": "workspace:*"
+  }
+}
