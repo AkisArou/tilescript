@@ -40,10 +40,6 @@ class Runtime {
         }
     }
 
-    [[nodiscard]] HypreactActionResult dispatchCommand(const HypreactCommandInput& command) const {
-        return hypreact_runtime_dispatch_command(handle_, &command);
-    }
-
     [[nodiscard]] HypreactActionResult dispatchCommandText(const std::string& command) const {
         return hypreact_runtime_dispatch_command_text(handle_, command.c_str());
     }
@@ -216,19 +212,6 @@ void removeWindow(const PHLWINDOW& window);
 void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace);
 
-HypreactDirection toFfiDirection(const std::string& direction) {
-    if (direction == "left") {
-        return HYPREACT_DIRECTION_LEFT;
-    }
-    if (direction == "right") {
-        return HYPREACT_DIRECTION_RIGHT;
-    }
-    if (direction == "up") {
-        return HYPREACT_DIRECTION_UP;
-    }
-    return HYPREACT_DIRECTION_DOWN;
-}
-
 std::string fromFfiDirection(HypreactDirection direction) {
     switch (direction) {
         case HYPREACT_DIRECTION_LEFT:
@@ -242,17 +225,6 @@ std::string fromFfiDirection(HypreactDirection direction) {
     }
 
     return "left";
-}
-
-HypreactCommandInput makeCommandInput(HypreactCommandKind kind) {
-    return HypreactCommandInput {
-        .kind = kind,
-        .string_value = nullptr,
-        .workspace = 0,
-        .direction = HYPREACT_DIRECTION_LEFT,
-        .cycle_direction = HYPREACT_LAYOUT_CYCLE_NEXT,
-        .has_cycle_direction = false,
-    };
 }
 
 std::unordered_map<std::string, CBox> geometryMapFromPlacement(const HypreactPlacementResult& placement) {
@@ -939,8 +911,7 @@ void registerHooks() {
 
     g_listeners.push_back(events.config.reloaded.listen([] {
         if (g_runtime) {
-            const auto command = makeCommandInput(HYPREACT_COMMAND_RELOAD_CONFIG);
-            const auto response = g_runtime->dispatchCommand(command);
+            const auto response = g_runtime->dispatchCommandText("reload-config");
             const auto result = applyActions(response);
             hypreact_runtime_free_action_result(response);
             if (!result.success) {

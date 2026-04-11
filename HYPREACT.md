@@ -155,7 +155,7 @@ Clean up:
   - delete generic query request/response transport types
   - replace them with direct typed Hyprland FFI entrypoints and direct state snapshot helpers
 - trim `WmCommand` to the Hyprland-relevant subset
-  - keep: `Spawn`, `ReloadConfig`, `SetLayout`, `CycleLayout`, `ViewWorkspace`, `ActivateWorkspace`, `SelectWorkspace`, `SelectNextWorkspace`, `SelectPreviousWorkspace`, `ToggleFloating`, `ToggleFullscreen`, `AssignFocusedWindowToWorkspace`, `ToggleAssignFocusedWindowToWorkspace`, `FocusWindow`, `FocusDirection`, `SwapDirection`, `MoveDirection`, `ResizeDirection`, `ResizeTiledDirection`, `CloseFocusedWindow`
+  - keep: `Spawn`, `ReloadConfig`, `SetLayout`, `CycleLayout`, `ViewWorkspace`, `ActivateWorkspace`, `SelectWorkspace`, `SelectNextWorkspace`, `SelectPreviousWorkspace`, `ToggleFloating`, `ToggleFullscreen`, `AssignFocusedWindowToWorkspace`, `ToggleAssignFocusedWindowToWorkspace`, `FocusWindow`, `FocusDirection`, `SwapDirection`, `MoveDirection`, `ResizeDirection`, `CloseFocusedWindow`
   - drop: `Quit`, `ToggleViewWorkspace`, `AssignWorkspace`, `FocusMonitorLeft`, `FocusMonitorRight`, `SendMonitorLeft`, `SendMonitorRight`, `SetFloatingWindowGeometry`
 - simplify shell modeling
   - keep only what `hypreact` needs for matching: Wayland vs Xwayland
