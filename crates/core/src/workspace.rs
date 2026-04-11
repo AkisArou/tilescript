@@ -1,8 +1,5 @@
 use crate::wm::WmModel;
-use crate::{
-    LayoutNodeMeta, RemainingTake, ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowId,
-    WorkspaceId,
-};
+use crate::{LayoutNodeMeta, ResolvedLayoutNode, WindowId, WorkspaceId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceSelection {
@@ -41,7 +38,10 @@ where
     model.set_current_workspace(workspace_id.clone());
     let focused_window_id = model.preferred_focus_window_on_current_workspace(window_ids);
 
-    Some(WorkspaceSelection { workspace_id, focused_window_id })
+    Some(WorkspaceSelection {
+        workspace_id,
+        focused_window_id,
+    })
 }
 
 pub fn request_select_next_workspace<I>(
@@ -92,30 +92,6 @@ pub fn place_new_window(model: &mut WmModel, window_id: WindowId) -> WindowId {
     window_id
 }
 
-pub fn fallback_master_stack_layout_tree() -> SourceLayoutNode {
-    SourceLayoutNode::Workspace {
-        meta: LayoutNodeMeta::default(),
-        children: vec![
-            SourceLayoutNode::Group {
-                meta: LayoutNodeMeta { id: Some("main".into()), ..LayoutNodeMeta::default() },
-                children: vec![SourceLayoutNode::Slot {
-                    meta: LayoutNodeMeta::default(),
-                    window_match: None,
-                    take: SlotTake::Count(1),
-                }],
-            },
-            SourceLayoutNode::Group {
-                meta: LayoutNodeMeta { id: Some("stack".into()), ..LayoutNodeMeta::default() },
-                children: vec![SourceLayoutNode::Slot {
-                    meta: LayoutNodeMeta::default(),
-                    window_match: None,
-                    take: SlotTake::Remaining(RemainingTake::Remaining),
-                }],
-            },
-        ],
-    }
-}
-
 pub fn flat_workspace_root<I>(visible_window_ids: I) -> ResolvedLayoutNode
 where
     I: IntoIterator<Item = WindowId>,
@@ -136,7 +112,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OutputId, WorkspaceId, window_id};
+    use crate::{window_id, OutputId, WorkspaceId};
 
     #[test]
     fn ensuring_default_workspace_creates_and_selects_it() {
@@ -145,9 +121,15 @@ mod tests {
         let workspace_id = ensure_default_workspace(&mut model, "1");
 
         assert_eq!(workspace_id, WorkspaceId("1".to_string()));
-        assert_eq!(model.current_workspace_id, Some(WorkspaceId("1".to_string())));
         assert_eq!(
-            model.workspaces.get(&WorkspaceId("1".to_string())).map(|workspace| workspace.focused),
+            model.current_workspace_id,
+            Some(WorkspaceId("1".to_string()))
+        );
+        assert_eq!(
+            model
+                .workspaces
+                .get(&WorkspaceId("1".to_string()))
+                .map(|workspace| workspace.focused),
             Some(true)
         );
     }
@@ -169,13 +151,22 @@ mod tests {
                 focused_window_id: None,
             })
         );
-        assert_eq!(model.current_workspace_id, Some(WorkspaceId("2".to_string())));
         assert_eq!(
-            model.workspaces.get(&WorkspaceId("1".to_string())).map(|workspace| workspace.focused),
+            model.current_workspace_id,
+            Some(WorkspaceId("2".to_string()))
+        );
+        assert_eq!(
+            model
+                .workspaces
+                .get(&WorkspaceId("1".to_string()))
+                .map(|workspace| workspace.focused),
             Some(false)
         );
         assert_eq!(
-            model.workspaces.get(&WorkspaceId("2".to_string())).map(|workspace| workspace.visible),
+            model
+                .workspaces
+                .get(&WorkspaceId("2".to_string()))
+                .map(|workspace| workspace.visible),
             Some(true)
         );
     }
@@ -283,24 +274,6 @@ mod tests {
         let window = model.windows.get(&window_id(6)).expect("window missing");
         assert_eq!(window.workspace_id, None);
         assert_eq!(window.output_id, None);
-    }
-
-    #[test]
-    fn fallback_master_stack_layout_tree_contains_main_and_stack_groups() {
-        let SourceLayoutNode::Workspace { children, .. } = fallback_master_stack_layout_tree()
-        else {
-            panic!("expected workspace root");
-        };
-
-        assert_eq!(children.len(), 2);
-        assert!(matches!(
-            &children[0],
-            SourceLayoutNode::Group { meta, .. } if meta.id.as_deref() == Some("main")
-        ));
-        assert!(matches!(
-            &children[1],
-            SourceLayoutNode::Group { meta, .. } if meta.id.as_deref() == Some("stack")
-        ));
     }
 
     #[test]

@@ -128,8 +128,12 @@ impl StateSnapshot {
                     .is_none_or(|output_id| window.output_id.as_ref() == Some(output_id));
                 let is_visible = self.visible_window_ids.is_empty()
                     || self.visible_window_ids.iter().any(|id| id == &window.id);
+                let is_layout_eligible = window.mapped
+                    && !window.closing
+                    && !window.mode.is_floating()
+                    && !window.mode.is_fullscreen();
 
-                matches_workspace && matches_output && is_visible
+                matches_workspace && matches_output && is_visible && is_layout_eligible
             })
             .cloned()
             .collect()
@@ -558,5 +562,103 @@ mod tests {
         assert_eq!(filtered.visible_window_ids, vec![WindowId::from("w2")]);
         assert_eq!(filtered.windows.len(), 1);
         assert_eq!(filtered.windows[0].id, WindowId::from("w2"));
+    }
+
+    #[test]
+    fn layout_context_excludes_floating_and_fullscreen_windows() {
+        let state = StateSnapshot {
+            focused_window_id: Some(WindowId::from("tiled")),
+            current_output_id: Some(OutputId::from("out-1")),
+            current_workspace_id: Some(WorkspaceId::from("ws-1")),
+            outputs: vec![OutputSnapshot {
+                id: OutputId::from("out-1"),
+                name: "HDMI-A-1".into(),
+                logical_width: 1920,
+                logical_height: 1080,
+                scale: 1,
+                enabled: true,
+                current_workspace_id: Some(WorkspaceId::from("ws-1")),
+            }],
+            workspaces: vec![WorkspaceSnapshot {
+                id: WorkspaceId::from("ws-1"),
+                name: "1".into(),
+                output_id: Some(OutputId::from("out-1")),
+                active_workspaces: vec!["1".into()],
+                focused: true,
+                visible: true,
+                effective_layout: Some(LayoutRef {
+                    name: "master-stack".into(),
+                }),
+            }],
+            windows: vec![
+                WindowSnapshot {
+                    id: WindowId::from("tiled"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("foot".into()),
+                    title: Some("Terminal".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Tiled,
+                    focused: true,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+                WindowSnapshot {
+                    id: WindowId::from("floating"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("pavucontrol".into()),
+                    title: Some("Volume".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Floating { rect: None },
+                    focused: false,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+                WindowSnapshot {
+                    id: WindowId::from("fullscreen"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("mpv".into()),
+                    title: Some("Video".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Fullscreen,
+                    focused: false,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+            ],
+            visible_window_ids: vec![
+                WindowId::from("tiled"),
+                WindowId::from("floating"),
+                WindowId::from("fullscreen"),
+            ],
+            workspace_names: vec!["1".into()],
+        };
+
+        let workspace = state.current_workspace().unwrap();
+        let context = state.layout_context(workspace, None);
+
+        assert_eq!(context.workspace.window_count, 1);
+        assert_eq!(context.windows.len(), 1);
+        assert_eq!(context.windows[0].id, WindowId::from("tiled"));
     }
 }

@@ -152,8 +152,8 @@ struct HypreactStatusResult {
 HypreactRuntimeHandle* hypreact_runtime_new();
 void hypreact_runtime_free(HypreactRuntimeHandle* handle);
 
-char* hypreact_runtime_handle_command(HypreactRuntimeHandle* handle, const char* command_json);
 HypreactActionResult hypreact_runtime_dispatch_command(HypreactRuntimeHandle* handle, const HypreactCommandInput* command);
+HypreactActionResult hypreact_runtime_dispatch_command_text(HypreactRuntimeHandle* handle, const char* command_text);
 char* hypreact_runtime_reset_state(HypreactRuntimeHandle* handle);
 char* hypreact_runtime_upsert_output(
     HypreactRuntimeHandle* handle,

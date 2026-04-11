@@ -8,10 +8,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
-use hypreact_core::command::WmCommand;
 use hypreact_core::query::state_snapshot_for_model;
 
-use action::{CommandResult, action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
+use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi, wm_command_from_text};
 use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
 use layout::{layout_focus_candidate, layout_runtime_placement, layout_runtime_status, load_layout_config, reload_layout_config};
 use response::{FfiError, response_ok};
@@ -38,19 +37,6 @@ pub unsafe extern "C" fn hypreact_runtime_free(handle: *mut HypreactRuntimeHandl
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_handle_command(
-    handle: *mut HypreactRuntimeHandle,
-    command_json: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
-        let _ = ffi_handle_mut(handle)?;
-        let command = parse_json::<WmCommand>(command_json)?;
-        let actions = dispatch_wm_command(command);
-        response_ok(CommandResult { actions })
-    })))
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn hypreact_runtime_dispatch_command(
     handle: *mut HypreactRuntimeHandle,
     command: *const HypreactCommandInput,
@@ -63,6 +49,22 @@ pub unsafe extern "C" fn hypreact_runtime_dispatch_command(
 
         let command = unsafe { &*command };
         let command = wm_command_from_ffi(command)?;
+        action_result(dispatch_wm_command(command))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_action_result(error),
+        Err(_) => error_action_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_dispatch_command_text(
+    handle: *mut HypreactRuntimeHandle,
+    command_text: *const std::ffi::c_char,
+) -> HypreactActionResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let _ = ffi_handle_mut(handle)?;
+        let command = wm_command_from_text(cstr_to_str(command_text)?)?;
         action_result(dispatch_wm_command(command))
     })) {
         Ok(Ok(result)) => result,
@@ -446,13 +448,6 @@ fn ffi_handle_mut<'a>(
     Ok(unsafe { &mut *handle })
 }
 
-fn parse_json<T: serde::de::DeserializeOwned>(
-    value: *const std::ffi::c_char,
-) -> Result<T, FfiError> {
-    let json = cstr_to_str(value)?;
-    serde_json::from_str(json).map_err(|error| FfiError::InvalidJson(error.to_string()))
-}
-
 fn optional_cstr_to_window_id(
     value: *const std::ffi::c_char,
 ) -> Result<Option<hypreact_core::WindowId>, FfiError> {
@@ -633,6 +628,7 @@ fn error_status_result(error: FfiError) -> HypreactStatusResult {
 mod tests {
     use super::*;
     use crate::action::HostAction;
+    use hypreact_core::command::WmCommand;
 
     #[test]
     fn dispatch_command_returns_hypreact_actions() {

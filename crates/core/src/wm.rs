@@ -322,7 +322,10 @@ impl WmModel {
     pub fn window_is_layout_eligible(&self, id: &WindowId) -> bool {
         self.windows.get(id).is_some_and(|window| {
             window.workspace_id.as_ref() == self.current_workspace_id.as_ref()
-                && (!window.closing || window.mapped)
+                && window.mapped
+                && !window.closing
+                && !window.floating
+                && !window.fullscreen
         })
     }
 
@@ -400,6 +403,8 @@ impl WmModel {
         self.windows.get(id).is_some_and(|window| {
             !window.closing
                 && window.mapped
+                && !window.floating
+                && !window.fullscreen
                 && self
                     .current_workspace_id
                     .as_ref()
@@ -667,6 +672,27 @@ mod tests {
             model.fullscreen_window_on_current_workspace([window_id(1), window_id(2)]),
             Some(window_id(1))
         );
+    }
+
+    #[test]
+    fn layout_eligibility_excludes_floating_and_fullscreen_windows() {
+        let mut model = WmModel::default();
+        model.upsert_workspace(WorkspaceId("1".to_string()), "1".to_string());
+        model.set_current_workspace(WorkspaceId("1".to_string()));
+
+        model.insert_window(window_id(1), Some(WorkspaceId("1".to_string())), None);
+        model.insert_window(window_id(2), Some(WorkspaceId("1".to_string())), None);
+        model.insert_window(window_id(3), Some(WorkspaceId("1".to_string())), None);
+
+        model.set_window_mapped(window_id(1), true);
+        model.set_window_mapped(window_id(2), true);
+        model.set_window_mapped(window_id(3), true);
+        model.set_window_floating(window_id(2), true);
+        model.set_window_fullscreen(window_id(3), true);
+
+        assert!(model.window_is_layout_eligible(&window_id(1)));
+        assert!(!model.window_is_layout_eligible(&window_id(2)));
+        assert!(!model.window_is_layout_eligible(&window_id(3)));
     }
 
     #[test]

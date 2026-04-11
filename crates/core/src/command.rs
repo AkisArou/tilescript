@@ -58,9 +58,6 @@ pub enum WmCommand {
     ResizeDirection {
         direction: FocusDirection,
     },
-    ResizeTiledDirection {
-        direction: FocusDirection,
-    },
     MoveDirection {
         direction: FocusDirection,
     },

@@ -2,7 +2,6 @@
 #include <memory>
 #include <optional>
 #include <cctype>
-#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -43,6 +42,10 @@ class Runtime {
 
     [[nodiscard]] HypreactActionResult dispatchCommand(const HypreactCommandInput& command) const {
         return hypreact_runtime_dispatch_command(handle_, &command);
+    }
+
+    [[nodiscard]] HypreactActionResult dispatchCommandText(const std::string& command) const {
+        return hypreact_runtime_dispatch_command_text(handle_, command.c_str());
     }
 
     [[nodiscard]] std::string resetState() const {
@@ -111,10 +114,6 @@ class Runtime {
         return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
     }
 
-    [[nodiscard]] std::string state() const {
-        return take(hypreact_runtime_state(handle_));
-    }
-
     [[nodiscard]] HypreactStateResult stateResult() const {
         return hypreact_runtime_state_result(handle_);
     }
@@ -137,7 +136,6 @@ std::unique_ptr<Runtime> g_runtime;
 std::vector<CHyprSignalListener> g_listeners;
 SP<SHyprCtlCommand> g_queryCommand;
 std::unordered_map<WINDOWID, std::string> g_windowIds;
-std::unordered_map<std::string, std::function<SDispatchResult(std::string)>> g_originalDispatchers;
 struct PendingWorkspaceRecalculation {
     PHLWORKSPACE workspace;
     int remainingTicks;
@@ -156,17 +154,10 @@ struct OutputSyncPayload {
     HypreactOutputSync ffi;
 };
 
-struct CommandPayload {
-    std::string stringValue;
-    HypreactCommandInput ffi;
-};
-
 std::vector<PendingWorkspaceRecalculation> g_pendingWorkspaceRecalculations;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
-Hyprlang::CConfigValue* g_enabledDispatchersConfig = nullptr;
-Hyprlang::CConfigValue* g_fallbackNativeConfig = nullptr;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
-bool g_registeredSpidersAlgo = false;
+bool g_registeredHypreactAlgo = false;
 
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
@@ -202,53 +193,6 @@ std::string trim(std::string value) {
     }
 
     return value;
-}
-
-std::vector<std::string> splitList(const std::string& value) {
-    std::vector<std::string> items;
-    std::stringstream stream(value);
-    std::string item;
-    while (std::getline(stream, item, ',')) {
-        item = trim(item);
-        if (!item.empty()) {
-            items.push_back(item);
-        }
-    }
-    return items;
-}
-
-bool nativeFallbackEnabled() {
-    if (!g_fallbackNativeConfig) {
-        return true;
-    }
-
-    return std::any_cast<Hyprlang::INT>(g_fallbackNativeConfig->getValue()) != 0;
-}
-
-std::vector<std::string> configuredDispatcherNames() {
-    if (!g_enabledDispatchersConfig) {
-        return {
-            "exec",
-            "movefocus",
-            "swapwindow",
-            "workspace",
-            "movetoworkspace",
-            "movetoworkspacesilent",
-            "togglefloating",
-            "fullscreen",
-            "killactive",
-            "cyclenext",
-            "layoutmsg",
-        };
-    }
-
-    const auto raw = std::string{std::any_cast<Hyprlang::STRING>(g_enabledDispatchersConfig->getValue())};
-    const auto parsed = splitList(raw);
-    if (!parsed.empty()) {
-        return parsed;
-    }
-
-    return {};
 }
 
 std::string configuredConfigPath() {
@@ -308,13 +252,6 @@ HypreactCommandInput makeCommandInput(HypreactCommandKind kind) {
         .direction = HYPREACT_DIRECTION_LEFT,
         .cycle_direction = HYPREACT_LAYOUT_CYCLE_NEXT,
         .has_cycle_direction = false,
-    };
-}
-
-CommandPayload makeCommandPayload(HypreactCommandKind kind) {
-    return CommandPayload {
-        .stringValue = {},
-        .ffi = makeCommandInput(kind),
     };
 }
 
@@ -759,18 +696,18 @@ void loadLayoutRuntimeConfig() {
 }
 
 void registerHypreactAlgorithm() {
-    if (g_registeredSpidersAlgo) {
+    if (g_registeredHypreactAlgo) {
         return;
     }
 
-    g_registeredSpidersAlgo = HyprlandAPI::addTiledAlgo(
+    g_registeredHypreactAlgo = HyprlandAPI::addTiledAlgo(
         PHANDLE,
         "hypreact",
         &typeid(CHypreactAlgorithm),
         [] { return makeUnique<CHypreactAlgorithm>(); }
     );
 
-    if (g_registeredSpidersAlgo) {
+    if (g_registeredHypreactAlgo) {
         std::cout << "[hypreact] registered tiled algorithm: hypreact" << std::endl;
         Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
     } else {
@@ -779,7 +716,7 @@ void registerHypreactAlgorithm() {
 }
 
 void unregisterHypreactAlgorithm() {
-    if (!g_registeredSpidersAlgo) {
+    if (!g_registeredHypreactAlgo) {
         return;
     }
 
@@ -789,12 +726,12 @@ void unregisterHypreactAlgorithm() {
     }
 
     std::cout << "[hypreact] unregistered tiled algorithm: hypreact" << std::endl;
-    g_registeredSpidersAlgo = false;
+    g_registeredHypreactAlgo = false;
 }
 
 SDispatchResult callDispatcher(const std::string& name, const std::string& arg) {
-    const auto it = g_originalDispatchers.find(name);
-    if (it == g_originalDispatchers.end()) {
+    const auto it = g_pKeybindManager->m_dispatchers.find(name);
+    if (it == g_pKeybindManager->m_dispatchers.end()) {
         return {.passEvent = false, .success = false, .error = "unknown dispatcher: " + name};
     }
 
@@ -835,212 +772,6 @@ std::optional<unsigned> parseWorkspaceNumber(const std::string& arg) {
     } catch (...) {
         return std::nullopt;
     }
-}
-
-std::optional<CommandPayload> commandFromDispatcher(const std::string& name, const std::string& arg) {
-    if (name == "exec") {
-        auto command = makeCommandPayload(HYPREACT_COMMAND_SPAWN);
-        command.stringValue = arg;
-        command.ffi.string_value = command.stringValue.c_str();
-        return command;
-    }
-
-    if (name == "movefocus") {
-        const auto direction = normalizeDirection(arg);
-        if (!direction.has_value()) {
-            return std::nullopt;
-        }
-        auto command = makeCommandPayload(HYPREACT_COMMAND_FOCUS_DIRECTION);
-        command.ffi.direction = toFfiDirection(*direction);
-        return command;
-    }
-
-    if (name == "swapwindow") {
-        const auto direction = normalizeDirection(arg);
-        if (!direction.has_value()) {
-            return std::nullopt;
-        }
-        auto command = makeCommandPayload(HYPREACT_COMMAND_SWAP_DIRECTION);
-        command.ffi.direction = toFfiDirection(*direction);
-        return command;
-    }
-
-    if (name == "workspace") {
-        const auto value = trim(arg);
-        if (value == "e+1" || value == "m+1" || value == "+1") {
-            return makeCommandPayload(HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE);
-        }
-        if (value == "e-1" || value == "m-1" || value == "-1") {
-            return makeCommandPayload(HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE);
-        }
-        if (const auto workspace = parseWorkspaceNumber(value)) {
-            auto command = makeCommandPayload(HYPREACT_COMMAND_VIEW_WORKSPACE);
-            command.ffi.workspace = static_cast<unsigned char>(*workspace);
-            return command;
-        }
-        if (!value.empty()) {
-            auto command = makeCommandPayload(HYPREACT_COMMAND_ACTIVATE_WORKSPACE);
-            command.stringValue = value;
-            command.ffi.string_value = command.stringValue.c_str();
-            return command;
-        }
-        return std::nullopt;
-    }
-
-    if (name == "movetoworkspace" || name == "movetoworkspacesilent") {
-        if (const auto workspace = parseWorkspaceNumber(arg)) {
-            auto command = makeCommandPayload(
-                name == "movetoworkspacesilent"
-                    ? HYPREACT_COMMAND_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE
-                    : HYPREACT_COMMAND_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE
-            );
-            command.ffi.workspace = static_cast<unsigned char>(*workspace);
-            return command;
-        }
-        return std::nullopt;
-    }
-
-    if (name == "togglefloating") {
-        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FLOATING);
-    }
-
-    if (name == "fullscreen") {
-        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FULLSCREEN);
-    }
-
-    if (name == "killactive") {
-        return makeCommandPayload(HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW);
-    }
-
-    if (name == "cyclenext") {
-        return makeCommandPayload(trim(arg) == "prev" ? HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW : HYPREACT_COMMAND_FOCUS_NEXT_WINDOW);
-    }
-
-    if (name == "layoutmsg") {
-        const auto value = trim(arg);
-        if (value == "cyclenext") {
-            auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
-            return command;
-        }
-        if (value == "cycleprev") {
-            auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
-            command.ffi.cycle_direction = HYPREACT_LAYOUT_CYCLE_PREVIOUS;
-            command.ffi.has_cycle_direction = true;
-            return command;
-        }
-        constexpr auto prefix = "layout ";
-        if (value.rfind(prefix, 0) == 0 && value.size() > std::char_traits<char>::length(prefix)) {
-            auto command = makeCommandPayload(HYPREACT_COMMAND_SET_LAYOUT);
-            command.stringValue = value.substr(std::char_traits<char>::length(prefix));
-            command.ffi.string_value = command.stringValue.c_str();
-            return command;
-        }
-        return std::nullopt;
-    }
-
-    return std::nullopt;
-}
-
-std::optional<CommandPayload> commandFromHypreactInput(const std::string& input) {
-    const auto value = trim(input);
-    if (value.empty()) {
-        return std::nullopt;
-    }
-
-    if (value == "reload-config") {
-        return makeCommandPayload(HYPREACT_COMMAND_RELOAD_CONFIG);
-    }
-    if (value == "toggle-floating") {
-        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FLOATING);
-    }
-    if (value == "toggle-fullscreen") {
-        return makeCommandPayload(HYPREACT_COMMAND_TOGGLE_FULLSCREEN);
-    }
-    if (value == "close-focused-window") {
-        return makeCommandPayload(HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW);
-    }
-    if (value == "focus-next-window") {
-        return makeCommandPayload(HYPREACT_COMMAND_FOCUS_NEXT_WINDOW);
-    }
-    if (value == "focus-previous-window") {
-        return makeCommandPayload(HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW);
-    }
-    if (value == "select-next-workspace") {
-        return makeCommandPayload(HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE);
-    }
-    if (value == "select-previous-workspace") {
-        return makeCommandPayload(HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE);
-    }
-
-    constexpr auto prefixes = std::array {
-        std::pair {"spawn ", HYPREACT_COMMAND_SPAWN},
-        std::pair {"set-layout ", HYPREACT_COMMAND_SET_LAYOUT},
-        std::pair {"activate-workspace ", HYPREACT_COMMAND_ACTIVATE_WORKSPACE},
-        std::pair {"select-workspace ", HYPREACT_COMMAND_SELECT_WORKSPACE},
-        std::pair {"focus-window ", HYPREACT_COMMAND_FOCUS_WINDOW},
-    };
-
-    for (const auto& [prefix, kind] : prefixes) {
-        const auto prefixLength = std::char_traits<char>::length(prefix);
-        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
-            auto command = makeCommandPayload(kind);
-            command.stringValue = value.substr(prefixLength);
-            command.ffi.string_value = command.stringValue.c_str();
-            return command;
-        }
-    }
-
-    constexpr auto directionPrefixes = std::array {
-        std::pair {"focus-direction ", HYPREACT_COMMAND_FOCUS_DIRECTION},
-        std::pair {"swap-direction ", HYPREACT_COMMAND_SWAP_DIRECTION},
-        std::pair {"move-direction ", HYPREACT_COMMAND_MOVE_DIRECTION},
-        std::pair {"resize-direction ", HYPREACT_COMMAND_RESIZE_DIRECTION},
-        std::pair {"resize-tiled-direction ", HYPREACT_COMMAND_RESIZE_TILED_DIRECTION},
-    };
-
-    for (const auto& [prefix, kind] : directionPrefixes) {
-        const auto prefixLength = std::char_traits<char>::length(prefix);
-        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
-            const auto direction = normalizeDirection(value.substr(prefixLength));
-            if (!direction.has_value()) {
-                return std::nullopt;
-            }
-            auto command = makeCommandPayload(kind);
-            command.ffi.direction = toFfiDirection(*direction);
-            return command;
-        }
-    }
-
-    constexpr auto workspacePrefixes = std::array {
-        std::pair {"view-workspace ", HYPREACT_COMMAND_VIEW_WORKSPACE},
-        std::pair {"assign-focused-window-to-workspace ", HYPREACT_COMMAND_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE},
-        std::pair {"toggle-assign-focused-window-to-workspace ", HYPREACT_COMMAND_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE},
-    };
-
-    for (const auto& [prefix, kind] : workspacePrefixes) {
-        const auto prefixLength = std::char_traits<char>::length(prefix);
-        if (value.rfind(prefix, 0) == 0 && value.size() > prefixLength) {
-            const auto workspace = parseWorkspaceNumber(value.substr(prefixLength));
-            if (!workspace.has_value()) {
-                return std::nullopt;
-            }
-            auto command = makeCommandPayload(kind);
-            command.ffi.workspace = static_cast<unsigned char>(*workspace);
-            return command;
-        }
-    }
-
-    if (value == "cycle-layout") {
-        return makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
-    }
-    if (value == "cycle-layout previous") {
-        auto command = makeCommandPayload(HYPREACT_COMMAND_CYCLE_LAYOUT);
-        command.ffi.cycle_direction = HYPREACT_LAYOUT_CYCLE_PREVIOUS;
-        command.ffi.has_cycle_direction = true;
-        return command;
-    }
-
-    return std::nullopt;
 }
 
 SDispatchResult applyActions(const HypreactActionResult& response) {
@@ -1106,9 +837,6 @@ SDispatchResult applyActions(const HypreactActionResult& response) {
             case HYPREACT_ACTION_RESIZE_DIRECTION:
                 result = callDispatcher("resizeactive", fromFfiDirection(action.direction));
                 break;
-            case HYPREACT_ACTION_RESIZE_TILED_DIRECTION:
-                result = callDispatcher("resizewindow", fromFfiDirection(action.direction));
-                break;
             case HYPREACT_ACTION_CLOSE_FOCUSED_WINDOW:
                 result = callDispatcher("killactive", "");
                 break;
@@ -1120,22 +848,6 @@ SDispatchResult applyActions(const HypreactActionResult& response) {
     }
 
     return {};
-}
-
-SDispatchResult focusWindowByAddress(const std::string& address) {
-    if (address.empty()) {
-        return {.passEvent = false, .success = false, .error = "empty focus target"};
-    }
-
-    return callDispatcher("focuswindow", "address:" + address);
-}
-
-SDispatchResult swapWindowByAddress(const std::string& address) {
-    if (address.empty()) {
-        return {.passEvent = false, .success = false, .error = "empty swap target"};
-    }
-
-    return callDispatcher("swapwindow", "address:" + address);
 }
 
 void registerHooks() {
@@ -1242,88 +954,6 @@ void registerHooks() {
     }));
 }
 
-SDispatchResult hypreactDispatcher(std::string arg) {
-    if (!g_runtime) {
-        return {.passEvent = false, .success = false, .error = "runtime not initialized"};
-    }
-
-    if (arg == "resync") {
-        resyncAll();
-        return {};
-    }
-
-    const auto command = commandFromHypreactInput(arg);
-    if (!command.has_value()) {
-        return {.passEvent = false, .success = false, .error = "unsupported hypreact command"};
-    }
-
-    const auto response = g_runtime->dispatchCommand(command->ffi);
-    const auto result = applyActions(response);
-    hypreact_runtime_free_action_result(response);
-    return result;
-}
-
-SDispatchResult interceptDispatcher(const std::string& name, std::string arg) {
-    if (!g_runtime) {
-        return callDispatcher(name, arg);
-    }
-
-    if (name == "movefocus") {
-        const auto direction = normalizeDirection(arg);
-        if (direction.has_value()) {
-            const auto target = g_runtime->layoutFocusCandidate(*direction);
-            if (target.has_value()) {
-                return focusWindowByAddress(*target);
-            }
-        }
-    }
-
-    if (name == "swapwindow") {
-        const auto direction = normalizeDirection(arg);
-        if (direction.has_value()) {
-            const auto target = g_runtime->layoutSwapCandidate(*direction);
-            if (target.has_value()) {
-                return swapWindowByAddress(*target);
-            }
-        }
-    }
-
-    const auto command = commandFromDispatcher(name, arg);
-    if (!command.has_value()) {
-        if (nativeFallbackEnabled()) {
-            return callDispatcher(name, arg);
-        }
-        return {.passEvent = false, .success = false, .error = "unsupported hypreact translation for dispatcher: " + name};
-    }
-
-    const auto response = g_runtime->dispatchCommand(command->ffi);
-    const auto result = applyActions(response);
-    hypreact_runtime_free_action_result(response);
-    return result;
-}
-
-void installDispatcherWrappers() {
-    for (const auto& name : configuredDispatcherNames()) {
-        const auto it = g_pKeybindManager->m_dispatchers.find(name);
-        if (it == g_pKeybindManager->m_dispatchers.end()) {
-            continue;
-        }
-
-        g_originalDispatchers.emplace(name, it->second);
-        g_pKeybindManager->m_dispatchers[name] = [name](std::string arg) {
-            return interceptDispatcher(name, std::move(arg));
-        };
-    }
-}
-
-void restoreDispatcherWrappers() {
-    for (auto& [name, dispatcher] : g_originalDispatchers) {
-        g_pKeybindManager->m_dispatchers[name] = dispatcher;
-    }
-
-    g_originalDispatchers.clear();
-}
-
 std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
     if (!g_runtime) {
         return R"({"ok":false,"error":"runtime not initialized"})";
@@ -1428,11 +1058,7 @@ extern "C" EXPORT std::string pluginAPIVersion() {
 extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     PHANDLE = handle;
 
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hypreact:enabled_dispatchers", Hyprlang::CConfigValue("exec,movefocus,swapwindow,workspace,movetoworkspace,movetoworkspacesilent,togglefloating,fullscreen,killactive,cyclenext,layoutmsg"));
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hypreact:fallback_native", Hyprlang::CConfigValue(static_cast<Hyprlang::INT>(1)));
     HyprlandAPI::addConfigValue(PHANDLE, "plugin:hypreact:config_path", Hyprlang::CConfigValue(""));
-    g_enabledDispatchersConfig = HyprlandAPI::getConfigValue(PHANDLE, "plugin:hypreact:enabled_dispatchers");
-    g_fallbackNativeConfig = HyprlandAPI::getConfigValue(PHANDLE, "plugin:hypreact:fallback_native");
     g_configPathConfig = HyprlandAPI::getConfigValue(PHANDLE, "plugin:hypreact:config_path");
 
     g_runtime = std::make_unique<Runtime>();
@@ -1440,7 +1066,6 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     loadLayoutRuntimeConfig();
     registerHypreactAlgorithm();
     registerHooks();
-    installDispatcherWrappers();
 
     g_queryCommand = HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand {
         .name = "hypreact",
@@ -1455,7 +1080,7 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     }
 
     HyprlandAPI::addNotificationV2(PHANDLE, {
-        {"text", std::string{"hypreact loaded with Hyprland dispatcher compatibility"}},
+        {"text", std::string{"hypreact loaded"}},
         {"time", static_cast<uint64_t>(3000)},
         {"icon", ICON_INFO},
     });
@@ -1480,13 +1105,10 @@ extern "C" EXPORT void pluginExit() {
         }
     }
 
-    restoreDispatcherWrappers();
     g_listeners.clear();
     g_pendingWorkspaceRecalculations.clear();
     g_pendingWorkspaceLayoutRefreshTicks = 0;
     g_windowIds.clear();
-    g_enabledDispatchersConfig = nullptr;
-    g_fallbackNativeConfig = nullptr;
     g_configPathConfig = nullptr;
     unregisterHypreactAlgorithm();
     g_runtime.reset();

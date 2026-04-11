@@ -131,14 +131,13 @@ pub enum HypreactCommandKind {
     FocusDirection = 11,
     SwapDirection = 12,
     ResizeDirection = 13,
-    ResizeTiledDirection = 14,
-    MoveDirection = 15,
-    FocusNextWindow = 16,
-    FocusPreviousWindow = 17,
-    SelectNextWorkspace = 18,
-    SelectPreviousWorkspace = 19,
-    SelectWorkspace = 20,
-    CloseFocusedWindow = 21,
+    MoveDirection = 14,
+    FocusNextWindow = 15,
+    FocusPreviousWindow = 16,
+    SelectNextWorkspace = 17,
+    SelectPreviousWorkspace = 18,
+    SelectWorkspace = 19,
+    CloseFocusedWindow = 20,
 }
 
 #[repr(C)]
@@ -170,8 +169,7 @@ pub enum HypreactActionKind {
     SwapDirection = 13,
     MoveDirection = 14,
     ResizeDirection = 15,
-    ResizeTiledDirection = 16,
-    CloseFocusedWindow = 17,
+    CloseFocusedWindow = 16,
 }
 
 #[repr(C)]

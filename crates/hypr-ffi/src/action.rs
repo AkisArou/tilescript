@@ -3,19 +3,10 @@ use crate::types::{
     HypreactAction, HypreactActionKind, HypreactCommandInput, HypreactCommandKind,
     HypreactDirection, HypreactLayoutCycleDirection,
 };
-use serde::Serialize;
-
 use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::{WindowId, WorkspaceId};
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandResult {
-    pub actions: Vec<HostAction>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[derive(Debug)]
 pub enum HostAction {
     SpawnCommand {
         command: String,
@@ -25,7 +16,6 @@ pub enum HostAction {
         name: String,
     },
     CycleLayout {
-        #[serde(skip_serializing_if = "Option::is_none")]
         direction: Option<LayoutCycleDirection>,
     },
     ActivateWorkspace {
@@ -54,9 +44,6 @@ pub enum HostAction {
         direction: FocusDirection,
     },
     ResizeDirection {
-        direction: FocusDirection,
-    },
-    ResizeTiledDirection {
         direction: FocusDirection,
     },
     CloseFocusedWindow,
@@ -98,9 +85,6 @@ pub fn dispatch_wm_command(command: WmCommand) -> Vec<HostAction> {
         WmCommand::SwapDirection { direction } => vec![HostAction::SwapDirection { direction }],
         WmCommand::MoveDirection { direction } => vec![HostAction::MoveDirection { direction }],
         WmCommand::ResizeDirection { direction } => vec![HostAction::ResizeDirection { direction }],
-        WmCommand::ResizeTiledDirection { direction } => {
-            vec![HostAction::ResizeTiledDirection { direction }]
-        }
         WmCommand::CloseFocusedWindow => vec![HostAction::CloseFocusedWindow],
     }
 }
@@ -147,9 +131,6 @@ pub fn wm_command_from_ffi(input: &HypreactCommandInput) -> Result<WmCommand, Ff
             direction: direction_from_ffi(input.direction),
         },
         HypreactCommandKind::ResizeDirection => WmCommand::ResizeDirection {
-            direction: direction_from_ffi(input.direction),
-        },
-        HypreactCommandKind::ResizeTiledDirection => WmCommand::ResizeTiledDirection {
             direction: direction_from_ffi(input.direction),
         },
         HypreactCommandKind::MoveDirection => WmCommand::MoveDirection {
@@ -246,11 +227,98 @@ pub fn action_to_ffi(action: HostAction) -> Result<HypreactAction, FfiError> {
         HostAction::ResizeDirection { direction } => {
             direction_action(HypreactActionKind::ResizeDirection, direction)
         }
-        HostAction::ResizeTiledDirection { direction } => {
-            direction_action(HypreactActionKind::ResizeTiledDirection, direction)
-        }
         HostAction::CloseFocusedWindow => simple_action(HypreactActionKind::CloseFocusedWindow),
     })
+}
+
+pub fn wm_command_from_text(input: &str) -> Result<WmCommand, FfiError> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err(FfiError::InvalidInput("empty command".into()));
+    }
+
+    match input {
+        "reload-config" => return Ok(WmCommand::ReloadConfig),
+        "toggle-floating" => return Ok(WmCommand::ToggleFloating),
+        "toggle-fullscreen" => return Ok(WmCommand::ToggleFullscreen),
+        "close-focused-window" => return Ok(WmCommand::CloseFocusedWindow),
+        "focus-next-window" => return Ok(WmCommand::FocusNextWindow),
+        "focus-previous-window" => return Ok(WmCommand::FocusPreviousWindow),
+        "select-next-workspace" => return Ok(WmCommand::SelectNextWorkspace),
+        "select-previous-workspace" => return Ok(WmCommand::SelectPreviousWorkspace),
+        "cycle-layout" => return Ok(WmCommand::CycleLayout { direction: None }),
+        "cycle-layout previous" => {
+            return Ok(WmCommand::CycleLayout {
+                direction: Some(LayoutCycleDirection::Previous),
+            });
+        }
+        _ => {}
+    }
+
+    if let Some(value) = input.strip_prefix("spawn ") {
+        return Ok(WmCommand::Spawn {
+            command: non_empty_suffix(value, "command")?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("set-layout ") {
+        return Ok(WmCommand::SetLayout {
+            name: non_empty_suffix(value, "layout name")?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("activate-workspace ") {
+        return Ok(WmCommand::ActivateWorkspace {
+            workspace_id: WorkspaceId(non_empty_suffix(value, "workspace id")?),
+        });
+    }
+    if let Some(value) = input.strip_prefix("select-workspace ") {
+        return Ok(WmCommand::SelectWorkspace {
+            workspace_id: WorkspaceId(non_empty_suffix(value, "workspace id")?),
+        });
+    }
+    if let Some(value) = input.strip_prefix("focus-window ") {
+        return Ok(WmCommand::FocusWindow {
+            window_id: WindowId(non_empty_suffix(value, "window id")?),
+        });
+    }
+    if let Some(value) = input.strip_prefix("focus-direction ") {
+        return Ok(WmCommand::FocusDirection {
+            direction: parse_direction(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("swap-direction ") {
+        return Ok(WmCommand::SwapDirection {
+            direction: parse_direction(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("move-direction ") {
+        return Ok(WmCommand::MoveDirection {
+            direction: parse_direction(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("resize-direction ") {
+        return Ok(WmCommand::ResizeDirection {
+            direction: parse_direction(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("view-workspace ") {
+        return Ok(WmCommand::ViewWorkspace {
+            workspace: parse_workspace(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("assign-focused-window-to-workspace ") {
+        return Ok(WmCommand::AssignFocusedWindowToWorkspace {
+            workspace: parse_workspace(value)?,
+        });
+    }
+    if let Some(value) = input.strip_prefix("toggle-assign-focused-window-to-workspace ") {
+        return Ok(WmCommand::ToggleAssignFocusedWindowToWorkspace {
+            workspace: parse_workspace(value)?,
+        });
+    }
+
+    Err(FfiError::InvalidInput(
+        "unsupported hypreact command".into(),
+    ))
 }
 
 fn required_string(value: *const std::ffi::c_char, field: &str) -> Result<String, FfiError> {
@@ -322,4 +390,31 @@ fn direction_action(kind: HypreactActionKind, direction: FocusDirection) -> Hypr
         cycle_direction: HypreactLayoutCycleDirection::Next,
         has_cycle_direction: false,
     }
+}
+
+fn parse_direction(value: &str) -> Result<FocusDirection, FfiError> {
+    match value.trim() {
+        "l" | "left" => Ok(FocusDirection::Left),
+        "r" | "right" => Ok(FocusDirection::Right),
+        "u" | "up" => Ok(FocusDirection::Up),
+        "d" | "down" => Ok(FocusDirection::Down),
+        other => Err(FfiError::InvalidInput(format!(
+            "unknown direction: {other}"
+        ))),
+    }
+}
+
+fn parse_workspace(value: &str) -> Result<u8, FfiError> {
+    value
+        .trim()
+        .parse::<u8>()
+        .map_err(|_| FfiError::InvalidInput(format!("invalid workspace: {value}")))
+}
+
+fn non_empty_suffix(value: &str, field: &str) -> Result<String, FfiError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(FfiError::InvalidInput(format!("missing {field}")));
+    }
+    Ok(value.to_string())
 }
