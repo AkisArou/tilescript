@@ -214,11 +214,15 @@ impl Config {
             root,
             stylesheets: artifact.stylesheets.clone(),
             space: LayoutSpace {
-                width: output
-                    .map(|output| output.logical_width as f32)
+                width: workspace
+                    .layout_space
+                    .map(|layout_space| layout_space.width as f32)
+                    .or_else(|| output.map(|output| output.logical_width as f32))
                     .unwrap_or_default(),
-                height: output
-                    .map(|output| output.logical_height as f32)
+                height: workspace
+                    .layout_space
+                    .map(|layout_space| layout_space.height as f32)
+                    .or_else(|| output.map(|output| output.logical_height as f32))
                     .unwrap_or_default(),
             },
         };
@@ -296,6 +300,7 @@ mod tests {
             id: WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: Some(OutputId::from("out-1")),
+            layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
@@ -379,6 +384,43 @@ mod tests {
         assert_eq!(request.layout_name.as_deref(), Some("master-stack"));
         assert_eq!(request.space.width, 1920.0);
         assert_eq!(request.space.height, 1080.0);
+    }
+
+    #[test]
+    fn builds_scene_request_using_workspace_layout_space_when_present() {
+        let config = Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack.js".into(),
+                stylesheet_path: Some("layouts/master-stack/index.css".into()),
+                runtime_cache_payload: None,
+            }],
+            ..Config::default()
+        };
+
+        let request = config
+            .build_scene_request(
+                &WorkspaceSnapshot {
+                    layout_space: Some(hypreact_core::wm::LayoutSpaceBox {
+                        x: 0,
+                        y: 17,
+                        width: 1600,
+                        height: 983,
+                    }),
+                    ..workspace("master-stack")
+                },
+                Some(&output()),
+                ResolvedLayoutNode::Workspace {
+                    meta: Default::default(),
+                    children: vec![],
+                },
+                &artifact("master-stack", "layouts/master-stack.js"),
+            )
+            .unwrap();
+
+        assert_eq!(request.space.width, 1600.0);
+        assert_eq!(request.space.height, 983.0);
     }
 
     #[test]
@@ -525,6 +567,7 @@ mod tests {
                     id: WorkspaceId::from("ws-2"),
                     name: "2".into(),
                     output_id: Some(OutputId::from("out-2")),
+                    layout_space: None,
                     active_workspaces: vec!["2".into()],
                     focused: false,
                     visible: true,

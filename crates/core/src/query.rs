@@ -57,6 +57,7 @@ pub fn workspace_snapshot(model: &WmModel, workspace: &WorkspaceModel) -> Worksp
         id: workspace.id.clone(),
         name: workspace.name.clone(),
         output_id: workspace.output_id.clone(),
+        layout_space: workspace.layout_space,
         active_workspaces: model.active_workspace_names(workspace),
         focused: workspace.focused,
         visible: workspace.visible,

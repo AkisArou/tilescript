@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::ResolvedLayoutNode;
 use crate::focus::{FocusScopeNavigation, FocusScopePath, FocusTree};
 use crate::types::LayoutRef;
@@ -19,6 +21,14 @@ pub struct OutputModel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WindowGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct LayoutSpaceBox {
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -75,6 +85,7 @@ pub struct WorkspaceModel {
     pub id: WorkspaceId,
     pub name: String,
     pub output_id: Option<OutputId>,
+    pub layout_space: Option<LayoutSpaceBox>,
     pub focused: bool,
     pub visible: bool,
     pub effective_layout: Option<LayoutRef>,
@@ -169,6 +180,7 @@ impl WmModel {
                 id: workspace_id,
                 name,
                 output_id: None,
+                layout_space: None,
                 focused: false,
                 visible: false,
                 effective_layout: None,
@@ -544,6 +556,16 @@ impl WmModel {
     ) {
         if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
             workspace.effective_layout = effective_layout;
+        }
+    }
+
+    pub fn set_workspace_layout_space(
+        &mut self,
+        workspace_id: WorkspaceId,
+        layout_space: Option<LayoutSpaceBox>,
+    ) {
+        if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
+            workspace.layout_space = layout_space;
         }
     }
 

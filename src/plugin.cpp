@@ -57,6 +57,10 @@ class Runtime {
         return take(hypreact_runtime_activate_workspace(handle_, workspaceId.c_str(), outputId.empty() ? nullptr : outputId.c_str()));
     }
 
+    [[nodiscard]] std::string setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const {
+        return take(hypreact_runtime_set_workspace_layout_space(handle_, &layoutSpace));
+    }
+
     [[nodiscard]] std::string focusWindow(const std::optional<std::string>& windowId) const {
         return take(hypreact_runtime_focus_window(handle_, windowId ? windowId->c_str() : nullptr));
     }
@@ -158,6 +162,12 @@ struct OutputSyncPayload {
     HypreactOutputSync ffi;
 };
 
+struct WorkspaceLayoutSpaceSyncPayload {
+    std::string workspaceId;
+    std::string outputId;
+    HypreactWorkspaceLayoutSpaceSync ffi;
+};
+
 std::vector<PendingWorkspaceRecalculation> g_pendingWorkspaceRecalculations;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
@@ -218,6 +228,7 @@ std::string makeWindowId(const PHLWINDOW& window);
 std::string workspaceName(const PHLWORKSPACE& workspace);
 void removeWindow(const PHLWINDOW& window);
 void syncFocusedWindow(const PHLWINDOW& window);
+void syncWorkspaceLayoutSpace(const PHLWORKSPACE& workspace);
 void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace);
 void flushPendingWorkspaceRecalculations();
@@ -365,6 +376,20 @@ std::unordered_map<std::string, CBox> geometryMapFromPlacement(const HypreactPla
     return byWindowId;
 }
 
+CBox offsetPlacementToWorkspace(const CBox& box, const PHLWORKSPACE& workspace) {
+    if (!workspace || !workspace->m_space) {
+        return box;
+    }
+
+    const auto workArea = workspace->m_space->workArea(false);
+    return CBox {
+        workArea.x + box.x,
+        workArea.y + box.y,
+        box.w,
+        box.h,
+    };
+}
+
 class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
   public:
     void newTarget(SP<Layout::ITarget> target) override {
@@ -421,7 +446,7 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
                 continue;
             }
 
-            target->setPositionGlobal(it->second);
+            target->setPositionGlobal(offsetPlacementToWorkspace(it->second, workspace));
         }
     }
 
@@ -636,6 +661,32 @@ void syncWorkspace(const PHLWORKSPACE& workspace, const PHLMONITOR& monitor) {
     }
 
     logSyncResponse(g_runtime->activateWorkspace(workspaceName(workspace), monitorId(monitor)));
+    syncWorkspaceLayoutSpace(workspace);
+}
+
+void syncWorkspaceLayoutSpace(const PHLWORKSPACE& workspace) {
+    if (!workspace || !workspace->m_space || !g_runtime) {
+        return;
+    }
+
+    const auto monitor = workspace->m_monitor.lock();
+    const auto workArea = workspace->m_space->workArea(false);
+    auto payload = WorkspaceLayoutSpaceSyncPayload {
+        .workspaceId = workspaceName(workspace),
+        .outputId = monitorId(monitor),
+        .ffi = {
+            .workspace_id = nullptr,
+            .output_id = nullptr,
+            .x = static_cast<int>(workArea.x),
+            .y = static_cast<int>(workArea.y),
+            .width = workArea.w > 0 ? static_cast<unsigned int>(workArea.w) : 0U,
+            .height = workArea.h > 0 ? static_cast<unsigned int>(workArea.h) : 0U,
+        },
+    };
+
+    payload.ffi.workspace_id = payload.workspaceId.c_str();
+    payload.ffi.output_id = payload.outputId.empty() ? nullptr : payload.outputId.c_str();
+    logSyncResponse(g_runtime->setWorkspaceLayoutSpace(payload.ffi));
 }
 
 void syncWindow(const PHLWINDOW& window) {
@@ -661,6 +712,7 @@ void recalculateWorkspace(const PHLWORKSPACE& workspace) {
     }
 
     workspace->m_space->recheckWorkArea();
+    syncWorkspaceLayoutSpace(workspace);
     workspace->m_space->recalculate();
     workspace->updateWindows();
     workspace->forceReportSizesToWindows();
@@ -701,7 +753,7 @@ void applyPlacementForWorkspace(const PHLWORKSPACE& workspace) {
             continue;
         }
 
-        window->m_target->setPositionGlobal(it->second);
+        window->m_target->setPositionGlobal(offsetPlacementToWorkspace(it->second, workspace));
         window->m_target->warpPositionSize();
     }
 

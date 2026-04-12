@@ -6,6 +6,7 @@ mod types;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use hypreact_core::wm::LayoutSpaceBox;
 use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
 use hypreact_core::query::state_snapshot_for_model;
@@ -14,7 +15,7 @@ use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
 use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
 use layout::{layout_focus_candidate, layout_runtime_placement, layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config, reload_layout_config};
 use response::{FfiError, response_ok};
-pub use types::{HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult, HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle, HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync};
+pub use types::{HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult, HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle, HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync, HypreactWorkspaceLayoutSpaceSync};
 use types::StatusResult;
 
 #[unsafe(no_mangle)]
@@ -136,6 +137,41 @@ pub extern "C" fn hypreact_runtime_activate_workspace(
                 output.focused_workspace_id = Some(workspace_id.clone());
             }
         }
+
+        response_ok(StatusResult { changed: true })
+    })))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space(
+    handle: *mut HypreactRuntimeHandle,
+    layout_space: *const HypreactWorkspaceLayoutSpaceSync,
+) -> *mut std::ffi::c_char {
+    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        if layout_space.is_null() {
+            return Err(FfiError::NullPointer);
+        }
+
+        let layout_space = unsafe { &*layout_space };
+        let workspace_id = WorkspaceId::from(cstr_to_str(layout_space.workspace_id)?.to_string());
+        let output_id = optional_cstr_to_string(layout_space.output_id)?.map(OutputId::from);
+
+        handle
+            .model
+            .upsert_workspace(workspace_id.clone(), workspace_id.as_str().to_string());
+        if let Some(output_id) = output_id.clone() {
+            handle.model.attach_workspace_to_output(workspace_id.clone(), output_id);
+        }
+        handle.model.set_workspace_layout_space(
+            workspace_id,
+            Some(LayoutSpaceBox {
+                x: layout_space.x,
+                y: layout_space.y,
+                width: layout_space.width as i32,
+                height: layout_space.height as i32,
+            }),
+        );
 
         response_ok(StatusResult { changed: true })
     })))

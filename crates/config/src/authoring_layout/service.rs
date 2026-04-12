@@ -206,6 +206,7 @@ fn validation_workspace(layout_name: &str) -> WorkspaceSnapshot {
         id: WorkspaceId::from("validation"),
         name: "validation".into(),
         output_id: None,
+        layout_space: None,
         active_workspaces: vec![],
         focused: true,
         visible: true,

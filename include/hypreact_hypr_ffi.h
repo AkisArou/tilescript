@@ -28,6 +28,15 @@ struct HypreactOutputSync {
     unsigned int logical_height;
 };
 
+struct HypreactWorkspaceLayoutSpaceSync {
+    const char* workspace_id;
+    const char* output_id;
+    int x;
+    int y;
+    unsigned int width;
+    unsigned int height;
+};
+
 struct HypreactPlacementGeometry {
     const char* window_id;
     int x;
@@ -161,6 +170,10 @@ char* hypreact_runtime_activate_workspace(
     HypreactRuntimeHandle* handle,
     const char* workspace_id,
     const char* output_id
+);
+char* hypreact_runtime_set_workspace_layout_space(
+    HypreactRuntimeHandle* handle,
+    const HypreactWorkspaceLayoutSpaceSync* layout_space
 );
 char* hypreact_runtime_focus_window(
     HypreactRuntimeHandle* handle,

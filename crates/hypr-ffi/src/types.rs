@@ -43,6 +43,16 @@ pub struct HypreactOutputSync {
     pub logical_height: u32,
 }
 
+#[repr(C)]
+pub struct HypreactWorkspaceLayoutSpaceSync {
+    pub workspace_id: *const c_char,
+    pub output_id: *const c_char,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusResult {

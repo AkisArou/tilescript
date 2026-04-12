@@ -7,6 +7,7 @@ use crate::runtime::layout_context::{
 };
 use crate::runtime::prepared_layout::SelectedLayout;
 use crate::types::{LayoutRef, WindowMode, WindowShell};
+use crate::wm::LayoutSpaceBox;
 use crate::{LayoutSpace, OutputId, WindowId, WorkspaceId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -38,6 +39,7 @@ pub struct WorkspaceSnapshot {
     pub id: WorkspaceId,
     pub name: String,
     pub output_id: Option<OutputId>,
+    pub layout_space: Option<LayoutSpaceBox>,
     pub active_workspaces: Vec<String>,
     pub focused: bool,
     pub visible: bool,
@@ -140,6 +142,13 @@ impl StateSnapshot {
     }
 
     fn layout_space_for_workspace(&self, workspace: &WorkspaceSnapshot) -> LayoutSpace {
+        if let Some(layout_space) = workspace.layout_space {
+            return LayoutSpace {
+                width: layout_space.width as f32,
+                height: layout_space.height as f32,
+            };
+        }
+
         let output = workspace
             .output_id
             .as_ref()
@@ -168,6 +177,7 @@ impl StateSnapshot {
             .and_then(|output_id| self.output_by_id(output_id))
             .or_else(|| self.current_output())
             .cloned();
+        let layout_space = workspace.layout_space;
         let selected_layout_name = selected_layout.as_ref().map(|layout| layout.name.clone());
 
         LayoutEvaluationContext {
@@ -176,13 +186,13 @@ impl StateSnapshot {
                     .as_ref()
                     .map(|output| output.name.clone())
                     .unwrap_or_default(),
-                width: output
-                    .as_ref()
-                    .map(|output| output.logical_width)
+                width: layout_space
+                    .map(|layout_space| layout_space.width as u32)
+                    .or_else(|| output.as_ref().map(|output| output.logical_width))
                     .unwrap_or(0),
-                height: output
-                    .as_ref()
-                    .map(|output| output.logical_height)
+                height: layout_space
+                    .map(|layout_space| layout_space.height as u32)
+                    .or_else(|| output.as_ref().map(|output| output.logical_height))
                     .unwrap_or(0),
                 scale: output.as_ref().map(|output| output.scale),
             },
@@ -250,6 +260,7 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
+                layout_space: None,
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
@@ -291,6 +302,12 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
+                layout_space: Some(LayoutSpaceBox {
+                    x: 0,
+                    y: 40,
+                    width: 1920,
+                    height: 1040,
+                }),
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
@@ -316,6 +333,8 @@ mod tests {
         assert_eq!(context.workspace_id, WorkspaceId::from("ws-1"));
         assert_eq!(context.output.unwrap().id, OutputId::from("out-1"));
         assert_eq!(context.space.width, 1920.0);
+        assert_eq!(context.space.height, 1040.0);
+        assert_eq!(context.monitor.height, 1040);
         assert_eq!(context.workspace.name, "1");
         assert_eq!(context.workspace.window_count, 0);
     }
@@ -339,6 +358,7 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: None,
+                layout_space: None,
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
@@ -385,6 +405,7 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
+                layout_space: None,
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
@@ -489,6 +510,7 @@ mod tests {
                     id: WorkspaceId::from("ws-1"),
                     name: "1".into(),
                     output_id: Some(OutputId::from("out-1")),
+                    layout_space: None,
                     active_workspaces: vec!["1".into()],
                     focused: true,
                     visible: true,
@@ -500,6 +522,7 @@ mod tests {
                     id: WorkspaceId::from("ws-2"),
                     name: "2".into(),
                     output_id: Some(OutputId::from("out-2")),
+                    layout_space: None,
                     active_workspaces: vec!["2".into()],
                     focused: false,
                     visible: true,
@@ -583,6 +606,7 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
+                layout_space: None,
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,

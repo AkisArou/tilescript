@@ -4,11 +4,11 @@ import "./index.css";
 
 export default function layout(ctx: LayoutContext) {
   return (
-    <workspace id="frame" class="playground-workspace">
+    <workspace id="frame">
       <slot id="master" take={1} class="master-slot" />
 
       {ctx.windows.length > 1 ? (
-        <group id="stack" class="stack-group">
+        <group class="stack-group">
           <slot id="stack-slot" class="stack-group__item" />
         </group>
       ) : null}
