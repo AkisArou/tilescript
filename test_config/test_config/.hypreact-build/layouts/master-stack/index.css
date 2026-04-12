@@ -14,10 +14,6 @@
   min-height: 0;
 }
 
-#stack {
-  border-color: #2f3647;
-}
-
 .stack-group {
   display: flex;
   flex-direction: column;
