@@ -17,7 +17,7 @@
 .stack-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   flex-basis: 0;
   flex-grow: 2;
   min-width: 0;
@@ -27,5 +27,4 @@
   flex-basis: 0;
   flex-grow: 1;
   min-height: 0;
-  border-color: #2f3647;
 }
