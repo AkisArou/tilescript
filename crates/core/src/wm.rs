@@ -90,6 +90,7 @@ pub struct WmModel {
     pub current_output_id: Option<OutputId>,
     pub focus_tree: Option<FocusTree>,
     pub last_focused_window_id_by_scope: BTreeMap<FocusScopePath, WindowId>,
+    pub tiled_window_order_by_workspace: BTreeMap<WorkspaceId, Vec<WindowId>>,
 }
 
 impl WmModel {
@@ -125,7 +126,12 @@ impl WmModel {
     pub fn visible_window_ids(&self) -> Vec<WindowId> {
         self.windows
             .values()
-            .filter(|window| window.mapped)
+            .filter(|window| {
+                window.mapped
+                    && self.current_workspace_id.as_ref().is_none_or(|workspace_id| {
+                        window.workspace_id.as_ref() == Some(workspace_id)
+                    })
+            })
             .map(|window| window.id.clone())
             .collect()
     }
@@ -253,8 +259,10 @@ impl WmModel {
     ) {
         self.windows.insert(
             id.clone(),
-            WindowModel { id, output_id, workspace_id, ..WindowModel::default() },
+            WindowModel { id: id.clone(), output_id, workspace_id, ..WindowModel::default() },
         );
+
+        self.sync_tiled_window_order_for_window(&id);
     }
 
     pub fn window_is_on_current_workspace(&self, id: WindowId) -> bool {
@@ -352,13 +360,51 @@ impl WmModel {
     where
         I: IntoIterator<Item = WindowId>,
     {
+        let Some(current_workspace_id) = self.current_workspace_id.as_ref() else {
+            return self.ordered_window_ids_for_workspace_with_hints(None, hinted_window_ids);
+        };
+
+        self.ordered_window_ids_for_workspace_with_hints(Some(current_workspace_id), hinted_window_ids)
+    }
+
+    pub fn ordered_window_ids_for_workspace(&self, workspace_id: &WorkspaceId) -> Vec<WindowId> {
+        self.ordered_window_ids_for_workspace_with_hints(Some(workspace_id), Vec::new())
+    }
+
+    fn ordered_window_ids_for_workspace_with_hints<I>(
+        &self,
+        workspace_id: Option<&WorkspaceId>,
+        hinted_window_ids: I,
+    ) -> Vec<WindowId>
+    where
+        I: IntoIterator<Item = WindowId>,
+    {
         let mut ordered_window_ids = Vec::new();
         let mut seen_window_ids = std::collections::BTreeSet::new();
+
+        if let Some(workspace_id) = workspace_id
+            && let Some(window_order) = self.tiled_window_order_by_workspace.get(workspace_id)
+        {
+            for window_id in window_order {
+                if self.has_window(window_id)
+                    && self.windows.get(window_id).is_some_and(|window| {
+                        window.workspace_id.as_ref() == Some(workspace_id)
+                    })
+                    && seen_window_ids.insert(window_id.clone())
+                {
+                    ordered_window_ids.push(window_id.clone());
+                }
+            }
+        }
 
         if let Some(focus_tree) = self.focus_tree.as_ref() {
             for window_id in focus_tree.ordered_window_ids() {
                 if self.has_window(window_id)
-                    && self.window_is_on_current_workspace(window_id.clone())
+                    && workspace_id.is_none_or(|workspace_id| {
+                        self.windows.get(window_id).is_some_and(|window| {
+                            window.workspace_id.as_ref() == Some(workspace_id)
+                        })
+                    })
                     && seen_window_ids.insert(window_id.clone())
                 {
                     ordered_window_ids.push(window_id.clone());
@@ -368,7 +414,11 @@ impl WmModel {
 
         for window_id in hinted_window_ids {
             if self.has_window(&window_id)
-                && self.window_is_on_current_workspace(window_id.clone())
+                && workspace_id.is_none_or(|workspace_id| {
+                    self.windows.get(&window_id).is_some_and(|window| {
+                        window.workspace_id.as_ref() == Some(workspace_id)
+                    })
+                })
                 && seen_window_ids.insert(window_id.clone())
             {
                 ordered_window_ids.push(window_id);
@@ -376,7 +426,11 @@ impl WmModel {
         }
 
         for window_id in self.windows.keys() {
-            if self.window_is_on_current_workspace(window_id.clone())
+            if workspace_id.is_none_or(|workspace_id| {
+                self.windows.get(window_id).is_some_and(|window| {
+                    window.workspace_id.as_ref() == Some(workspace_id)
+                })
+            })
                 && seen_window_ids.insert(window_id.clone())
             {
                 ordered_window_ids.push(window_id.clone());
@@ -450,8 +504,18 @@ impl WmModel {
     }
 
     pub fn set_window_workspace(&mut self, id: WindowId, workspace_id: Option<WorkspaceId>) {
+        let previous_workspace_id = self.windows.get(&id).and_then(|window| window.workspace_id.clone());
+
         if let Some(window) = self.windows.get_mut(&id) {
-            window.workspace_id = workspace_id;
+            window.workspace_id = workspace_id.clone();
+        }
+
+        if let Some(previous_workspace_id) = previous_workspace_id {
+            self.prune_tiled_window_order_for_workspace(&previous_workspace_id);
+        }
+
+        if let Some(workspace_id) = workspace_id {
+            self.sync_tiled_window_order_for_workspace(&workspace_id);
         }
     }
 
@@ -524,11 +588,52 @@ impl WmModel {
     }
 
     pub fn remove_window(&mut self, id: WindowId) {
+        let workspace_id = self.windows.get(&id).and_then(|window| window.workspace_id.clone());
         self.windows.remove(&id);
         if self.focused_window_id == Some(id) {
             self.focused_window_id = None;
         }
+        if let Some(workspace_id) = workspace_id {
+            self.prune_tiled_window_order_for_workspace(&workspace_id);
+        }
         self.prune_focus_memory();
+    }
+
+    pub fn move_tiled_window(&mut self, first_window_id: &WindowId, second_window_id: &WindowId) -> bool {
+        let Some(first_window) = self.windows.get(first_window_id) else {
+            return false;
+        };
+        let Some(second_window) = self.windows.get(second_window_id) else {
+            return false;
+        };
+
+        if !self.window_is_layout_eligible(first_window_id) || !self.window_is_layout_eligible(second_window_id) {
+            return false;
+        }
+
+        let Some(workspace_id) = first_window.workspace_id.clone() else {
+            return false;
+        };
+
+        if second_window.workspace_id.as_ref() != Some(&workspace_id) {
+            return false;
+        }
+
+        self.sync_tiled_window_order_for_workspace(&workspace_id);
+
+        let Some(window_order) = self.tiled_window_order_by_workspace.get_mut(&workspace_id) else {
+            return false;
+        };
+        let Some((first_index, second_index)) = crate::navigation::managed_window_swap_positions(
+            window_order,
+            first_window_id.clone(),
+            second_window_id.clone(),
+        ) else {
+            return false;
+        };
+
+        window_order.swap(first_index, second_index);
+        true
     }
 
     fn remember_focus_for_window(&mut self, window_id: &WindowId) {
@@ -554,6 +659,55 @@ impl WmModel {
                 && self.windows.contains_key(window_id)
                 && focus_tree.contains_window(window_id)
         });
+    }
+
+    fn sync_tiled_window_order_for_window(&mut self, window_id: &WindowId) {
+        let Some(workspace_id) = self.windows.get(window_id).and_then(|window| window.workspace_id.clone()) else {
+            return;
+        };
+
+        self.sync_tiled_window_order_for_workspace(&workspace_id);
+    }
+
+    fn sync_tiled_window_order_for_workspace(&mut self, workspace_id: &WorkspaceId) {
+        let mut existing = self
+            .tiled_window_order_by_workspace
+            .remove(workspace_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|window_id| {
+                self.windows.get(window_id).is_some_and(|window| {
+                    window.workspace_id.as_ref() == Some(workspace_id)
+                        && window.mapped
+                        && !window.closing
+                        && !window.floating
+                        && !window.fullscreen
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for window_id in self.windows.keys() {
+            if self.windows.get(window_id).is_some_and(|window| {
+                window.workspace_id.as_ref() == Some(workspace_id)
+                    && window.mapped
+                    && !window.closing
+                    && !window.floating
+                    && !window.fullscreen
+            }) && !existing.contains(window_id)
+            {
+                existing.push(window_id.clone());
+            }
+        }
+
+        if existing.is_empty() {
+            self.tiled_window_order_by_workspace.remove(workspace_id);
+        } else {
+            self.tiled_window_order_by_workspace.insert(workspace_id.clone(), existing);
+        }
+    }
+
+    fn prune_tiled_window_order_for_workspace(&mut self, workspace_id: &WorkspaceId) {
+        self.sync_tiled_window_order_for_workspace(workspace_id);
     }
 }
 
@@ -693,6 +847,46 @@ mod tests {
         assert!(model.window_is_layout_eligible(&window_id(1)));
         assert!(!model.window_is_layout_eligible(&window_id(2)));
         assert!(!model.window_is_layout_eligible(&window_id(3)));
+    }
+
+    #[test]
+    fn move_tiled_window_swaps_persistent_workspace_order() {
+        let mut model = WmModel::default();
+        model.upsert_workspace(WorkspaceId("1".to_string()), "1".to_string());
+        model.set_current_workspace(WorkspaceId("1".to_string()));
+
+        model.insert_window(window_id(1), Some(WorkspaceId("1".to_string())), None);
+        model.insert_window(window_id(2), Some(WorkspaceId("1".to_string())), None);
+        model.set_window_mapped(window_id(1), true);
+        model.set_window_mapped(window_id(2), true);
+        model.sync_tiled_window_order_for_workspace(&WorkspaceId("1".to_string()));
+
+        assert!(model.move_tiled_window(&window_id(1), &window_id(2)));
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&WorkspaceId("1".to_string())),
+            vec![window_id(2), window_id(1)]
+        );
+    }
+
+    #[test]
+    fn move_tiled_window_rejects_non_layout_eligible_windows() {
+        let mut model = WmModel::default();
+        model.upsert_workspace(WorkspaceId("1".to_string()), "1".to_string());
+        model.set_current_workspace(WorkspaceId("1".to_string()));
+
+        model.insert_window(window_id(1), Some(WorkspaceId("1".to_string())), None);
+        model.insert_window(window_id(2), Some(WorkspaceId("1".to_string())), None);
+        model.set_window_mapped(window_id(1), true);
+        model.set_window_mapped(window_id(2), true);
+        model.set_window_floating(window_id(2), true);
+        model.sync_tiled_window_order_for_workspace(&WorkspaceId("1".to_string()));
+        let original_order = model.ordered_window_ids_for_workspace(&WorkspaceId("1".to_string()));
+
+        assert!(!model.move_tiled_window(&window_id(1), &window_id(2)));
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&WorkspaceId("1".to_string())),
+            original_order
+        );
     }
 
     #[test]

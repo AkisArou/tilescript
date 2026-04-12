@@ -2,6 +2,7 @@
 #include <memory>
 #include <optional>
 #include <cctype>
+#include <array>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -38,10 +39,6 @@ class Runtime {
         if (handle_ != nullptr) {
             hypreact_runtime_free(handle_);
         }
-    }
-
-    [[nodiscard]] HypreactActionResult dispatchCommandText(const std::string& command) const {
-        return hypreact_runtime_dispatch_command_text(handle_, command.c_str());
     }
 
     [[nodiscard]] std::string resetState() const {
@@ -88,6 +85,10 @@ class Runtime {
         return hypreact_runtime_layout_placement(handle_);
     }
 
+    [[nodiscard]] HypreactPlacementResult layoutPlacementForWorkspace(const std::string& workspaceId) const {
+        return hypreact_runtime_layout_placement_for_workspace(handle_, workspaceId.c_str());
+    }
+
     [[nodiscard]] std::optional<std::string> layoutFocusCandidate(const std::string& direction) const {
         const auto result = hypreact_runtime_layout_focus_candidate(handle_, direction.c_str());
         if (result.value == nullptr) {
@@ -108,6 +109,13 @@ class Runtime {
         std::string value(result.value);
         hypreact_string_free(result.value);
         return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
+    }
+
+    [[nodiscard]] bool moveTiledWindow(const std::string& firstWindowId, const std::string& secondWindowId) const {
+        const auto result = hypreact_runtime_move_tiled_window(handle_, firstWindowId.c_str(), secondWindowId.c_str());
+        const auto changed = result.changed;
+        hypreact_runtime_free_status_result(result);
+        return changed;
     }
 
     [[nodiscard]] HypreactStateResult stateResult() const {
@@ -209,8 +217,42 @@ SDispatchResult callDispatcher(const std::string& name, const std::string& arg);
 std::string makeWindowId(const PHLWINDOW& window);
 std::string workspaceName(const PHLWORKSPACE& workspace);
 void removeWindow(const PHLWINDOW& window);
+void syncFocusedWindow(const PHLWINDOW& window);
 void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace);
+void flushPendingWorkspaceRecalculations();
+void syncActiveRuntimeState();
+
+std::optional<std::string> normalizeDirection(const std::string& arg) {
+    const auto value = trim(arg);
+    if (value == "l" || value == "left") {
+        return "left";
+    }
+    if (value == "r" || value == "right") {
+        return "right";
+    }
+    if (value == "u" || value == "up") {
+        return "up";
+    }
+    if (value == "d" || value == "down") {
+        return "down";
+    }
+    return std::nullopt;
+}
+
+PHLWINDOW windowFromHypreactId(const std::string& windowId) {
+    for (const auto& window : g_pCompositor->m_windows) {
+        if (!window || !window->m_isMapped) {
+            continue;
+        }
+
+        if (makeWindowId(window) == windowId) {
+            return window;
+        }
+    }
+
+    return nullptr;
+}
 
 std::string fromFfiDirection(HypreactDirection direction) {
     switch (direction) {
@@ -225,6 +267,80 @@ std::string fromFfiDirection(HypreactDirection direction) {
     }
 
     return "left";
+}
+
+SDispatchResult hypreactMoveFocusDispatcher(std::string arg) {
+    if (!g_runtime) {
+        return {.success = false, .error = "runtime not initialized"};
+    }
+
+    const auto direction = normalizeDirection(arg);
+    if (!direction.has_value()) {
+        return {.success = false, .error = "invalid direction"};
+    }
+
+    const auto target = g_runtime->layoutFocusCandidate(*direction);
+    if (!target.has_value()) {
+        return {};
+    }
+
+    const auto targetWindow = windowFromHypreactId(*target);
+    if (!targetWindow) {
+        return {.success = false, .error = "target window not found"};
+    }
+
+    std::ostringstream address;
+    address << "address:0x" << std::hex << reinterpret_cast<uintptr_t>(targetWindow.get());
+    return callDispatcher("focuswindow", address.str());
+}
+
+SDispatchResult hypreactMoveWindowDispatcher(std::string arg) {
+    if (!g_runtime) {
+        return {.success = false, .error = "runtime not initialized"};
+    }
+
+    const auto direction = normalizeDirection(arg);
+    if (!direction.has_value()) {
+        return {.success = false, .error = "invalid direction"};
+    }
+
+    const auto focusedWindow = Desktop::focusState()->window();
+    if (!focusedWindow) {
+        return {.success = false, .error = "no focused window"};
+    }
+    if (focusedWindow->isFullscreen()) {
+        return {.success = false, .error = "window is fullscreen"};
+    }
+    if (focusedWindow->m_isFloating) {
+        return callDispatcher("movewindow", direction->substr(0, 1));
+    }
+
+    const auto candidateId = g_runtime->layoutSwapCandidate(*direction);
+    if (!candidateId.has_value()) {
+        return {};
+    }
+
+    const auto candidateWindow = windowFromHypreactId(*candidateId);
+    if (!candidateWindow) {
+        return {.success = false, .error = "target window not found"};
+    }
+
+    const auto focusedWindowId = makeWindowId(focusedWindow);
+    if (!g_runtime->moveTiledWindow(focusedWindowId, *candidateId)) {
+        return {.success = false, .error = "failed to move tiled window"};
+    }
+
+    const auto workspace = focusedWindow->m_workspace;
+    if (workspace) {
+        queueWorkspaceRecalculate(workspace);
+    }
+
+    return {};
+}
+
+void registerHypreactDispatchers() {
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hypreact:movefocus", hypreactMoveFocusDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hypreact:movewindow", hypreactMoveWindowDispatcher);
 }
 
 std::unordered_map<std::string, CBox> geometryMapFromPlacement(const HypreactPlacementResult& placement) {
@@ -271,18 +387,27 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return;
         }
 
-        const auto placement = g_runtime->layoutPlacement();
-        const auto byWindowId = geometryMapFromPlacement(placement);
-        hypreact_runtime_free_placement_result(placement);
-
         const auto space = parent->space();
         if (!space) {
             return;
         }
 
+        const auto workspace = space->workspace();
+        if (!workspace) {
+            return;
+        }
+
+        const auto placement = g_runtime->layoutPlacementForWorkspace(workspaceName(workspace));
+        const auto byWindowId = geometryMapFromPlacement(placement);
+        hypreact_runtime_free_placement_result(placement);
+
         for (const auto& weakTarget : space->targets()) {
             const auto target = weakTarget.lock();
             if (!target || target->floating() || !target->window()) {
+                continue;
+            }
+
+             if (target->window()->m_workspace != workspace) {
                 continue;
             }
 
@@ -301,19 +426,46 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
     }
 
     void swapTargets(SP<Layout::ITarget> a, SP<Layout::ITarget> b) override {
-        a->swap(b);
         recalculate();
     }
 
     void moveTargetInDirection(SP<Layout::ITarget> t, Math::eDirection dir, bool silent) override {
-        if (!t || !t->window()) {
+        if (!t || !t->window() || !g_runtime) {
             return;
         }
 
-        const auto target = g_runtime->layoutFocusCandidate(Math::toString(dir));
-        if (target.has_value()) {
-            callDispatcher("focuswindow", "address:" + *target);
+        const auto candidateId = g_runtime->layoutSwapCandidate(Math::toString(dir));
+        if (!candidateId.has_value()) {
+            return;
         }
+
+        const auto parent = m_parent.lock();
+        if (!parent) {
+            return;
+        }
+
+        const auto space = parent->space();
+        if (!space) {
+            return;
+        }
+
+        for (const auto& weakTarget : space->targets()) {
+            const auto candidate = weakTarget.lock();
+            if (!candidate || candidate == t || candidate->floating() || !candidate->window()) {
+                continue;
+            }
+
+            if (makeWindowId(candidate->window()) == *candidateId) {
+                const bool moved = g_runtime->moveTiledWindow(makeWindowId(t->window()), *candidateId);
+                if (!moved) {
+                    return;
+                }
+                recalculate();
+                return;
+            }
+        }
+
+        recalculate();
     }
 
     SP<Layout::ITarget> getNextCandidate(SP<Layout::ITarget> old) override {
@@ -322,7 +474,17 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return old;
         }
 
-        const auto placement = g_runtime->layoutPlacement();
+        const auto space = parent->space();
+        if (!space) {
+            return old;
+        }
+
+        const auto workspace = space->workspace();
+        if (!workspace) {
+            return old;
+        }
+
+        const auto placement = g_runtime->layoutPlacementForWorkspace(workspaceName(workspace));
         if (placement.geometry_count == 0 || placement.geometries == nullptr) {
             return old;
         }
@@ -337,11 +499,6 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             }
         }
 
-        const auto space = parent->space();
-        if (!space) {
-            return old;
-        }
-
         for (size_t step = 1; step <= placement.geometry_count; ++step) {
             const auto candidateIndex = currentIndex < placement.geometry_count ? (currentIndex + step) % placement.geometry_count : step - 1;
             const auto candidateId = placement.geometries[candidateIndex].window_id;
@@ -351,6 +508,9 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             for (const auto& weakTarget : space->targets()) {
                 const auto target = weakTarget.lock();
                 if (!target || target->floating() || !target->window()) {
+                    continue;
+                }
+                if (target->window()->m_workspace != workspace) {
                     continue;
                 }
                 if (makeWindowId(target->window()) == candidateId) {
@@ -523,7 +683,7 @@ void applyPlacementForWorkspace(const PHLWORKSPACE& workspace) {
         return;
     }
 
-    const auto placement = g_runtime->layoutPlacement();
+    const auto placement = g_runtime->layoutPlacementForWorkspace(workspaceName(workspace));
     const auto byWindowId = geometryMapFromPlacement(placement);
     hypreact_runtime_free_placement_result(placement);
 
@@ -542,6 +702,7 @@ void applyPlacementForWorkspace(const PHLWORKSPACE& workspace) {
         }
 
         window->m_target->setPositionGlobal(it->second);
+        window->m_target->warpPositionSize();
     }
 
     workspace->updateWindows();
@@ -579,12 +740,13 @@ void flushPendingWorkspaceRecalculations() {
 
     for (auto pending : g_pendingWorkspaceRecalculations) {
         if (pending.workspace && !pending.workspace->inert()) {
-            recalculateWorkspace(pending.workspace);
-
             const auto monitor = pending.workspace->m_monitor.lock();
-            if (monitor && monitor->m_activeWorkspace == pending.workspace) {
-                callDispatcher("workspace", workspaceName(pending.workspace));
+            if (!monitor || monitor->m_activeWorkspace != pending.workspace) {
+                stillPending.push_back(std::move(pending));
+                continue;
             }
+
+            recalculateWorkspace(pending.workspace);
 
             if (--pending.remainingTicks > 0) {
                 stillPending.push_back(std::move(pending));
@@ -593,6 +755,22 @@ void flushPendingWorkspaceRecalculations() {
     }
 
     g_pendingWorkspaceRecalculations = std::move(stillPending);
+}
+
+void syncActiveRuntimeState() {
+    if (!g_runtime) {
+        return;
+    }
+
+    for (const auto& monitor : g_pCompositor->m_monitors) {
+        if (monitor && monitor->m_activeWorkspace) {
+            syncWorkspace(monitor->m_activeWorkspace, monitor);
+        }
+    }
+
+    if (const auto focus = Desktop::focusState()) {
+        syncFocusedWindow(focus->window());
+    }
 }
 
 void recalculateWindowWorkspace(const PHLWINDOW& window) {
@@ -710,42 +888,6 @@ SDispatchResult callDispatcher(const std::string& name, const std::string& arg) 
     return it->second(arg);
 }
 
-std::optional<std::string> normalizeDirection(const std::string& arg) {
-    const auto value = trim(arg);
-    if (value == "l" || value == "left") {
-        return "left";
-    }
-    if (value == "r" || value == "right") {
-        return "right";
-    }
-    if (value == "u" || value == "up") {
-        return "up";
-    }
-    if (value == "d" || value == "down") {
-        return "down";
-    }
-    return std::nullopt;
-}
-
-std::optional<unsigned> parseWorkspaceNumber(const std::string& arg) {
-    const auto value = trim(arg);
-    if (value.empty()) {
-        return std::nullopt;
-    }
-
-    for (const auto ch : value) {
-        if (!std::isdigit(static_cast<unsigned char>(ch))) {
-            return std::nullopt;
-        }
-    }
-
-    try {
-        return static_cast<unsigned>(std::stoul(value));
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
 SDispatchResult applyActions(const HypreactActionResult& response) {
     if (response.error != nullptr) {
         return {.passEvent = false, .success = false, .error = std::string(response.error)};
@@ -826,6 +968,7 @@ void registerHooks() {
     auto& events = Event::bus()->m_events;
 
     g_listeners.push_back(events.tick.listen([] {
+        syncActiveRuntimeState();
         flushPendingWorkspaceRecalculations();
     }));
 
@@ -910,14 +1053,6 @@ void registerHooks() {
     }));
 
     g_listeners.push_back(events.config.reloaded.listen([] {
-        if (g_runtime) {
-            const auto response = g_runtime->dispatchCommandText("reload-config");
-            const auto result = applyActions(response);
-            hypreact_runtime_free_action_result(response);
-            if (!result.success) {
-                std::cerr << "[hypreact] reload-config dispatch failed: " << result.error << std::endl;
-            }
-        }
         loadLayoutRuntimeConfig();
         Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
         resyncAll();
@@ -957,6 +1092,68 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
             }
         }
         hypreact_runtime_free_layout_status_result(layout);
+        return stringify(response);
+    }
+
+    if (command == "debug-layout") {
+        loadLayoutRuntimeConfig();
+        const auto layout = g_runtime->layoutStatusResult();
+        Json::Value response;
+        response["ok"] = true;
+        response["data"]["loaded"] = layout.loaded;
+        if (layout.config_path != nullptr) {
+            response["data"]["configPath"] = layout.config_path;
+        }
+        if (layout.selected_layout_name != nullptr) {
+            response["data"]["selectedLayoutName"] = layout.selected_layout_name;
+        }
+        if (layout.error != nullptr) {
+            response["data"]["error"] = layout.error;
+        }
+        for (size_t i = 0; i < layout.workspace_name_count; ++i) {
+            if (layout.workspace_names[i] != nullptr) {
+                response["data"]["workspaceNames"].append(layout.workspace_names[i]);
+            }
+        }
+
+        const auto placement = g_runtime->layoutPlacement();
+        for (size_t i = 0; i < placement.geometry_count; ++i) {
+            Json::Value geometry;
+            if (placement.geometries[i].window_id != nullptr) {
+                geometry["windowId"] = placement.geometries[i].window_id;
+            }
+            geometry["x"] = placement.geometries[i].x;
+            geometry["y"] = placement.geometries[i].y;
+            geometry["width"] = placement.geometries[i].width;
+            geometry["height"] = placement.geometries[i].height;
+            response["data"]["placement"].append(geometry);
+        }
+        hypreact_runtime_free_placement_result(placement);
+        hypreact_runtime_free_layout_status_result(layout);
+        return stringify(response);
+    }
+
+    if (command.rfind("debug-layout-workspace ", 0) == 0) {
+        loadLayoutRuntimeConfig();
+        const auto workspaceId = trim(command.substr(std::string("debug-layout-workspace ").size()));
+        Json::Value response;
+        response["ok"] = true;
+        response["data"]["workspaceId"] = workspaceId;
+
+        const auto placement = g_runtime->layoutPlacementForWorkspace(workspaceId);
+        for (size_t i = 0; i < placement.geometry_count; ++i) {
+            Json::Value geometry;
+            if (placement.geometries[i].window_id != nullptr) {
+                geometry["windowId"] = placement.geometries[i].window_id;
+            }
+            geometry["x"] = placement.geometries[i].x;
+            geometry["y"] = placement.geometries[i].y;
+            geometry["width"] = placement.geometries[i].width;
+            geometry["height"] = placement.geometries[i].height;
+            response["data"]["placement"].append(geometry);
+        }
+
+        hypreact_runtime_free_placement_result(placement);
         return stringify(response);
     }
 
@@ -1036,6 +1233,7 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     resyncAll();
     loadLayoutRuntimeConfig();
     registerHypreactAlgorithm();
+    registerHypreactDispatchers();
     registerHooks();
 
     g_queryCommand = HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand {

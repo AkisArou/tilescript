@@ -524,3 +524,62 @@ Evaluation at end:
 - authored JSX/TSX layouts and CSS still work
 - Hyprland placement/focus/swap/resize work through the FFI/plugin path
 - there is no standalone compositor or CLI product left in scope
+
+## Focus Parity Plan
+
+Goal:
+
+- match `spiders-wm` directional focus behavior in `hypreact`
+- keep all focus business logic in Rust
+- keep FFI and the Hyprland plugin as thin adapters
+- do not reintroduce generic WM/runtime compatibility layers
+
+Observed state:
+
+- `hypreact` already has the same core `FocusTree`, remembered-scope memory, focus-loss fallback, and directional candidate selector as `spiders-wm`
+- the main remaining gap is runtime integration, not the core selector algorithm
+- `spiders-wm` keeps `model.focus_tree` aligned with the rendered scene/snapshot, while `hypreact` still leans too heavily on one-off geometry candidates during dispatcher queries
+
+Plan:
+
+1. Persist scene-derived focus structure in Rust
+   - make `layout-runtime` return the workspace `FocusTree` derived from the evaluated scene geometry
+   - make the `hypr-ffi` path update `model.focus_tree` with that tree for the active workspace before directional focus selection
+   - continue pruning remembered focus memory through `core::wm`
+
+2. Make directional focus use one shared Rust path
+   - keep directional selection in `core::navigation`
+   - expose only typed candidate/query entrypoints from `hypr-ffi`
+   - avoid any branch- or memory-related logic in the plugin
+
+3. Preserve workspace-local focus memory semantics
+   - ensure remembered scope focus is updated only from workspace-local rendered trees
+   - make sure switching workspaces keeps each workspace’s focus memory coherent through the shared model
+
+4. Align focus-loss behavior with `spiders-wm`
+   - validate close/unmap fallback behavior on active workspace
+   - keep same-scope remembered fallback ahead of workspace-wide fallback
+   - add missing tests only where behavior is currently unverified in `hypreact`
+
+5. Align move-direction behavior with focus-direction behavior
+   - reuse the same directional candidate source for `movewindow`
+   - keep the actual order mutation in `core::wm`
+   - keep the plugin responsible only for syncing Hyprland state and triggering recalculation
+
+6. Validate parity with authored layouts that stress remembered focus
+   - master-stack with multiple stack children
+   - nested vertical/horizontal groups
+   - wrap behavior at branch edges
+   - focus recovery after close/unmap
+
+Execution order:
+
+- first: persist scene-derived `FocusTree` into the active Rust model
+- second: add targeted parity tests around remembered directional focus and focus-loss fallback
+- third: audit `movewindow` to use the same directional candidate source cleanly
+
+Non-goals for this plan:
+
+- reintroducing seats/hovered/interacted abstractions from `spiders-wm`
+- adding a generic WM runtime layer
+- moving focus policy into FFI or the C++ plugin

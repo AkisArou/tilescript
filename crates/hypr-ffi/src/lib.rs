@@ -10,9 +10,9 @@ use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
 use hypreact_core::query::state_snapshot_for_model;
 
-use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi, wm_command_from_text};
+use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
 use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
-use layout::{layout_focus_candidate, layout_runtime_placement, layout_runtime_status, load_layout_config, reload_layout_config};
+use layout::{layout_focus_candidate, layout_runtime_placement, layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config, reload_layout_config};
 use response::{FfiError, response_ok};
 pub use types::{HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult, HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle, HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync};
 use types::StatusResult;
@@ -49,22 +49,6 @@ pub unsafe extern "C" fn hypreact_runtime_dispatch_command(
 
         let command = unsafe { &*command };
         let command = wm_command_from_ffi(command)?;
-        action_result(dispatch_wm_command(command))
-    })) {
-        Ok(Ok(result)) => result,
-        Ok(Err(error)) => error_action_result(error),
-        Err(_) => error_action_result(FfiError::Panic),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_dispatch_command_text(
-    handle: *mut HypreactRuntimeHandle,
-    command_text: *const std::ffi::c_char,
-) -> HypreactActionResult {
-    match catch_unwind(AssertUnwindSafe(|| {
-        let _ = ffi_handle_mut(handle)?;
-        let command = wm_command_from_text(cstr_to_str(command_text)?)?;
         action_result(dispatch_wm_command(command))
     })) {
         Ok(Ok(result)) => result,
@@ -290,6 +274,24 @@ pub extern "C" fn hypreact_runtime_layout_placement(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_layout_placement_for_workspace(
+    handle: *mut HypreactRuntimeHandle,
+    workspace_id: *const std::ffi::c_char,
+) -> HypreactPlacementResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        let workspace_id = cstr_to_str(workspace_id)?;
+        placement_result(layout_runtime_placement_for_workspace(handle, workspace_id))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) | Err(_) => HypreactPlacementResult {
+            geometries: std::ptr::null_mut(),
+            geometry_count: 0,
+        },
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn hypreact_runtime_layout_focus_candidate(
     handle: *mut HypreactRuntimeHandle,
     direction: *const std::ffi::c_char,
@@ -318,6 +320,25 @@ pub extern "C" fn hypreact_runtime_layout_swap_candidate(
         Ok(Err(_)) | Err(_) => HypreactStringResult {
             value: std::ptr::null_mut(),
         },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_move_tiled_window(
+    handle: *mut HypreactRuntimeHandle,
+    first_window_id: *const std::ffi::c_char,
+    second_window_id: *const std::ffi::c_char,
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        let first_window_id = hypreact_core::WindowId::from(cstr_to_str(first_window_id)?.to_string());
+        let second_window_id = hypreact_core::WindowId::from(cstr_to_str(second_window_id)?.to_string());
+        let changed = handle.model.move_tiled_window(&first_window_id, &second_window_id);
+        status_result(StatusResult { changed })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
     }
 }
 

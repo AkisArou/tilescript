@@ -10,11 +10,22 @@ pub fn state_snapshot_for_model(model: &WmModel) -> StateSnapshot {
         .values()
         .map(|workspace| workspace_snapshot(model, workspace))
         .collect();
-    let windows: Vec<WindowSnapshot> = model
+    let mut windows: Vec<WindowSnapshot> = model
         .windows
         .values()
         .map(|window| window_snapshot(model, window))
         .collect();
+
+    let ordered_window_ids = model
+        .current_workspace_id()
+        .map(|workspace_id| model.ordered_window_ids_for_workspace(workspace_id))
+        .unwrap_or_default();
+    windows.sort_by_key(|window| {
+        ordered_window_ids
+            .iter()
+            .position(|window_id| window_id == &window.id)
+            .unwrap_or(ordered_window_ids.len())
+    });
     let visible_window_ids = model.visible_window_ids();
 
     StateSnapshot {

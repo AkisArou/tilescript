@@ -72,14 +72,13 @@ enum HypreactCommandKind {
     HYPREACT_COMMAND_FOCUS_DIRECTION = 11,
     HYPREACT_COMMAND_SWAP_DIRECTION = 12,
     HYPREACT_COMMAND_RESIZE_DIRECTION = 13,
-    HYPREACT_COMMAND_RESIZE_TILED_DIRECTION = 14,
-    HYPREACT_COMMAND_MOVE_DIRECTION = 15,
-    HYPREACT_COMMAND_FOCUS_NEXT_WINDOW = 16,
-    HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW = 17,
-    HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE = 18,
-    HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE = 19,
-    HYPREACT_COMMAND_SELECT_WORKSPACE = 20,
-    HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW = 21,
+    HYPREACT_COMMAND_MOVE_DIRECTION = 14,
+    HYPREACT_COMMAND_FOCUS_NEXT_WINDOW = 15,
+    HYPREACT_COMMAND_FOCUS_PREVIOUS_WINDOW = 16,
+    HYPREACT_COMMAND_SELECT_NEXT_WORKSPACE = 17,
+    HYPREACT_COMMAND_SELECT_PREVIOUS_WORKSPACE = 18,
+    HYPREACT_COMMAND_SELECT_WORKSPACE = 19,
+    HYPREACT_COMMAND_CLOSE_FOCUSED_WINDOW = 20,
 };
 
 struct HypreactCommandInput {
@@ -108,8 +107,7 @@ enum HypreactActionKind {
     HYPREACT_ACTION_SWAP_DIRECTION = 13,
     HYPREACT_ACTION_MOVE_DIRECTION = 14,
     HYPREACT_ACTION_RESIZE_DIRECTION = 15,
-    HYPREACT_ACTION_RESIZE_TILED_DIRECTION = 16,
-    HYPREACT_ACTION_CLOSE_FOCUSED_WINDOW = 17,
+    HYPREACT_ACTION_CLOSE_FOCUSED_WINDOW = 16,
 };
 
 struct HypreactAction {
@@ -153,7 +151,6 @@ HypreactRuntimeHandle* hypreact_runtime_new();
 void hypreact_runtime_free(HypreactRuntimeHandle* handle);
 
 HypreactActionResult hypreact_runtime_dispatch_command(HypreactRuntimeHandle* handle, const HypreactCommandInput* command);
-HypreactActionResult hypreact_runtime_dispatch_command_text(HypreactRuntimeHandle* handle, const char* command_text);
 char* hypreact_runtime_reset_state(HypreactRuntimeHandle* handle);
 char* hypreact_runtime_upsert_output(
     HypreactRuntimeHandle* handle,
@@ -177,8 +174,17 @@ char* hypreact_runtime_upsert_window(
 HypreactStatusResult hypreact_runtime_load_layout_config_result(HypreactRuntimeHandle* handle, const char* config_path);
 HypreactStatusResult hypreact_runtime_reload_layout_config_result(HypreactRuntimeHandle* handle);
 HypreactPlacementResult hypreact_runtime_layout_placement(HypreactRuntimeHandle* handle);
+HypreactPlacementResult hypreact_runtime_layout_placement_for_workspace(
+    HypreactRuntimeHandle* handle,
+    const char* workspace_id
+);
 HypreactStringResult hypreact_runtime_layout_focus_candidate(HypreactRuntimeHandle* handle, const char* direction);
 HypreactStringResult hypreact_runtime_layout_swap_candidate(HypreactRuntimeHandle* handle, const char* direction);
+HypreactStatusResult hypreact_runtime_move_tiled_window(
+    HypreactRuntimeHandle* handle,
+    const char* first_window_id,
+    const char* second_window_id
+);
 char* hypreact_runtime_state(HypreactRuntimeHandle* handle);
 HypreactStateResult hypreact_runtime_state_result(HypreactRuntimeHandle* handle);
 HypreactLayoutStatusResult hypreact_runtime_layout_status_result(HypreactRuntimeHandle* handle);

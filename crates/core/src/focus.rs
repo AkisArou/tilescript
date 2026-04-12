@@ -827,4 +827,72 @@ mod tests {
         assert_eq!(update, FocusUpdate::Set(Some(window_id(1))));
         assert_eq!(model.focused_window_id, Some(window_id(1)));
     }
+
+    #[test]
+    fn workspace_remembered_focus_is_preserved_across_workspace_switches() {
+        let mut model = WmModel::default();
+
+        for workspace in ["1", "2"] {
+            model.upsert_workspace(WorkspaceId::from(workspace), workspace.to_string());
+        }
+
+        for id in [1, 2] {
+            model.insert_window(window_id(id), Some(WorkspaceId::from("1")), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        model.set_current_workspace(WorkspaceId::from("1"));
+        model.set_focus_tree(Some(&flat_root(&[1, 2])));
+        model.set_window_focused(Some(window_id(1)));
+        model.set_window_focused(Some(window_id(2)));
+
+        model.set_current_workspace(WorkspaceId::from("2"));
+        model.set_current_workspace(WorkspaceId::from("1"));
+
+        assert_eq!(
+            model.remembered_focus_for_scope(&FocusTree::workspace_scope()),
+            Some(&window_id(2))
+        );
+        assert_eq!(model.preferred_focusable_window_id(), Some(window_id(2)));
+    }
+
+    #[test]
+    fn unmapping_focused_window_prefers_same_scope_memory_in_scene_derived_tree() {
+        let mut model = WmModel::default();
+        let workspace_id = WorkspaceId::from("1");
+
+        for id in [1, 2, 3, 4] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        model.set_current_workspace(workspace_id);
+        model.set_focus_tree_value(Some(FocusTree::from_window_geometries(&[
+            FocusTreeWindowGeometry {
+                window_id: window_id(1),
+                geometry: WindowGeometry { x: 0, y: 0, width: 600, height: 900 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: window_id(2),
+                geometry: WindowGeometry { x: 600, y: 0, width: 300, height: 300 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: window_id(3),
+                geometry: WindowGeometry { x: 600, y: 300, width: 300, height: 300 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: window_id(4),
+                geometry: WindowGeometry { x: 600, y: 600, width: 300, height: 300 },
+            },
+        ])));
+
+        model.set_window_focused(Some(window_id(1)));
+        model.set_window_focused(Some(window_id(4)));
+        model.set_window_focused(Some(window_id(3)));
+
+        let update = unmap_window(&mut model, window_id(3), Vec::new());
+
+        assert_eq!(update, FocusUpdate::Set(Some(window_id(4))));
+        assert_eq!(model.focused_window_id, Some(window_id(4)));
+    }
 }
