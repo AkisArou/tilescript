@@ -65,6 +65,10 @@ class Runtime {
         return take(hypreact_runtime_focus_window(handle_, windowId ? windowId->c_str() : nullptr));
     }
 
+    [[nodiscard]] std::string setWindowClosing(const std::string& windowId, bool closing) const {
+        return take(hypreact_runtime_set_window_closing(handle_, windowId.c_str(), closing));
+    }
+
     [[nodiscard]] std::string removeWindow(const std::string& windowId) const {
         return take(hypreact_runtime_remove_window(handle_, windowId.c_str()));
     }
@@ -95,6 +99,17 @@ class Runtime {
 
     [[nodiscard]] std::optional<std::string> layoutFocusCandidate(const std::string& direction) const {
         const auto result = hypreact_runtime_layout_focus_candidate(handle_, direction.c_str());
+        if (result.value == nullptr) {
+            return std::nullopt;
+        }
+
+        std::string value(result.value);
+        hypreact_string_free(result.value);
+        return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
+    }
+
+    [[nodiscard]] std::optional<std::string> layoutCloseFocusCandidate(const std::string& windowId) const {
+        const auto result = hypreact_runtime_layout_close_focus_candidate(handle_, windowId.c_str());
         if (result.value == nullptr) {
             return std::nullopt;
         }
@@ -509,43 +524,24 @@ class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
             return old;
         }
 
-        const auto placement = g_runtime->layoutPlacementForWorkspace(workspaceName(workspace));
-        if (placement.geometry_count == 0 || placement.geometries == nullptr) {
+        const auto candidateId = g_runtime->layoutCloseFocusCandidate(makeWindowId(old->window()));
+        if (!candidateId.has_value()) {
             return old;
         }
 
-        const auto currentId = makeWindowId(old->window());
-        size_t currentIndex = placement.geometry_count;
-        for (size_t i = 0; i < placement.geometry_count; ++i) {
-            const auto windowId = placement.geometries[i].window_id;
-            if (windowId != nullptr && currentId == windowId) {
-                currentIndex = i;
-                break;
-            }
-        }
-
-        for (size_t step = 1; step <= placement.geometry_count; ++step) {
-            const auto candidateIndex = currentIndex < placement.geometry_count ? (currentIndex + step) % placement.geometry_count : step - 1;
-            const auto candidateId = placement.geometries[candidateIndex].window_id;
-            if (candidateId == nullptr) {
+        for (const auto& weakTarget : space->targets()) {
+            const auto target = weakTarget.lock();
+            if (!target || target->floating() || !target->window()) {
                 continue;
             }
-            for (const auto& weakTarget : space->targets()) {
-                const auto target = weakTarget.lock();
-                if (!target || target->floating() || !target->window()) {
-                    continue;
-                }
-                if (target->window()->m_workspace != workspace) {
-                    continue;
-                }
-                if (makeWindowId(target->window()) == candidateId) {
-                    hypreact_runtime_free_placement_result(placement);
-                    return target;
-                }
+            if (target->window()->m_workspace != workspace) {
+                continue;
+            }
+            if (makeWindowId(target->window()) == *candidateId) {
+                return target;
             }
         }
 
-        hypreact_runtime_free_placement_result(placement);
         return old;
     }
 };
@@ -841,12 +837,30 @@ void syncFocusedWindow(const PHLWINDOW& window) {
     logSyncResponse(g_runtime->focusWindow(window ? std::optional<std::string>(makeWindowId(window)) : std::nullopt));
 }
 
+void markWindowClosing(const PHLWINDOW& window, bool closing) {
+    if (!window || !g_runtime) {
+        return;
+    }
+
+    logSyncResponse(g_runtime->setWindowClosing(makeWindowId(window), closing));
+    queueWorkspaceRecalculate(window->m_workspace);
+}
+
 void removeWindow(const PHLWINDOW& window) {
     if (!window || !g_runtime) {
         return;
     }
 
-    logSyncResponse(g_runtime->removeWindow(makeWindowId(window)));
+    const auto workspace = window->m_workspace;
+    const auto response = g_runtime->removeWindow(makeWindowId(window));
+    logSyncResponse(response);
+    if (workspace) {
+        queueWorkspaceRecalculate(workspace);
+    }
+    if (const auto parsed = parseJson(response)) {
+        const auto focusedWindowId = (*parsed)["data"]["focusedWindowId"].asString();
+        (void)focusedWindowId;
+    }
     forgetWindowId(window);
 }
 
@@ -1050,7 +1064,7 @@ void registerHooks() {
     }));
 
     g_listeners.push_back(events.window.close.listen([](PHLWINDOW window) {
-        removeWindow(window);
+        markWindowClosing(window, true);
     }));
 
     g_listeners.push_back(events.window.destroy.listen([](PHLWINDOW window) {

@@ -1,4 +1,5 @@
 use hypreact_config::model::Config;
+use hypreact_core::focus::remove_window as remove_window_with_focus;
 use hypreact_core::OutputId;
 use hypreact_core::navigation::{NavigationDirection, select_directional_focus_candidate};
 use hypreact_core::query::state_snapshot_for_model;
@@ -260,6 +261,25 @@ pub fn layout_focus_candidate(
         handle.model.focus_tree.as_ref(),
     )
     .map(|window_id| window_id.to_string()))
+}
+
+pub fn layout_close_focus_candidate(
+    handle: &mut HypreactRuntimeHandle,
+    window_id: &str,
+) -> Result<Option<String>, FfiError> {
+    let window_id = hypreact_core::WindowId::from(window_id.to_string());
+    if !handle.model.windows.contains_key(&window_id) {
+        return Ok(None);
+    }
+
+    let mut model = handle.model.clone();
+    let update = remove_window_with_focus(&mut model, window_id, Vec::new());
+    let candidate = match update {
+        hypreact_core::focus::FocusUpdate::Set(window_id) => window_id,
+        hypreact_core::focus::FocusUpdate::Unchanged => None,
+    };
+
+    Ok(candidate.map(|window_id| window_id.to_string()))
 }
 
 fn apply_layout_selection_to_model(model: &mut WmModel, config: &Config) {

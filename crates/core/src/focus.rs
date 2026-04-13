@@ -529,18 +529,20 @@ fn preferred_focus_from_order(
     if let Some(lost_index) =
         ordered_window_ids.iter().position(|window_id| window_id == lost_window_id)
     {
-        for window_id in ordered_window_ids
-            .iter()
-            .skip(lost_index + 1)
-            .chain(ordered_window_ids.iter().take(lost_index))
-        {
+        for window_id in ordered_window_ids.iter().skip(lost_index + 1) {
+            if window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id) {
+                return Some(window_id.clone());
+            }
+        }
+
+        for window_id in ordered_window_ids.iter().take(lost_index).rev() {
             if window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id) {
                 return Some(window_id.clone());
             }
         }
     }
 
-    focusable_candidates.last().cloned()
+    focusable_candidates.first().cloned()
 }
 
 #[cfg(test)]
@@ -649,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn removing_focused_window_selects_latest_remaining_window() {
+    fn removing_focused_window_prefers_next_then_previous_without_wrap() {
         let mut model = WmModel::default();
         model.insert_window(window_id(1), None, None);
         model.insert_window(window_id(2), None, None);
@@ -670,6 +672,28 @@ mod tests {
         assert_eq!(model.focused_window_id, Some(window_id(3)));
         assert_eq!(model.windows.get(&window_id(1)).map(|window| window.focused), Some(false));
         assert_eq!(model.windows.get(&window_id(3)).map(|window| window.focused), Some(true));
+    }
+
+    #[test]
+    fn removing_last_window_in_scope_falls_back_to_previous_neighbor() {
+        let mut model = WmModel::default();
+        model.insert_window(window_id(1), None, None);
+        model.insert_window(window_id(2), None, None);
+        model.insert_window(window_id(3), None, None);
+        model.set_current_workspace(WorkspaceId::from("1"));
+        model.set_window_workspace(window_id(1), Some(WorkspaceId::from("1")));
+        model.set_window_workspace(window_id(2), Some(WorkspaceId::from("1")));
+        model.set_window_workspace(window_id(3), Some(WorkspaceId::from("1")));
+        model.set_window_mapped(window_id(1), true);
+        model.set_window_mapped(window_id(2), true);
+        model.set_window_mapped(window_id(3), true);
+        model.set_focus_tree(Some(&flat_root(&[1, 2, 3])));
+        model.set_window_focused(Some(window_id(3)));
+
+        let update = remove_window(&mut model, window_id(3), Vec::new());
+
+        assert_eq!(update, FocusUpdate::Set(Some(window_id(2))));
+        assert_eq!(model.focused_window_id, Some(window_id(2)));
     }
 
     #[test]

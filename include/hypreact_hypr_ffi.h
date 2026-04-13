@@ -179,6 +179,11 @@ char* hypreact_runtime_focus_window(
     HypreactRuntimeHandle* handle,
     const char* window_id
 );
+char* hypreact_runtime_set_window_closing(
+    HypreactRuntimeHandle* handle,
+    const char* window_id,
+    bool closing
+);
 char* hypreact_runtime_remove_window(HypreactRuntimeHandle* handle, const char* window_id);
 char* hypreact_runtime_upsert_window(
     HypreactRuntimeHandle* handle,
@@ -192,6 +197,7 @@ HypreactPlacementResult hypreact_runtime_layout_placement_for_workspace(
     const char* workspace_id
 );
 HypreactStringResult hypreact_runtime_layout_focus_candidate(HypreactRuntimeHandle* handle, const char* direction);
+HypreactStringResult hypreact_runtime_layout_close_focus_candidate(HypreactRuntimeHandle* handle, const char* window_id);
 HypreactStringResult hypreact_runtime_layout_swap_candidate(HypreactRuntimeHandle* handle, const char* direction);
 HypreactStatusResult hypreact_runtime_move_tiled_window(
     HypreactRuntimeHandle* handle,

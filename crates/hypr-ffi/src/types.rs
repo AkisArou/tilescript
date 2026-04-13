@@ -57,6 +57,8 @@ pub struct HypreactWorkspaceLayoutSpaceSync {
 #[serde(rename_all = "camelCase")]
 pub struct StatusResult {
     pub changed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused_window_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
