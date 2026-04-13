@@ -1,18 +1,18 @@
 use hypreact_config::model::Config;
 use hypreact_config::runtime::AuthoringConfigRuntime;
+use hypreact_core::SourceLayoutNode;
 use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
 use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
 use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
 use hypreact_core::runtime::runtime_error::RuntimeError;
-use hypreact_core::SourceLayoutNode;
 use hypreact_scene::ast::LayoutValidationError;
 use tracing::{debug, warn};
 
 use crate::loader::{InlineLayoutSourceLoader, JsLayoutSourceLoader};
 use crate::module_graph_runtime::call_entry_export_with_json_arg;
 use crate::{
-    decode_js_layout_value, decode_runtime_graph_payload, encode_runtime_graph_payload,
-    JavaScriptModule, JavaScriptModuleGraph,
+    JavaScriptModule, JavaScriptModuleGraph, decode_js_layout_value, decode_runtime_graph_payload,
+    encode_runtime_graph_payload,
 };
 
 #[cfg(test)]
@@ -45,10 +45,7 @@ pub struct QuickJsPreparedLayoutRuntime<L = InlineLayoutSourceLoader> {
 
 impl Default for QuickJsPreparedLayoutRuntime<InlineLayoutSourceLoader> {
     fn default() -> Self {
-        Self {
-            contract: LayoutModuleContract::default(),
-            loader: InlineLayoutSourceLoader,
-        }
+        Self { contract: LayoutModuleContract::default(), loader: InlineLayoutSourceLoader }
     }
 }
 
@@ -60,10 +57,7 @@ impl QuickJsPreparedLayoutRuntime<InlineLayoutSourceLoader> {
 
 impl<L> QuickJsPreparedLayoutRuntime<L> {
     pub fn with_loader(loader: L) -> Self {
-        Self {
-            contract: LayoutModuleContract::default(),
-            loader,
-        }
+        Self { contract: LayoutModuleContract::default(), loader }
     }
 
     pub fn evaluate_module_source(
@@ -93,9 +87,7 @@ impl<L> QuickJsPreparedLayoutRuntime<L> {
         graph: &JavaScriptModuleGraph,
     ) -> Result<SourceLayoutNode, PreparedLayoutRuntimeError> {
         let context_value = serde_json::to_value(context).map_err(|error| {
-            PreparedLayoutRuntimeError::JavaScript {
-                message: error.to_string(),
-            }
+            PreparedLayoutRuntimeError::JavaScript { message: error.to_string() }
         })?;
 
         let json = call_entry_export_with_json_arg(
@@ -161,9 +153,7 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         Ok(config
             .resolve_selected_layout(workspace)
-            .map_err(|error| RuntimeError::Config {
-                message: error.to_string(),
-            })?
+            .map_err(|error| RuntimeError::Config { message: error.to_string() })?
             .map(|selected| PreparedLayout {
                 selected,
                 runtime_payload: encode_runtime_graph_payload(&JavaScriptModuleGraph {
@@ -181,10 +171,7 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
         workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
         artifact: Option<&PreparedLayout>,
     ) -> LayoutEvaluationContext {
-        state.layout_context(
-            workspace,
-            artifact.map(|artifact| artifact.selected.clone()),
-        )
+        state.layout_context(workspace, artifact.map(|artifact| artifact.selected.clone()))
     }
 
     fn evaluate_layout(
@@ -192,10 +179,7 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
         loaded_layout: &PreparedLayout,
         _context: &LayoutEvaluationContext,
     ) -> Result<SourceLayoutNode, RuntimeError> {
-        Err(RuntimeError::NotImplemented(format!(
-            "layout {}",
-            loaded_layout.selected.name
-        )))
+        Err(RuntimeError::NotImplemented(format!("layout {}", loaded_layout.selected.name)))
     }
 
     fn contract(&self) -> LayoutModuleContract {
@@ -220,10 +204,7 @@ impl<L: JsLayoutSourceLoader> PreparedLayoutRuntime for QuickJsPreparedLayoutRun
         workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
         artifact: Option<&PreparedLayout>,
     ) -> LayoutEvaluationContext {
-        state.layout_context(
-            workspace,
-            artifact.map(|artifact| artifact.selected.clone()),
-        )
+        state.layout_context(workspace, artifact.map(|artifact| artifact.selected.clone()))
     }
 
     fn evaluate_layout(
@@ -239,9 +220,7 @@ impl<L: JsLayoutSourceLoader> PreparedLayoutRuntime for QuickJsPreparedLayoutRun
             warn!(layout = %loaded_layout.selected.name, module = %loaded_layout.selected.module, %error, "layout evaluation failed");
         }
 
-        result.map_err(|error| RuntimeError::Other {
-            message: error.to_string(),
-        })
+        result.map_err(|error| RuntimeError::Other { message: error.to_string() })
     }
 
     fn contract(&self) -> LayoutModuleContract {
@@ -256,9 +235,7 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         if let Err(error) = &result {
             warn!(path = %path.display(), %error, "failed loading authored config");
         }
-        result.map_err(|error| RuntimeError::Config {
-            message: error.to_string(),
-        })
+        result.map_err(|error| RuntimeError::Config { message: error.to_string() })
     }
 
     fn load_prepared_config(&self, path: &std::path::Path) -> Result<Config, RuntimeError> {
@@ -267,9 +244,7 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         if let Err(error) = &result {
             warn!(path = %path.display(), %error, "failed loading prepared config");
         }
-        result.map_err(|error| RuntimeError::Config {
-            message: error.to_string(),
-        })
+        result.map_err(|error| RuntimeError::Config { message: error.to_string() })
     }
 
     fn refresh_prepared_config(
@@ -280,9 +255,7 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         debug!(authored = %authored.display(), runtime = %runtime.display(), "refreshing prepared config");
         crate::authored::refresh_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
-            .map_err(|error| RuntimeError::Config {
-                message: error.to_string(),
-            })
+            .map_err(|error| RuntimeError::Config { message: error.to_string() })
     }
 
     fn rebuild_prepared_config(
@@ -293,23 +266,17 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         debug!(authored = %authored.display(), runtime = %runtime.display(), "rebuilding prepared config");
         crate::authored::rebuild_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
-            .map_err(|error| RuntimeError::Config {
-                message: error.to_string(),
-            })
+            .map_err(|error| RuntimeError::Config { message: error.to_string() })
     }
 }
 
 impl AuthoringConfigRuntime for StubPreparedLayoutRuntime {
     fn load_authored_config(&self, _path: &std::path::Path) -> Result<Config, RuntimeError> {
-        Err(RuntimeError::NotImplemented(
-            "authored config loading".into(),
-        ))
+        Err(RuntimeError::NotImplemented("authored config loading".into()))
     }
 
     fn load_prepared_config(&self, _path: &std::path::Path) -> Result<Config, RuntimeError> {
-        Err(RuntimeError::NotImplemented(
-            "runtime config loading".into(),
-        ))
+        Err(RuntimeError::NotImplemented("runtime config loading".into()))
     }
 
     fn refresh_prepared_config(
@@ -317,9 +284,7 @@ impl AuthoringConfigRuntime for StubPreparedLayoutRuntime {
         _authored: &std::path::Path,
         _runtime: &std::path::Path,
     ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
-        Err(RuntimeError::NotImplemented(
-            "prepared config refresh".into(),
-        ))
+        Err(RuntimeError::NotImplemented("prepared config refresh".into()))
     }
 
     fn rebuild_prepared_config(
@@ -327,9 +292,7 @@ impl AuthoringConfigRuntime for StubPreparedLayoutRuntime {
         _authored: &std::path::Path,
         _runtime: &std::path::Path,
     ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
-        Err(RuntimeError::NotImplemented(
-            "prepared config rebuild".into(),
-        ))
+        Err(RuntimeError::NotImplemented("prepared config rebuild".into()))
     }
 }
 
@@ -348,7 +311,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crate::{decode_runtime_graph_payload, JavaScriptModule, JavaScriptModuleGraph};
+    use crate::{JavaScriptModule, JavaScriptModuleGraph, decode_runtime_graph_payload};
     use hypreact_config::model::{Config, LayoutDefinition};
     use hypreact_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
     use hypreact_core::types::LayoutRef;
@@ -368,9 +331,7 @@ mod tests {
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(LayoutRef {
-                name: "master-stack".into(),
-            }),
+            effective_layout: Some(LayoutRef { name: "master-stack".into() }),
         }
     }
 
@@ -443,10 +404,7 @@ mod tests {
         };
         assert_eq!(meta.id.as_deref(), Some("root"));
 
-        let SourceLayoutNode::Group {
-            meta: group_meta,
-            children: group_children,
-        } = &children[0]
+        let SourceLayoutNode::Group { meta: group_meta, children: group_children } = &children[0]
         else {
             panic!("expected frame group");
         };
@@ -482,10 +440,7 @@ mod tests {
             ..Config::default()
         };
 
-        let loaded = runtime
-            .prepare_layout(&config, &workspace())
-            .unwrap()
-            .unwrap();
+        let loaded = runtime.prepare_layout(&config, &workspace()).unwrap().unwrap();
         let layout = runtime
             .evaluate_layout(
                 &loaded,
@@ -532,13 +487,10 @@ mod tests {
     #[test]
     fn prepared_test_config_master_stack_layout_evaluates() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/test_config/config.ts");
+        let authored_config = repo_root.join("test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         let runtime_entry = runtime_root.join("config.js");
 
@@ -547,22 +499,16 @@ mod tests {
         let config = load_prepared_config(&runtime_entry).unwrap();
         let runtime = QuickJsPreparedLayoutRuntime::with_loader(FsLayoutSourceLoader);
         let workspace = WorkspaceSnapshot {
-            effective_layout: Some(LayoutRef {
-                name: "master-stack".into(),
-            }),
+            effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             ..workspace()
         };
 
-        let loaded = runtime
-            .prepare_layout(&config, &workspace)
-            .unwrap()
-            .unwrap();
+        let loaded = runtime.prepare_layout(&config, &workspace).unwrap().unwrap();
         let graph = decode_runtime_graph_payload(&loaded.runtime_payload).unwrap();
 
-        assert!(graph
-            .modules
-            .iter()
-            .any(|module| { module.specifier == "@hypreact/sdk/jsx-runtime" }));
+        assert!(
+            graph.modules.iter().any(|module| { module.specifier == "@hypreact/sdk/jsx-runtime" })
+        );
 
         let layout = runtime.evaluate_layout(
             &loaded,
@@ -575,13 +521,10 @@ mod tests {
     #[test]
     fn checked_in_prepared_test_config_master_stack_layout_evaluates() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/test_config/config.ts");
+        let authored_config = repo_root.join("test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-checked-in-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         let prepared_config = runtime_root.join("config.js");
         fs::create_dir_all(&runtime_root).unwrap();
@@ -589,22 +532,16 @@ mod tests {
         let config = load_prepared_config(&prepared_config).unwrap();
         let runtime = QuickJsPreparedLayoutRuntime::with_loader(FsLayoutSourceLoader);
         let workspace = WorkspaceSnapshot {
-            effective_layout: Some(LayoutRef {
-                name: "master-stack".into(),
-            }),
+            effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             ..workspace()
         };
 
-        let loaded = runtime
-            .prepare_layout(&config, &workspace)
-            .unwrap()
-            .unwrap();
+        let loaded = runtime.prepare_layout(&config, &workspace).unwrap().unwrap();
         let graph = decode_runtime_graph_payload(&loaded.runtime_payload).unwrap();
 
-        assert!(graph
-            .modules
-            .iter()
-            .any(|module| { module.specifier == "@hypreact/sdk/jsx-runtime" }));
+        assert!(
+            graph.modules.iter().any(|module| { module.specifier == "@hypreact/sdk/jsx-runtime" })
+        );
 
         let layout = runtime.evaluate_layout(
             &loaded,
@@ -617,13 +554,10 @@ mod tests {
     #[test]
     fn prepared_template_config_loads() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/test_config/config.ts");
+        let authored_config = repo_root.join("test_config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-template-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         let runtime_entry = runtime_root.join("config.js");
 

@@ -1,0 +1,73 @@
+{
+  "name": "hypreact-css-lsp-vscode",
+  "displayName": "Hypreact CSS",
+  "description": "VS Code client for the hypreact CSS language server.",
+  "version": "0.0.0",
+  "publisher": "hypreact",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AkisArou/hypreact.git"
+  },
+  "main": "./dist/extension.js",
+  "types": "./dist/extension.d.ts",
+  "license": "BSD-3-Clause",
+  "icon": "./media/icon.png",
+  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "activationEvents": [
+    "workspaceContains:config.tsx",
+    "workspaceContains:config.ts",
+    "workspaceContains:config.jsx",
+    "workspaceContains:config.js",
+    "onCommand:hypreactCss.restartServer"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "hypreactCss.restartServer",
+        "title": "Hypreact CSS: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Hypreact CSS",
+      "properties": {
+        "hypreactCss.enable": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "Enable the hypreact CSS language server for this workspace. This extension stays disabled by default."
+        },
+        "hypreactCss.server.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the `hypreact-css-lsp` binary. When empty, the extension first tries a bundled platform binary and then common workspace-relative development paths."
+        },
+        "hypreactCss.server.trace": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "markdownDescription": "LSP trace level for the hypreact CSS language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit false",
+    "sync:icon": "bash ./scripts/sync-icon.sh",
+    "prepare:linux-x64": "bash ./scripts/bundle-linux-x64.sh",
+    "bundle:linux-x64": "pnpm run prepare:linux-x64",
+    "prepackage": "pnpm run prepare:linux-x64",
+    "package": "pnpm run build && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.6.2",
+    "tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "vscode-languageclient": "^9.0.1"
+  }
+}

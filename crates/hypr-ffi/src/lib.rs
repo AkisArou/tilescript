@@ -1,7 +1,9 @@
 mod action;
+mod bootstrap;
 mod ffi_string;
 mod layout;
 mod response;
+mod sdk;
 mod types;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -14,6 +16,7 @@ use hypreact_core::WorkspaceId;
 use hypreact_layout_runtime as runtime_facade;
 
 use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
+use bootstrap::bootstrap_config_root;
 use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
 use layout::{
     layout_close_focus_candidate, layout_focus_candidate, layout_runtime_placement,
@@ -21,6 +24,7 @@ use layout::{
     reload_layout_config,
 };
 use response::{response_ok, FfiError};
+use sdk::sync_sdk_support;
 use types::StatusResult;
 pub use types::{
     HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult,
@@ -272,6 +276,42 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_window(
             focused_window_id: None,
         })
     })))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_bootstrap_config_result(
+    config_root: *const std::ffi::c_char,
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let config_root = std::path::PathBuf::from(cstr_to_str(config_root)?);
+        let changed = bootstrap_config_root(&config_root)?;
+        status_result(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_sync_sdk_support_result(
+    config_root: *const std::ffi::c_char,
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let config_root = std::path::PathBuf::from(cstr_to_str(config_root)?);
+        let changed = sync_sdk_support(&config_root)?;
+        status_result(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]

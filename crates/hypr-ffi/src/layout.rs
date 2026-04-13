@@ -1,7 +1,7 @@
 use hypreact_core::navigation::NavigationDirection;
 use hypreact_layout_runtime::{
-    close_focus_candidate, directional_focus_candidate, layout_status_for_model,
-    placement_for_workspace, LayoutRuntimePaths, LayoutRuntimeService, LayoutStatusSnapshot,
+    LayoutRuntimePaths, LayoutRuntimeService, LayoutStatusSnapshot, close_focus_candidate,
+    directional_focus_candidate, layout_status_for_model, placement_for_workspace,
 };
 
 use crate::response::FfiError;
@@ -27,10 +27,8 @@ pub fn load_layout_config(
     ))
     .map_err(|error| FfiError::InvalidJson(error.to_string()))?;
 
-    handle.layout_runtime = Some(LayoutRuntimeState {
-        config_path: std::path::PathBuf::from(config_path),
-        service,
-    });
+    handle.layout_runtime =
+        Some(LayoutRuntimeState { config_path: std::path::PathBuf::from(config_path), service });
 
     Ok(layout_runtime_status(handle))
 }
@@ -127,11 +125,7 @@ pub fn layout_focus_candidate(
         "right" => NavigationDirection::Right,
         "up" => NavigationDirection::Up,
         "down" => NavigationDirection::Down,
-        other => {
-            return Err(FfiError::InvalidJson(format!(
-                "unknown focus direction: {other}"
-            )))
-        }
+        other => return Err(FfiError::InvalidJson(format!("unknown focus direction: {other}"))),
     };
 
     directional_focus_candidate(&mut layout_runtime.service, &mut handle.model, direction)
@@ -205,27 +199,18 @@ mod tests {
 
         let layout = config.selected_layout_ref_for_workspace("2", Some(&OutputId::from("eDP-1")));
 
-        assert_eq!(
-            layout.map(|layout| layout.name),
-            Some("primary-stack".to_string())
-        );
+        assert_eq!(layout.map(|layout| layout.name), Some("primary-stack".to_string()));
     }
 
     #[test]
     fn layout_focus_candidate_persists_scene_focus_tree_on_model() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
-        model.upsert_output(
-            OutputId::from("eDP-1"),
-            "eDP-1".to_string(),
-            1600,
-            1000,
-            None,
-        );
+        model.upsert_output(OutputId::from("eDP-1"), "eDP-1".to_string(), 1600, 1000, None);
         model.upsert_workspace(WorkspaceId::from("1"), "1".to_string());
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_current_output(OutputId::from("eDP-1"));
@@ -245,19 +230,12 @@ mod tests {
 
         let mut handle = HypreactRuntimeHandle {
             model,
-            layout_runtime: Some(LayoutRuntimeState {
-                config_path: config_path.into(),
-                service,
-            }),
+            layout_runtime: Some(LayoutRuntimeState { config_path: config_path.into(), service }),
         };
 
         let _ = layout_focus_candidate(&mut handle, "right").expect("focus candidate query");
 
-        let focus_tree = handle
-            .model
-            .focus_tree
-            .as_ref()
-            .expect("scene-derived focus tree");
+        let focus_tree = handle.model.focus_tree.as_ref().expect("scene-derived focus tree");
         assert!(focus_tree.scope_path(&WindowId::from("master")).is_some());
         assert!(focus_tree.scope_path(&WindowId::from("stack-a")).is_some());
         assert!(focus_tree.scope_path(&WindowId::from("stack-b")).is_some());

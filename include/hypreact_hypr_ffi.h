@@ -190,6 +190,8 @@ char* hypreact_runtime_upsert_window(
     const HypreactWindowSync* window
 );
 HypreactStatusResult hypreact_runtime_load_layout_config_result(HypreactRuntimeHandle* handle, const char* config_path);
+HypreactStatusResult hypreact_runtime_bootstrap_config_result(const char* config_root);
+HypreactStatusResult hypreact_runtime_sync_sdk_support_result(const char* config_root);
 HypreactStatusResult hypreact_runtime_reload_layout_config_result(HypreactRuntimeHandle* handle);
 HypreactPlacementResult hypreact_runtime_layout_placement(HypreactRuntimeHandle* handle);
 HypreactPlacementResult hypreact_runtime_layout_placement_for_workspace(

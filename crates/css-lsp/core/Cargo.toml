@@ -1,0 +1,16 @@
+[package]
+name = "hypreact-css-lsp-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hypreact-css = { path = "../../css" }
+hypreact-runtime-js = { path = "../../runtimes/js" }
+cssparser.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+oxc.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -8,22 +8,22 @@ use hypreact_config::runtime::build_authoring_layout_service;
 use hypreact_core::focus::preferred_focus_after_removing_window;
 use hypreact_core::focus::{FocusTree, FocusTreeWindowGeometry};
 use hypreact_core::navigation::WindowGeometryCandidate;
-use hypreact_core::navigation::{select_directional_focus_candidate, NavigationDirection};
+use hypreact_core::navigation::{NavigationDirection, select_directional_focus_candidate};
 use hypreact_core::query::state_snapshot_for_model;
 use hypreact_core::resize::{
-    apply_resize_step, gc_resize_state, scale_authored_share_units, select_resize_candidate,
-    PartitionAxis, PartitionBranch, PartitionConstraints, PartitionId, PartitionNode,
-    PartitionTree, ResizeDirection, DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS,
-    MIN_BRANCH_SHARE_UNITS,
+    DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
+    PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
+    ResizeDirection, apply_resize_step, gc_resize_state, scale_authored_share_units,
+    select_resize_candidate,
 };
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
 use hypreact_runtime_js::build_runtime_bundle;
-use hypreact_scene::ast::ValidatedLayoutTree;
-use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::Display;
 use hypreact_scene::FlexDirectionValue;
+use hypreact_scene::ast::ValidatedLayoutTree;
+use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
 
 const DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX: f32 = 120.0;
@@ -37,10 +37,7 @@ struct ResizeBehaviorConfig {
 impl ResizeBehaviorConfig {
     fn from_config(config: &Config) -> Self {
         Self {
-            step_px: config
-                .resize
-                .step_px
-                .unwrap_or(DEFAULT_RESIZE_STEP_UNITS as f32 * 8.0),
+            step_px: config.resize.step_px.unwrap_or(DEFAULT_RESIZE_STEP_UNITS as f32 * 8.0),
             min_branch_main_size_px: config
                 .resize
                 .min_branch_size_px
@@ -56,9 +53,7 @@ pub struct LayoutRuntimePaths {
 
 impl LayoutRuntimePaths {
     pub fn discover(options: ConfigDiscoveryOptions) -> Result<Self, LayoutRuntimeError> {
-        Ok(Self {
-            config_paths: ConfigPaths::discover(options)?,
-        })
+        Ok(Self { config_paths: ConfigPaths::discover(options)? })
     }
 
     pub fn from_authored_config(authored_config: impl Into<PathBuf>) -> Self {
@@ -68,9 +63,7 @@ impl LayoutRuntimePaths {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".hypreact-build");
-        Self {
-            config_paths: ConfigPaths::new(authored_config, prepared_parent.join("config.js")),
-        }
+        Self { config_paths: ConfigPaths::new(authored_config, prepared_parent.join("config.js")) }
     }
 }
 
@@ -146,23 +139,17 @@ impl LayoutRuntimeService {
     }
 
     pub fn load_config(&self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
-        Ok(LoadedLayoutConfig {
-            config: self.service.load_config(&self.paths.config_paths)?,
-        })
+        Ok(LoadedLayoutConfig { config: self.service.load_config(&self.paths.config_paths)? })
     }
 
     pub fn load_authored_config(&self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
         Ok(LoadedLayoutConfig {
-            config: self
-                .service
-                .load_authored_config(&self.paths.config_paths)?,
+            config: self.service.load_authored_config(&self.paths.config_paths)?,
         })
     }
 
     pub fn reload_config(&mut self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
-        Ok(LoadedLayoutConfig {
-            config: self.service.reload_config()?,
-        })
+        Ok(LoadedLayoutConfig { config: self.service.reload_config()? })
     }
 
     pub fn evaluate_workspace(
@@ -183,9 +170,8 @@ impl LayoutRuntimeService {
         state: &StateSnapshot,
         workspace: &WorkspaceSnapshot,
     ) -> Result<Option<LayoutWorkspaceScene>, LayoutRuntimeError> {
-        let Some(evaluation) = self
-            .service
-            .evaluate_prepared_for_workspace(config, state, workspace)?
+        let Some(evaluation) =
+            self.service.evaluate_prepared_for_workspace(config, state, workspace)?
         else {
             return Ok(None);
         };
@@ -229,12 +215,12 @@ impl LayoutRuntimeService {
             resolved.root,
             &evaluation.artifact,
         )?;
-        let scene = SceneCache::new()
-            .compute_layout_from_request(&request)
-            .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
+        let scene = SceneCache::new().compute_layout_from_request(&request).map_err(|error| {
+            LayoutConfigError::EvaluateAuthoredConfig {
                 path: self.paths.config_paths.authored_config.clone(),
                 message: error.to_string(),
-            })?;
+            }
+        })?;
 
         let resize_behavior = ResizeBehaviorConfig::from_config(config);
         let window_geometries = collect_window_geometries(&scene.root);
@@ -271,14 +257,7 @@ pub fn layout_status_for_model(
     service: &mut LayoutRuntimeService,
     model: &mut WmModel,
 ) -> Result<LayoutStatusSnapshot, LayoutRuntimeError> {
-    let config_path = Some(
-        service
-            .paths()
-            .config_paths
-            .authored_config
-            .display()
-            .to_string(),
-    );
+    let config_path = Some(service.paths().config_paths.authored_config.display().to_string());
     let loaded = service.load_config()?;
 
     apply_layout_selection_to_model(model, &loaded.config);
@@ -312,14 +291,9 @@ pub fn layout_status_for_model(
                     .as_ref()
                     .map(|evaluation| evaluation.evaluation.artifact.selected.name.clone())
                     .or_else(|| {
-                        workspace
-                            .effective_layout
-                            .as_ref()
-                            .map(|layout| layout.name.clone())
+                        workspace.effective_layout.as_ref().map(|layout| layout.name.clone())
                     }),
-                layout: evaluation
-                    .as_ref()
-                    .map(|evaluation| evaluation.evaluation.layout.clone()),
+                layout: evaluation.as_ref().map(|evaluation| evaluation.evaluation.layout.clone()),
                 window_geometries: evaluation
                     .as_ref()
                     .map(|evaluation| {
@@ -358,20 +332,15 @@ pub fn placement_for_workspace(
     model: &WmModel,
     workspace_id: &str,
 ) -> Result<Vec<(hypreact_core::WindowId, WindowGeometry)>, LayoutRuntimeError> {
-    let Some(target_workspace) = model
-        .workspaces
-        .keys()
-        .find(|id| id.as_str() == workspace_id)
-        .cloned()
+    let Some(target_workspace) =
+        model.workspaces.keys().find(|id| id.as_str() == workspace_id).cloned()
     else {
         return Ok(Vec::new());
     };
 
     let mut model = model.clone();
-    let target_output = model
-        .workspaces
-        .get(&target_workspace)
-        .and_then(|workspace| workspace.output_id.clone());
+    let target_output =
+        model.workspaces.get(&target_workspace).and_then(|workspace| workspace.output_id.clone());
 
     model.set_current_workspace(target_workspace);
     if let Some(target_output) = target_output {
@@ -427,17 +396,9 @@ pub fn upsert_output(
     logical_width: u32,
     logical_height: u32,
 ) {
-    let current_workspace_id = model
-        .outputs
-        .get(&output_id)
-        .and_then(|existing| existing.focused_workspace_id.clone());
-    model.upsert_output(
-        output_id,
-        name,
-        logical_width,
-        logical_height,
-        current_workspace_id,
-    );
+    let current_workspace_id =
+        model.outputs.get(&output_id).and_then(|existing| existing.focused_workspace_id.clone());
+    model.upsert_output(output_id, name, logical_width, logical_height, current_workspace_id);
 }
 
 pub fn remove_output(model: &mut WmModel, output_id: &hypreact_core::OutputId) -> bool {
@@ -677,12 +638,7 @@ fn collect_window_geometries_inner(
     node: &LayoutSnapshotNode,
     out: &mut std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
 ) {
-    if let LayoutSnapshotNode::Window {
-        window_id: Some(window_id),
-        rect,
-        ..
-    } = node
-    {
+    if let LayoutSnapshotNode::Window { window_id: Some(window_id), rect, .. } = node {
         out.insert(
             window_id.clone(),
             WindowGeometry {
@@ -770,20 +726,11 @@ fn collect_partitions_from_scene(
     path.truncate(path_len_before_children);
 
     let descendant_window_ids = match node {
-        LayoutSnapshotNode::Window {
-            window_id: Some(window_id),
-            ..
-        } => vec![window_id.clone()],
-        _ => child_window_sets
-            .iter()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>(),
+        LayoutSnapshotNode::Window { window_id: Some(window_id), .. } => vec![window_id.clone()],
+        _ => child_window_sets.iter().flatten().cloned().collect::<Vec<_>>(),
     };
 
-    let maybe_axis = node
-        .styles()
-        .and_then(|styles| partition_axis_from_style(&styles.layout));
+    let maybe_axis = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout));
 
     if let Some(axis) = maybe_axis {
         let mut branches = node
@@ -824,8 +771,7 @@ fn collect_partitions_from_scene(
                 if let Some(existing_path) = tree.window_to_partition_path.get(window_id) {
                     partition_path.extend(existing_path.iter().cloned());
                 }
-                tree.window_to_partition_path
-                    .insert(window_id.clone(), partition_path);
+                tree.window_to_partition_path.insert(window_id.clone(), partition_path);
             }
         }
     }
@@ -888,21 +834,13 @@ fn branch_id_for_scene_child(
     index: usize,
 ) -> String {
     if let Some(id) = child.meta().id.as_ref().filter(|id| {
-        parent
-            .children()
-            .iter()
-            .filter(|sibling| sibling.meta().id.as_ref() == Some(*id))
-            .count()
+        parent.children().iter().filter(|sibling| sibling.meta().id.as_ref() == Some(*id)).count()
             == 1
     }) {
         return id.clone();
     }
 
-    if let LayoutSnapshotNode::Window {
-        window_id: Some(window_id),
-        ..
-    } = child
-    {
+    if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = child {
         return window_id.to_string();
     }
 
@@ -914,20 +852,16 @@ fn fallback_branch_id(
     child: &LayoutSnapshotNode,
     index: usize,
 ) -> String {
-    if let LayoutSnapshotNode::Window {
-        window_id: Some(window_id),
-        ..
-    } = child
-    {
+    if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = child {
         return window_id.to_string();
     }
 
     if let Some(window_id) = child.children().first().and_then(|node| match node {
-        LayoutSnapshotNode::Window {
-            window_id: Some(window_id),
-            children,
-            ..
-        } if children.is_empty() => Some(window_id.to_string()),
+        LayoutSnapshotNode::Window { window_id: Some(window_id), children, .. }
+            if children.is_empty() =>
+        {
+            Some(window_id.to_string())
+        }
         _ => None,
     }) {
         return window_id;
@@ -951,18 +885,13 @@ fn partition_axis_from_style(computed: &hypreact_scene::ComputedStyle) -> Option
 }
 
 fn partition_is_adjustable(node: &LayoutSnapshotNode) -> bool {
-    let Some(axis) = node
-        .styles()
-        .and_then(|styles| partition_axis_from_style(&styles.layout))
+    let Some(axis) = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout))
     else {
         return false;
     };
 
-    let resizable_children = node
-        .children()
-        .iter()
-        .filter(|child| !branch_is_fixed(child, Some(axis)))
-        .count();
+    let resizable_children =
+        node.children().iter().filter(|child| !branch_is_fixed(child, Some(axis))).count();
 
     resizable_children >= 2
 }
@@ -985,11 +914,7 @@ fn inferred_branch_default_share(node: &LayoutSnapshotNode) -> Option<u32> {
         return None;
     }
 
-    Some(
-        (grow * scale_authored_share_units(1) as f32)
-            .round()
-            .max(1.0) as u32,
-    )
+    Some((grow * scale_authored_share_units(1) as f32).round().max(1.0) as u32)
 }
 
 fn inferred_max_share(_node: &LayoutSnapshotNode) -> Option<u32> {
@@ -1032,11 +957,7 @@ fn apply_inferred_min_shares(
         let max_usable_floor = default_share.saturating_sub(1).max(MIN_BRANCH_SHARE_UNITS);
         let inferred_min_share = inferred_floor.min(max_usable_floor);
         branch.constraints.min_share = Some(
-            branch
-                .constraints
-                .min_share
-                .unwrap_or(MIN_BRANCH_SHARE_UNITS)
-                .max(inferred_min_share),
+            branch.constraints.min_share.unwrap_or(MIN_BRANCH_SHARE_UNITS).max(inferred_min_share),
         );
     }
 }
@@ -1067,9 +988,7 @@ fn resize_step_units_for_partition(
         return DEFAULT_RESIZE_STEP_UNITS;
     }
 
-    ((step_px * total_share_units as f32) / partition_main_size)
-        .round()
-        .max(1.0) as u32
+    ((step_px * total_share_units as f32) / partition_main_size).round().max(1.0) as u32
 }
 
 fn effective_branch_style_node<'a>(node: &'a LayoutSnapshotNode) -> Option<&'a LayoutSnapshotNode> {
@@ -1090,9 +1009,7 @@ fn is_non_semantic_branch_wrapper(node: &LayoutSnapshotNode) -> bool {
 }
 
 fn axis_for_parent(parent: &LayoutSnapshotNode) -> Option<PartitionAxis> {
-    parent
-        .styles()
-        .and_then(|styles| partition_axis_from_style(&styles.layout))
+    parent.styles().and_then(|styles| partition_axis_from_style(&styles.layout))
 }
 
 fn branch_is_fixed(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> bool {
@@ -1108,10 +1025,7 @@ fn branch_is_fixed(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> bo
         PartitionAxis::Vertical => styles.layout.height,
     };
 
-    if matches!(
-        explicit_main_size,
-        Some(hypreact_scene::SizeValue::LengthPercentage(_))
-    ) {
+    if matches!(explicit_main_size, Some(hypreact_scene::SizeValue::LengthPercentage(_))) {
         return true;
     }
 
@@ -1131,21 +1045,14 @@ fn structural_partition_id(node: &LayoutSnapshotNode, path: &[PartitionId]) -> S
     } else {
         format!(
             "{}/{}-partition",
-            path.iter()
-                .map(|partition_id| partition_id.0.as_str())
-                .collect::<Vec<_>>()
-                .join("/"),
+            path.iter().map(|partition_id| partition_id.0.as_str()).collect::<Vec<_>>().join("/"),
             node_kind
         )
     }
 }
 
 fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<hypreact_core::WindowId>) {
-    if let LayoutSnapshotNode::Window {
-        window_id: Some(window_id),
-        ..
-    } = node
-    {
+    if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = node {
         out.push(window_id.clone());
         return;
     }
@@ -1159,11 +1066,11 @@ fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<hypreact_
 mod tests {
     use std::collections::BTreeMap;
 
+    use hypreact_core::WindowId;
     use hypreact_core::focus::FocusScopePath;
-    use hypreact_core::navigation::{select_directional_focus_candidate, NavigationDirection};
+    use hypreact_core::navigation::{NavigationDirection, select_directional_focus_candidate};
     use hypreact_core::query::state_snapshot_for_model;
     use hypreact_core::wm::WmModel;
-    use hypreact_core::WindowId;
     use hypreact_core::{OutputId, WorkspaceId};
 
     use super::*;
@@ -1171,42 +1078,10 @@ mod tests {
     #[test]
     fn geometry_candidates_preserve_branch_memory_for_master_stack_focus() {
         let geometries = BTreeMap::from([
-            (
-                WindowId::from("master"),
-                WindowGeometry {
-                    x: 0,
-                    y: 0,
-                    width: 600,
-                    height: 900,
-                },
-            ),
-            (
-                WindowId::from("stack-1"),
-                WindowGeometry {
-                    x: 600,
-                    y: 0,
-                    width: 300,
-                    height: 300,
-                },
-            ),
-            (
-                WindowId::from("stack-2"),
-                WindowGeometry {
-                    x: 600,
-                    y: 300,
-                    width: 300,
-                    height: 300,
-                },
-            ),
-            (
-                WindowId::from("stack-3"),
-                WindowGeometry {
-                    x: 600,
-                    y: 600,
-                    width: 300,
-                    height: 300,
-                },
-            ),
+            (WindowId::from("master"), WindowGeometry { x: 0, y: 0, width: 600, height: 900 }),
+            (WindowId::from("stack-1"), WindowGeometry { x: 600, y: 0, width: 300, height: 300 }),
+            (WindowId::from("stack-2"), WindowGeometry { x: 600, y: 300, width: 300, height: 300 }),
+            (WindowId::from("stack-3"), WindowGeometry { x: 600, y: 600, width: 300, height: 300 }),
         ]);
 
         let focus_tree = focus_tree_from_geometries(&geometries);
@@ -1238,20 +1113,14 @@ mod tests {
 
     #[test]
     fn workspace_scene_builds_focus_tree_for_only_current_workspace_windows() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
         let loaded = service.load_config().expect("loaded config");
 
         let mut model = WmModel::default();
-        model.upsert_output(
-            OutputId::from("eDP-1"),
-            "eDP-1".to_string(),
-            1600,
-            1000,
-            None,
-        );
+        model.upsert_output(OutputId::from("eDP-1"), "eDP-1".to_string(), 1600, 1000, None);
 
         for workspace in ["1", "2"] {
             model.upsert_workspace(WorkspaceId::from(workspace), workspace.to_string());
@@ -1298,7 +1167,7 @@ mod tests {
 
     #[test]
     fn move_tiled_window_changes_master_stack_placement_order() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1315,10 +1184,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1340,11 +1206,9 @@ mod tests {
 
         assert!(initial[&WindowId::from("master")].x < initial[&WindowId::from("stack")].x);
 
-        assert!(move_tiled_window(
-            &mut model,
-            &WindowId::from("master"),
-            &WindowId::from("stack"),
-        ));
+        assert!(
+            move_tiled_window(&mut model, &WindowId::from("master"), &WindowId::from("stack"),)
+        );
 
         let moved = placement_for_workspace(&mut service, &model, "1")
             .expect("moved placement")
@@ -1356,7 +1220,7 @@ mod tests {
 
     #[test]
     fn workspace_scene_derives_partition_tree_for_master_stack_layout() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1374,10 +1238,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1400,33 +1261,24 @@ mod tests {
             .expect("scene evaluation")
             .expect("workspace scene");
 
-        assert!(scene
-            .partition_tree
-            .partitions
-            .contains_key(&PartitionId::new("frame")));
+        assert!(scene.partition_tree.partitions.contains_key(&PartitionId::new("frame")));
         let frame = &scene.partition_tree.partitions[&PartitionId::new("frame")];
         assert_eq!(frame.axis, PartitionAxis::Horizontal);
         assert_eq!(frame.branches.len(), 2);
-        assert!(scene
-            .partition_tree
-            .window_to_partition_path
-            .get(&WindowId::from("master"))
-            .is_some_and(|path| path == &vec![PartitionId::new("frame")]));
+        assert!(
+            scene
+                .partition_tree
+                .window_to_partition_path
+                .get(&WindowId::from("master"))
+                .is_some_and(|path| path == &vec![PartitionId::new("frame")])
+        );
     }
 
     #[test]
     fn workspace_scene_tracks_nested_explicit_partitions() {
         let scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta {
-                id: Some("frame".into()),
-                ..Default::default()
-            },
-            rect: hypreact_core::LayoutRect {
-                x: 0.0,
-                y: 0.0,
-                width: 1600.0,
-                height: 1000.0,
-            },
+            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
             styles: Some(hypreact_scene::SceneNodeStyle {
                 layout: hypreact_scene::ComputedStyle {
                     display: Some(Display::Flex),
@@ -1525,9 +1377,7 @@ mod tests {
             },
         );
 
-        assert!(partition_tree
-            .partitions
-            .contains_key(&PartitionId::new("frame")));
+        assert!(partition_tree.partitions.contains_key(&PartitionId::new("frame")));
         let stack_path = partition_tree
             .window_to_partition_path
             .get(&WindowId::from("stack-a"))
@@ -1535,20 +1385,13 @@ mod tests {
         assert_eq!(stack_path.len(), 2);
         assert_eq!(stack_path[0], PartitionId::new("frame"));
         let nested_partition_id = stack_path[1].clone();
-        let nested_partition = partition_tree
-            .partitions
-            .get(&nested_partition_id)
-            .expect("nested partition");
+        let nested_partition =
+            partition_tree.partitions.get(&nested_partition_id).expect("nested partition");
         assert_eq!(nested_partition.axis, PartitionAxis::Vertical);
         assert_eq!(nested_partition.branches.len(), 2);
         assert_eq!(
-            partition_tree
-                .window_to_partition_path
-                .get(&WindowId::from("stack-b")),
-            Some(&vec![
-                PartitionId::new("frame"),
-                nested_partition_id.clone()
-            ])
+            partition_tree.window_to_partition_path.get(&WindowId::from("stack-b")),
+            Some(&vec![PartitionId::new("frame"), nested_partition_id.clone()])
         );
         assert_eq!(
             select_resize_candidate(
@@ -1566,7 +1409,7 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_workspace_resize_state() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1583,10 +1426,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1602,12 +1442,14 @@ mod tests {
         }
         model.set_window_focused(Some(WindowId::from("master")));
 
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Right,
-        )
-        .expect("resize result"));
+        assert!(
+            resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Right,
+            )
+            .expect("resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
@@ -1616,12 +1458,14 @@ mod tests {
         );
 
         model.set_window_focused(Some(WindowId::from("master")));
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Left,
-        )
-        .expect("reverse resize result"));
+        assert!(
+            resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Left,
+            )
+            .expect("reverse resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
@@ -1630,12 +1474,14 @@ mod tests {
         );
 
         model.set_window_focused(Some(WindowId::from("stack")));
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Right,
-        )
-        .expect("stack right resize result"));
+        assert!(
+            resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Right,
+            )
+            .expect("stack right resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
@@ -1643,12 +1489,14 @@ mod tests {
             vec![40, 20]
         );
 
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Left,
-        )
-        .expect("stack left resize result"));
+        assert!(
+            resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Left,
+            )
+            .expect("stack left resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
@@ -1659,7 +1507,7 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_nested_stack_partition_state() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1677,17 +1525,12 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
 
-        for id in [
-            "master", "stack-a", "stack-b", "stack-c", "stack-d", "stack-e",
-        ] {
+        for id in ["master", "stack-a", "stack-b", "stack-c", "stack-d", "stack-e"] {
             let window_id = WindowId::from(id.to_string());
             model.insert_window(
                 window_id.clone(),
@@ -1706,24 +1549,30 @@ mod tests {
             .expect("scene evaluation")
             .expect("workspace scene");
         assert!(scene.partition_tree.partitions.len() >= 2);
-        assert!(scene
-            .partition_tree
-            .window_to_partition_path
-            .get(&WindowId::from("stack-c"))
-            .is_some_and(|path| path.len() >= 2));
-        assert!(select_resize_candidate(
-            &scene.partition_tree,
-            &WindowId::from("stack-c"),
-            hypreact_core::resize::ResizeDirection::Down,
-        )
-        .is_some());
+        assert!(
+            scene
+                .partition_tree
+                .window_to_partition_path
+                .get(&WindowId::from("stack-c"))
+                .is_some_and(|path| path.len() >= 2)
+        );
+        assert!(
+            select_resize_candidate(
+                &scene.partition_tree,
+                &WindowId::from("stack-c"),
+                hypreact_core::resize::ResizeDirection::Down,
+            )
+            .is_some()
+        );
 
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Down,
-        )
-        .expect("resize result"));
+        assert!(
+            resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Down,
+            )
+            .expect("resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let nested_adjustment = resize_state
@@ -1735,12 +1584,10 @@ mod tests {
         assert_eq!(nested_adjustment.branch_shares.len(), 5);
         assert_eq!(nested_adjustment.branch_shares, vec![12, 12, 16, 8, 12]);
 
-        assert!(resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Up,
-        )
-        .expect("reverse vertical resize result"));
+        assert!(
+            resize_direction(&mut service, &mut model, hypreact_core::resize::ResizeDirection::Up,)
+                .expect("reverse vertical resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let nested_adjustment = resize_state
@@ -1754,7 +1601,7 @@ mod tests {
 
     #[test]
     fn repeated_vertical_resize_stops_before_collapsing_stack_branches() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1771,10 +1618,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1792,12 +1636,8 @@ mod tests {
 
         let _ = service.reload_config().expect("reloaded config");
 
-        while resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Up,
-        )
-        .expect("vertical resize result")
+        while resize_direction(&mut service, &mut model, hypreact_core::resize::ResizeDirection::Up)
+            .expect("vertical resize result")
         {}
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
@@ -1808,15 +1648,12 @@ mod tests {
             .map(|(_, adjustment)| adjustment)
             .expect("nested stack partition adjustment after repeated resize");
 
-        assert!(nested_adjustment
-            .branch_shares
-            .iter()
-            .all(|share| *share >= 6));
+        assert!(nested_adjustment.branch_shares.iter().all(|share| *share >= 6));
     }
 
     #[test]
     fn resize_direction_matches_live_four_window_stack_focus_sequence() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1833,10 +1670,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1905,7 +1739,7 @@ mod tests {
 
     #[test]
     fn resize_direction_allows_horizontal_resize_for_top_stack_window() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1922,10 +1756,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -1964,17 +1795,14 @@ mod tests {
 
     #[test]
     fn resize_direction_respects_fixed_branch_constraints() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
         for workspace_name in ["1", "2", "3", "4", "5", "6"] {
-            model.upsert_workspace(
-                WorkspaceId::from(workspace_name),
-                workspace_name.to_string(),
-            );
+            model.upsert_workspace(WorkspaceId::from(workspace_name), workspace_name.to_string());
         }
         model.upsert_output(
             OutputId::from("eDP-1"),
@@ -1986,10 +1814,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("6"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("6"),
-            Some(hypreact_core::wm::DrawableSpace {
-                width: 1600,
-                height: 1000,
-            }),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("6"));
@@ -2005,12 +1830,14 @@ mod tests {
         }
         model.set_window_focused(Some(WindowId::from("stack")));
 
-        assert!(!resize_direction(
-            &mut service,
-            &mut model,
-            hypreact_core::resize::ResizeDirection::Left,
-        )
-        .expect("resize result"));
+        assert!(
+            !resize_direction(
+                &mut service,
+                &mut model,
+                hypreact_core::resize::ResizeDirection::Left,
+            )
+            .expect("resize result")
+        );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("6"));
         assert!(resize_state.adjustments_by_partition_id.is_empty());
@@ -2020,16 +1847,8 @@ mod tests {
     fn scene_resize_adjustments_survive_branch_reorder_and_insertion_by_branch_id() {
         let partition_id = PartitionId::new("frame");
         let initial_scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta {
-                id: Some("frame".into()),
-                ..Default::default()
-            },
-            rect: hypreact_core::LayoutRect {
-                x: 0.0,
-                y: 0.0,
-                width: 1600.0,
-                height: 1000.0,
-            },
+            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
             styles: Some(hypreact_scene::SceneNodeStyle {
                 layout: hypreact_scene::ComputedStyle {
                     display: Some(Display::Flex),
@@ -2081,16 +1900,8 @@ mod tests {
             ],
         };
         let reordered_scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta {
-                id: Some("frame".into()),
-                ..Default::default()
-            },
-            rect: hypreact_core::LayoutRect {
-                x: 0.0,
-                y: 0.0,
-                width: 1600.0,
-                height: 1000.0,
-            },
+            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
             styles: Some(hypreact_scene::SceneNodeStyle {
                 layout: hypreact_scene::ComputedStyle {
                     display: Some(Display::Flex),
@@ -2199,10 +2010,8 @@ mod tests {
             .adjustments_by_partition_id
             .get(&partition_id)
             .expect("persisted adjustment");
-        let reordered_partition = reordered_tree
-            .partitions
-            .get(&partition_id)
-            .expect("reordered partition");
+        let reordered_partition =
+            reordered_tree.partitions.get(&partition_id).expect("reordered partition");
         let reordered_branch_ids = reordered_partition
             .branches
             .iter()
@@ -2227,16 +2036,8 @@ mod tests {
     #[test]
     fn flex_partition_is_inferred_from_display_and_direction() {
         let scene = LayoutSnapshotNode::Group {
-            meta: hypreact_core::LayoutNodeMeta {
-                id: Some("frame".into()),
-                ..Default::default()
-            },
-            rect: hypreact_core::LayoutRect {
-                x: 0.0,
-                y: 0.0,
-                width: 1000.0,
-                height: 700.0,
-            },
+            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1000.0, height: 700.0 },
             styles: Some(hypreact_scene::SceneNodeStyle {
                 layout: hypreact_scene::ComputedStyle {
                     display: Some(Display::Flex),
@@ -2250,12 +2051,7 @@ mod tests {
                         id: Some("left".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 500.0,
-                        height: 700.0,
-                    },
+                    rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 500.0, height: 700.0 },
                     styles: None,
                     window_id: Some(WindowId::from("left")),
                     children: vec![],
@@ -2286,9 +2082,7 @@ mod tests {
             },
         );
 
-        assert!(partition_tree
-            .partitions
-            .contains_key(&PartitionId::new("frame")));
+        assert!(partition_tree.partitions.contains_key(&PartitionId::new("frame")));
         assert_eq!(
             select_resize_candidate(
                 &partition_tree,

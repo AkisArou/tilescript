@@ -1,0 +1,14 @@
+packages:
+  - packages/**
+autoInstallPeers: true
+catalog:
+  typescript: 6.0.2
+  oxfmt: 0.36.0
+  oxlint: 1.47.0
+  "@types/node": ^24.6.0
+  "@types/vscode": ^1.95.0
+  "@vscode/vsce": ^3.6.2
+  vscode-languageclient: ^9.0.1
+disallowWorkspaceCycles: true
+engineStrict: true
+linkWorkspacePackages: true

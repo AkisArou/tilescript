@@ -1,0 +1,7 @@
+src/**
+tsconfig.json
+scripts/**
+node_modules/**/src/**
+**/*.tsbuildinfo
+!server/**
+!LICENSE.md

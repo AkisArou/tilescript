@@ -1,7 +1,3 @@
-use keyframe::ease;
-use keyframe::functions::{BezierCurve, EaseIn, EaseInOut, EaseOut, Linear};
-use keyframe::mint::Vector2;
-
 use crate::style::{
     MotionEasingKeywordValue, MotionEasingValue, MotionPropertyValue, MotionTimeValue,
     StepPositionValue,
@@ -46,12 +42,9 @@ pub fn sample_easing(easing: &MotionEasingValue, progress: f32) -> f32 {
     let progress = progress.clamp(0.0, 1.0);
     match easing {
         MotionEasingValue::Keyword(keyword) => sample_keyword(*keyword, progress),
-        MotionEasingValue::CubicBezier { x1, y1, x2, y2 } => ease(
-            BezierCurve::from(Vector2 { x: *x1, y: *y1 }, Vector2 { x: *x2, y: *y2 }),
-            0.0f32,
-            1.0f32,
-            progress,
-        ),
+        MotionEasingValue::CubicBezier { x1, y1, x2, y2 } => {
+            sample_cubic_bezier(progress, *x1, *y1, *x2, *y2)
+        }
         MotionEasingValue::Steps { count, position } => {
             sample_steps((*count).max(1) as f32, *position, progress)
         }
@@ -65,17 +58,45 @@ fn cycle_value<T>(values: &[T], index: usize) -> Option<&T> {
 
 fn sample_keyword(keyword: MotionEasingKeywordValue, progress: f32) -> f32 {
     match keyword {
-        MotionEasingKeywordValue::Linear => ease(Linear, 0.0f32, 1.0f32, progress),
-        MotionEasingKeywordValue::Ease => ease(
-            BezierCurve::from(Vector2 { x: 0.25, y: 0.1 }, Vector2 { x: 0.25, y: 1.0 }),
-            0.0f32,
-            1.0f32,
-            progress,
-        ),
-        MotionEasingKeywordValue::EaseIn => ease(EaseIn, 0.0f32, 1.0f32, progress),
-        MotionEasingKeywordValue::EaseOut => ease(EaseOut, 0.0f32, 1.0f32, progress),
-        MotionEasingKeywordValue::EaseInOut => ease(EaseInOut, 0.0f32, 1.0f32, progress),
+        MotionEasingKeywordValue::Linear => progress,
+        MotionEasingKeywordValue::Ease => sample_cubic_bezier(progress, 0.25, 0.1, 0.25, 1.0),
+        MotionEasingKeywordValue::EaseIn => sample_cubic_bezier(progress, 0.42, 0.0, 1.0, 1.0),
+        MotionEasingKeywordValue::EaseOut => sample_cubic_bezier(progress, 0.0, 0.0, 0.58, 1.0),
+        MotionEasingKeywordValue::EaseInOut => sample_cubic_bezier(progress, 0.42, 0.0, 0.58, 1.0),
     }
+}
+
+fn sample_cubic_bezier(progress: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    if progress <= 0.0 {
+        return 0.0;
+    }
+    if progress >= 1.0 {
+        return 1.0;
+    }
+
+    let mut lower = 0.0f32;
+    let mut upper = 1.0f32;
+    let mut t = progress;
+
+    for _ in 0..16 {
+        let x = cubic_bezier_value(t, x1, x2);
+        if (x - progress).abs() <= 1e-4 {
+            break;
+        }
+        if x < progress {
+            lower = t;
+        } else {
+            upper = t;
+        }
+        t = (lower + upper) * 0.5;
+    }
+
+    cubic_bezier_value(t, y1, y2)
+}
+
+fn cubic_bezier_value(t: f32, p1: f32, p2: f32) -> f32 {
+    let one_minus_t = 1.0 - t;
+    3.0 * one_minus_t * one_minus_t * t * p1 + 3.0 * one_minus_t * t * t * p2 + t * t * t
 }
 
 fn sample_steps(count: f32, position: StepPositionValue, progress: f32) -> f32 {

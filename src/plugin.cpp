@@ -3,6 +3,7 @@
 #include <optional>
 #include <cctype>
 #include <array>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -200,6 +201,7 @@ std::vector<RecentWorkspaceResize> g_recentWorkspaceResizes;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
 bool g_registeredHypreactAlgo = false;
+std::optional<std::filesystem::path> g_resolvedConfigRoot;
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
 }
@@ -254,6 +256,73 @@ std::string configuredConfigPath() {
     return trim(std::string{std::any_cast<Hyprlang::STRING>(g_configPathConfig->getValue())});
 }
 
+std::optional<std::filesystem::path> defaultConfigRoot() {
+    const char* home = std::getenv("HOME");
+    if (home == nullptr || std::string(home).empty()) {
+        return std::nullopt;
+    }
+
+    return std::filesystem::path(home) / ".config" / "hypreact";
+}
+
+std::optional<std::filesystem::path> discoverConfigEntryInDirectory(const std::filesystem::path& root) {
+    static const std::array<const char*, 4> candidates = {
+        "config.ts",
+        "config.tsx",
+        "config.js",
+        "config.jsx",
+    };
+
+    for (const auto* candidate : candidates) {
+        const auto path = root / candidate;
+        if (std::filesystem::exists(path) && std::filesystem::is_regular_file(path)) {
+            return std::filesystem::canonical(path);
+        }
+    }
+
+    return std::nullopt;
+}
+
+bool looksLikeConfigEntryPath(const std::filesystem::path& path) {
+    const auto name = path.filename().string();
+    return name == "config.ts" || name == "config.tsx" || name == "config.js" || name == "config.jsx";
+}
+
+std::optional<std::filesystem::path> resolveConfiguredConfigRoot() {
+    std::error_code error;
+    const auto configured = configuredConfigPath();
+
+    if (!configured.empty()) {
+        auto path = std::filesystem::path(configured);
+        if (looksLikeConfigEntryPath(path)) {
+            return std::nullopt;
+        }
+        if (!std::filesystem::exists(path, error)) {
+            return path;
+        }
+
+        if (std::filesystem::is_directory(path, error)) {
+            return std::filesystem::canonical(path, error);
+        }
+
+        return std::nullopt;
+    }
+
+    return defaultConfigRoot();
+}
+
+void syncSdkSupport(const std::filesystem::path& configRoot) {
+    const auto result = hypreact_runtime_sync_sdk_support_result(configRoot.c_str());
+    logStatusResult("sdk-sync", result);
+    hypreact_runtime_free_status_result(result);
+}
+
+void bootstrapConfigRoot(const std::filesystem::path& configRoot) {
+    const auto result = hypreact_runtime_bootstrap_config_result(configRoot.c_str());
+    logStatusResult("config-bootstrap", result);
+    hypreact_runtime_free_status_result(result);
+}
+
 std::string stringify(const Json::Value& value) {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
@@ -277,6 +346,8 @@ void syncActiveRuntimeState();
 void resyncAll();
 void markRecentWorkspaceResize(const PHLWORKSPACE& workspace);
 bool isWorkspaceInRecentResizeWindow(const PHLWORKSPACE& workspace);
+bool layoutRuntimeLoaded();
+void refreshWorkspaceAlgorithms();
 
 std::optional<std::string> normalizeDirection(const std::string& arg) {
     const auto value = trim(arg);
@@ -1044,14 +1115,43 @@ void loadLayoutRuntimeConfig() {
         return;
     }
 
-    const auto configPath = configuredConfigPath();
-    if (configPath.empty()) {
+    const auto resolvedRoot = resolveConfiguredConfigRoot();
+    if (!resolvedRoot.has_value()) {
+        g_resolvedConfigRoot.reset();
         return;
     }
 
-    const auto result = g_runtime->loadLayoutConfig(configPath);
+    g_resolvedConfigRoot = *resolvedRoot;
+    bootstrapConfigRoot(*g_resolvedConfigRoot);
+    syncSdkSupport(*g_resolvedConfigRoot);
+
+    const auto configEntry = discoverConfigEntryInDirectory(*g_resolvedConfigRoot);
+    if (!configEntry.has_value()) {
+        return;
+    }
+
+    const auto result = g_runtime->loadLayoutConfig(configEntry->string());
     logStatusResult("layout-runtime", result);
     hypreact_runtime_free_status_result(result);
+}
+
+bool layoutRuntimeLoaded() {
+    if (!g_runtime) {
+        return false;
+    }
+
+    const auto status = g_runtime->layoutStatusResult();
+    const auto loaded = status.loaded;
+    hypreact_runtime_free_layout_status_result(status);
+    return loaded;
+}
+
+void refreshWorkspaceAlgorithms() {
+    if (!g_registeredHypreactAlgo || !layoutRuntimeLoaded()) {
+        return;
+    }
+
+    Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
 }
 
 void registerHypreactAlgorithm() {
@@ -1068,7 +1168,6 @@ void registerHypreactAlgorithm() {
 
     if (g_registeredHypreactAlgo) {
         std::cout << "[hypreact] registered tiled algorithm: hypreact" << std::endl;
-        Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
     } else {
         std::cerr << "[hypreact] failed to register tiled algorithm: hypreact" << std::endl;
     }
@@ -1263,7 +1362,10 @@ void registerHooks() {
 
     g_listeners.push_back(events.config.reloaded.listen([] {
         loadLayoutRuntimeConfig();
-        Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
+        if (layoutRuntimeLoaded()) {
+            registerHypreactAlgorithm();
+            refreshWorkspaceAlgorithms();
+        }
         resyncAll();
         flushPendingWorkspaceRecalculations();
     }));
@@ -1447,7 +1549,10 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
     g_runtime = std::make_unique<Runtime>();
     resyncAll();
     loadLayoutRuntimeConfig();
-    registerHypreactAlgorithm();
+    if (layoutRuntimeLoaded()) {
+        registerHypreactAlgorithm();
+        refreshWorkspaceAlgorithms();
+    }
     registerHypreactDispatchers();
     registerHooks();
 
@@ -1494,6 +1599,7 @@ extern "C" EXPORT void pluginExit() {
     g_pendingWorkspaceLayoutRefreshTicks = 0;
     g_windowIds.clear();
     g_configPathConfig = nullptr;
+    g_resolvedConfigRoot.reset();
     unregisterHypreactAlgorithm();
     g_runtime.reset();
     PHANDLE = nullptr;
