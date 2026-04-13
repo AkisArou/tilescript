@@ -5,7 +5,7 @@ export const layouts = {
 		"master-stack",
 		"master-stack",
 		"master-stack",
-		"primary-stack",
+		"testing",
 		"primary-stack",
 		"primary-stack",
 		"primary-stack",

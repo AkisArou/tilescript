@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ResolvedLayoutNode;
 use crate::focus::{FocusScopeNavigation, FocusScopePath, FocusTree};
+use crate::resize::{ResizeState, WorkspaceResizeState};
 use crate::types::LayoutRef;
 use crate::{OutputId, WindowId, WorkspaceId};
 
@@ -100,6 +101,7 @@ pub struct WmModel {
     pub focus_tree: Option<FocusTree>,
     pub last_focused_window_id_by_scope: BTreeMap<FocusScopePath, WindowId>,
     pub tiled_window_order_by_workspace: BTreeMap<WorkspaceId, Vec<WindowId>>,
+    pub resize_state: ResizeState,
 }
 
 impl WmModel {
@@ -565,6 +567,30 @@ impl WmModel {
         if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
             workspace.layout_space = layout_space;
         }
+    }
+
+    pub fn workspace_resize_state(&self, workspace_id: &WorkspaceId) -> WorkspaceResizeState {
+        self.resize_state
+            .by_workspace_id
+            .get(workspace_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn workspace_resize_state_mut(
+        &mut self,
+        workspace_id: &WorkspaceId,
+    ) -> &mut WorkspaceResizeState {
+        self.resize_state
+            .by_workspace_id
+            .entry(workspace_id.clone())
+            .or_default()
+    }
+
+    pub fn gc_resize_state_for_known_workspaces(&mut self) {
+        self.resize_state
+            .by_workspace_id
+            .retain(|workspace_id, _| self.workspaces.contains_key(workspace_id));
     }
 
     pub fn set_window_focused(&mut self, focused_id: Option<WindowId>) {

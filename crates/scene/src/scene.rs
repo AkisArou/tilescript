@@ -1,4 +1,5 @@
 use crate::style::ComputedStyle;
+use hypreact_core::resize::WorkspaceResizeState;
 use hypreact_core::runtime::prepared_layout::PreparedStylesheets;
 use hypreact_core::{
     LayoutNodeMeta, LayoutRect, LayoutSpace, OutputId, ResolvedLayoutNode, WindowId, WorkspaceId,
@@ -42,6 +43,7 @@ pub struct SceneRequest {
     pub root: ResolvedLayoutNode,
     pub stylesheets: PreparedStylesheets,
     pub space: LayoutSpace,
+    pub resize_state: WorkspaceResizeState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,7 +98,9 @@ impl LayoutSnapshotNode {
             return Some(self);
         }
 
-        self.children().iter().find_map(|child| child.find_by_node_id(node_id))
+        self.children()
+            .iter()
+            .find_map(|child| child.find_by_node_id(node_id))
     }
 
     pub fn find_by_window_id(&self, window_id: &WindowId) -> Option<&LayoutSnapshotNode> {
@@ -104,7 +108,9 @@ impl LayoutSnapshotNode {
             return Some(self);
         }
 
-        self.children().iter().find_map(|child| child.find_by_window_id(window_id))
+        self.children()
+            .iter()
+            .find_map(|child| child.find_by_window_id(window_id))
     }
 
     pub fn collect_windows<'a>(&'a self, windows: &mut Vec<&'a LayoutSnapshotNode>) {

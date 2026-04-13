@@ -7,7 +7,9 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::module_graph_runtime::evaluate_entry_export_to_json;
-use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition, LayoutSelectionConfig};
+use hypreact_config::model::{
+    Config, LayoutConfigError, LayoutDefinition, LayoutSelectionConfig, ResizeConfig,
+};
 use crate::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
 use crate::graph::{
     DiscoveredApp, ModuleGraph, ModuleGraphBuilder, discover_project_apps,
@@ -623,6 +625,7 @@ fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutConfi
         layouts: Vec::new(),
         global_stylesheet_path: None,
         layout_selection: decode_layout_selection(root.get("layouts"), path)?,
+        resize: decode_resize_config(root.get("resize"), path)?,
     })
 }
 
@@ -694,6 +697,25 @@ fn decode_layout_selection(
     })
 }
 
+fn decode_resize_config(
+    value: Option<&Value>,
+    path: &Path,
+) -> Result<ResizeConfig, LayoutConfigError> {
+    let Some(value) = value else {
+        return Ok(ResizeConfig::default());
+    };
+    let object = expect_object(path, value, "root.resize")?;
+
+    Ok(ResizeConfig {
+        step_px: decode_optional_f32(object.get("step_px"), path, "root.resize.step_px")?,
+        min_branch_size_px: decode_optional_f32(
+            object.get("min_branch_size_px"),
+            path,
+            "root.resize.min_branch_size_px",
+        )?,
+    })
+}
+
 
 fn decode_optional_string(
     value: Option<&Value>,
@@ -713,6 +735,14 @@ fn decode_string_array(
     };
     let items = expect_array(path, value, field)?;
     items.iter().map(|value| expect_string(path, value, field).map(str::to_owned)).collect()
+}
+
+fn decode_optional_f32(
+    value: Option<&Value>,
+    path: &Path,
+    field: &str,
+) -> Result<Option<f32>, LayoutConfigError> {
+    value.map(|value| expect_f32(path, value, field)).transpose()
 }
 
 fn expect_object<'a>(
@@ -746,6 +776,17 @@ fn expect_string<'a>(
         path: path.to_path_buf(),
         message: format!("expected string at {field}"),
     })
+}
+
+fn expect_f32(path: &Path, value: &Value, field: &str) -> Result<f32, LayoutConfigError> {
+    value
+        .as_f64()
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(|value| value as f32)
+        .ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
+            path: path.to_path_buf(),
+            message: format!("expected non-negative number at {field}"),
+        })
 }
 
 
@@ -822,6 +863,52 @@ mod tests {
         );
         let stylesheet_path = config.layouts[0].stylesheet_path.clone().unwrap();
         assert!(stylesheet_path.ends_with("layouts/master-stack/index.css"));
+    }
+
+    #[test]
+    fn decodes_resize_config_from_authored_config() {
+        let root = unique_root("resize-config");
+        fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config.ts"),
+            r#"
+                import type { HypreactConfig } from "@hypreact/sdk/config";
+                import { layouts } from "./config/layouts";
+
+                export default {
+                  layouts,
+                  resize: {
+                    step_px: 80,
+                    min_branch_size_px: 144,
+                  },
+                } satisfies HypreactConfig;
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("config/layouts.ts"),
+            r#"
+                export const layouts = {
+                  default: "master-stack",
+                };
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("layouts/master-stack/index.tsx"),
+            r#"
+                export default function layout() {
+                  return { type: "workspace", children: [] };
+                }
+            "#,
+        )
+        .unwrap();
+
+        let config = load_authored_config(root.join("config.ts")).unwrap();
+
+        assert_eq!(config.resize.step_px, Some(80.0));
+        assert_eq!(config.resize.min_branch_size_px, Some(144.0));
     }
 
     #[test]

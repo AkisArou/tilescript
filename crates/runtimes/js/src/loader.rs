@@ -381,6 +381,7 @@ mod tests {
             id: WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: Some(OutputId::from("out-1")),
+            layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,

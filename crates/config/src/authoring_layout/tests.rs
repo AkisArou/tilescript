@@ -317,6 +317,7 @@ fn state() -> StateSnapshot {
         windows: vec![],
         visible_window_ids: vec![],
         workspace_names: vec!["1".into()],
+        resize_state: hypreact_core::resize::ResizeState::default(),
     }
 }
 

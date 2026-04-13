@@ -137,6 +137,13 @@ class Runtime {
         return changed;
     }
 
+    [[nodiscard]] bool resizeDirection(const std::string& direction) const {
+        const auto result = hypreact_runtime_resize_direction(handle_, direction.c_str());
+        const auto changed = result.changed;
+        hypreact_runtime_free_status_result(result);
+        return changed;
+    }
+
     [[nodiscard]] HypreactStateResult stateResult() const {
         return hypreact_runtime_state_result(handle_);
     }
@@ -164,6 +171,11 @@ struct PendingWorkspaceRecalculation {
     int remainingTicks;
 };
 
+struct RecentWorkspaceResize {
+    PHLWORKSPACE workspace;
+    int remainingTicks;
+};
+
 struct WindowSyncPayload {
     std::string windowId;
     std::string workspaceId;
@@ -184,10 +196,10 @@ struct WorkspaceLayoutSpaceSyncPayload {
 };
 
 std::vector<PendingWorkspaceRecalculation> g_pendingWorkspaceRecalculations;
+std::vector<RecentWorkspaceResize> g_recentWorkspaceResizes;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
 bool g_registeredHypreactAlgo = false;
-
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
 }
@@ -224,6 +236,16 @@ std::string trim(std::string value) {
     return value;
 }
 
+std::vector<std::string> splitWords(const std::string& value) {
+    std::istringstream stream(value);
+    std::vector<std::string> words;
+    std::string word;
+    while (stream >> word) {
+        words.push_back(word);
+    }
+    return words;
+}
+
 std::string configuredConfigPath() {
     if (!g_configPathConfig) {
         return {};
@@ -243,6 +265,7 @@ std::string makeWindowId(const PHLWINDOW& window);
 std::string workspaceName(const PHLWORKSPACE& workspace);
 void syncWorkspace(const PHLWORKSPACE& workspace, const PHLMONITOR& monitor);
 void syncWindow(const PHLWINDOW& window);
+void syncWorkspaceWindows(const PHLWORKSPACE& workspace);
 void removeWindow(const PHLWINDOW& window);
 void recalculateWorkspace(const PHLWORKSPACE& workspace);
 void syncFocusedWindow(const PHLWINDOW& window);
@@ -251,6 +274,9 @@ void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace);
 void flushPendingWorkspaceRecalculations();
 void syncActiveRuntimeState();
+void resyncAll();
+void markRecentWorkspaceResize(const PHLWORKSPACE& workspace);
+bool isWorkspaceInRecentResizeWindow(const PHLWORKSPACE& workspace);
 
 std::optional<std::string> normalizeDirection(const std::string& arg) {
     const auto value = trim(arg);
@@ -353,6 +379,7 @@ SDispatchResult hypreactMoveWindowDispatcher(std::string arg) {
 
     syncWindow(focusedWindow);
     syncWorkspace(focusedWindow->m_workspace, focusedWindow->m_monitor.lock());
+    syncWorkspaceWindows(focusedWindow->m_workspace);
     syncFocusedWindow(focusedWindow);
 
     const auto candidateId = g_runtime->layoutSwapCandidate(*direction);
@@ -378,9 +405,53 @@ SDispatchResult hypreactMoveWindowDispatcher(std::string arg) {
     return {};
 }
 
+SDispatchResult hypreactResizeWindowDispatcher(std::string arg) {
+    if (!g_runtime) {
+        return {.success = false, .error = "runtime not initialized"};
+    }
+
+    const auto direction = normalizeDirection(arg);
+    if (!direction.has_value()) {
+        return {.success = false, .error = "invalid direction"};
+    }
+
+    const auto focusedWindow = Desktop::focusState()->window();
+    if (!focusedWindow) {
+        return {.success = false, .error = "no focused window"};
+    }
+    if (focusedWindow->isFullscreen()) {
+        return {.success = false, .error = "window is fullscreen"};
+    }
+    if (focusedWindow->m_isFloating) {
+        return callDispatcher("resizeactive", direction->substr(0, 1) + std::string(" 40"));
+    }
+
+    syncWindow(focusedWindow);
+    syncWorkspace(focusedWindow->m_workspace, focusedWindow->m_monitor.lock());
+    syncWorkspaceWindows(focusedWindow->m_workspace);
+    syncFocusedWindow(focusedWindow);
+
+    if (!g_runtime->resizeDirection(*direction)) {
+        return {.success = false, .error = "no resize candidate"};
+    }
+
+    const auto workspace = focusedWindow->m_workspace;
+    if (workspace) {
+        applyPlacementForWorkspace(workspace);
+        markRecentWorkspaceResize(workspace);
+        if (workspace->m_space) {
+            workspace->m_space->recalculate();
+        }
+        queueWorkspaceRecalculate(workspace);
+    }
+
+    return {};
+}
+
 void registerHypreactDispatchers() {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hypreact:movefocus", hypreactMoveFocusDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hypreact:movewindow", hypreactMoveWindowDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hypreact:resizewindow", hypreactResizeWindowDispatcher);
 }
 
 std::unordered_map<std::string, CBox> geometryMapFromPlacement(const HypreactPlacementResult& placement) {
@@ -716,6 +787,25 @@ void syncWindow(const PHLWINDOW& window) {
     logSyncResponse(g_runtime->upsertWindow(payload.ffi));
 }
 
+void syncWorkspaceWindows(const PHLWORKSPACE& workspace) {
+    if (!workspace || !workspace->m_space || !g_runtime) {
+        return;
+    }
+
+    for (const auto& weakTarget : workspace->m_space->targets()) {
+        const auto target = weakTarget.lock();
+        if (!target || target->floating() || !target->window()) {
+            continue;
+        }
+
+        if (target->window()->m_workspace != workspace || !target->window()->m_isMapped) {
+            continue;
+        }
+
+        syncWindow(target->window());
+    }
+}
+
 void recalculateWorkspace(const PHLWORKSPACE& workspace) {
     if (!workspace || !workspace->m_space) {
         return;
@@ -774,6 +864,10 @@ void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace) {
         return;
     }
 
+    if (isWorkspaceInRecentResizeWindow(workspace)) {
+        return;
+    }
+
     for (auto& pending : g_pendingWorkspaceRecalculations) {
         if (pending.workspace.get() == workspace.get()) {
             pending.remainingTicks = std::max(pending.remainingTicks, 4);
@@ -790,6 +884,15 @@ void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace) {
 }
 
 void flushPendingWorkspaceRecalculations() {
+    std::vector<RecentWorkspaceResize> stillRecentResizes;
+    stillRecentResizes.reserve(g_recentWorkspaceResizes.size());
+    for (auto recent : g_recentWorkspaceResizes) {
+        if (recent.workspace && !recent.workspace->inert() && --recent.remainingTicks > 0) {
+            stillRecentResizes.push_back(std::move(recent));
+        }
+    }
+    g_recentWorkspaceResizes = std::move(stillRecentResizes);
+
     if (g_pendingWorkspaceLayoutRefreshTicks > 0) {
         Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
         --g_pendingWorkspaceLayoutRefreshTicks;
@@ -815,6 +918,34 @@ void flushPendingWorkspaceRecalculations() {
     }
 
     g_pendingWorkspaceRecalculations = std::move(stillPending);
+}
+
+void markRecentWorkspaceResize(const PHLWORKSPACE& workspace) {
+    if (!workspace) {
+        return;
+    }
+
+    for (auto& recent : g_recentWorkspaceResizes) {
+        if (recent.workspace.get() == workspace.get()) {
+            recent.remainingTicks = std::max(recent.remainingTicks, 3);
+            return;
+        }
+    }
+
+    g_recentWorkspaceResizes.push_back(RecentWorkspaceResize {
+        .workspace = workspace,
+        .remainingTicks = 3,
+    });
+}
+
+bool isWorkspaceInRecentResizeWindow(const PHLWORKSPACE& workspace) {
+    return workspace && std::any_of(
+        g_recentWorkspaceResizes.begin(),
+        g_recentWorkspaceResizes.end(),
+        [&](const RecentWorkspaceResize& recent) {
+            return recent.workspace.get() == workspace.get();
+        }
+    );
 }
 
 void syncActiveRuntimeState() {
@@ -1143,7 +1274,13 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
         return R"({"ok":false,"error":"runtime not initialized"})";
     }
 
-    const auto command = trim(arg);
+    auto command = trim(arg);
+    if (command == "hypreact") {
+        command.clear();
+    } else if (command.rfind("hypreact ", 0) == 0) {
+        command = trim(command.substr(std::string("hypreact ").size()));
+    }
+
     if (command == "resync") {
         resyncAll();
         return R"({"ok":true,"data":{"message":"resynced"}})";

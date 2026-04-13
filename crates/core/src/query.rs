@@ -37,6 +37,7 @@ pub fn state_snapshot_for_model(model: &WmModel) -> StateSnapshot {
         windows,
         visible_window_ids,
         workspace_names,
+        resize_state: model.resize_state.clone(),
     }
 }
 

@@ -7,6 +7,7 @@ mod types;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use hypreact_core::query::state_snapshot_for_model;
+use hypreact_core::resize::ResizeDirection;
 use hypreact_core::wm::DrawableSpace;
 use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
@@ -413,6 +414,48 @@ pub extern "C" fn hypreact_runtime_move_tiled_window(
             &first_window_id,
             &second_window_id,
         );
+        status_result(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_resize_direction(
+    handle: *mut HypreactRuntimeHandle,
+    direction: *const std::ffi::c_char,
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
+            return Err(FfiError::InvalidInput(
+                "layout runtime not initialized".to_string(),
+            ));
+        };
+
+        let direction = match cstr_to_str(direction)? {
+            "left" => ResizeDirection::Left,
+            "right" => ResizeDirection::Right,
+            "up" => ResizeDirection::Up,
+            "down" => ResizeDirection::Down,
+            value => {
+                return Err(FfiError::InvalidInput(format!(
+                    "invalid resize direction: {value}"
+                )))
+            }
+        };
+
+        let changed = runtime_facade::resize_direction(
+            &mut layout_runtime.service,
+            &mut handle.model,
+            direction,
+        )
+        .map_err(|error| FfiError::InvalidJson(error.to_string()))?;
         status_result(StatusResult {
             changed,
             focused_window_id: None,

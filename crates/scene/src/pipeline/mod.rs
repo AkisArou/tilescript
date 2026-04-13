@@ -2,6 +2,7 @@ use crate::CompiledKeyframesRule;
 use crate::css::{CssParseError, CssValueError, StyledLayoutTree, parse_stylesheet};
 pub use crate::layout_calc::{LaidOutNode, LaidOutTree};
 use crate::scene::{SceneRequest, SceneResponse};
+use crate::style_tree::build_styled_layout_tree_from_sheet_with_resize_state;
 use serde::Serialize;
 use hypreact_core::ResolvedLayoutNode;
 use std::collections::HashMap;
@@ -111,6 +112,7 @@ struct SceneRequestKey<'a> {
     stylesheets: &'a hypreact_core::runtime::prepared_layout::PreparedStylesheets,
     width: f32,
     height: f32,
+    resize_state: &'a hypreact_core::resize::WorkspaceResizeState,
 }
 
 fn scene_request_key(request: &SceneRequest) -> Option<String> {
@@ -120,6 +122,7 @@ fn scene_request_key(request: &SceneRequest) -> Option<String> {
         stylesheets: &request.stylesheets,
         width: request.space.width,
         height: request.space.height,
+        resize_state: &request.resize_state,
     })
     .ok()
 }
@@ -165,8 +168,12 @@ pub fn compute_layout_from_sheet(
     width: f32,
     height: f32,
 ) -> Result<LaidOutTree, LayoutPipelineError> {
-    let styled =
-        build_styled_layout_tree_from_sheet(root, sheet).map_err(LayoutPipelineError::from)?;
+    let styled = build_styled_layout_tree_from_sheet_with_resize_state(
+        root,
+        sheet,
+        &hypreact_core::resize::WorkspaceResizeState::default(),
+    )
+    .map_err(LayoutPipelineError::from)?;
     compute_layout_from_styled(&styled, width, height)
 }
 
@@ -197,8 +204,13 @@ pub fn compute_layout_from_request_with_sheet(
     request: &SceneRequest,
     sheet: &crate::css::CompiledStyleSheet,
 ) -> Result<SceneResponse, LayoutPipelineError> {
-    let laid_out =
-        compute_layout_from_sheet(&request.root, sheet, request.space.width, request.space.height)?;
+    let styled = build_styled_layout_tree_from_sheet_with_resize_state(
+        &request.root,
+        sheet,
+        &request.resize_state,
+    )
+    .map_err(LayoutPipelineError::from)?;
+    let laid_out = compute_layout_from_styled(&styled, request.space.width, request.space.height)?;
 
     Ok(SceneResponse { root: laid_out.snapshot() })
 }
@@ -404,6 +416,7 @@ mod tests {
                 width: 320.0,
                 height: 200.0,
             },
+            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
         };
 
         let response = compute_layout_from_request(&request).unwrap();
@@ -501,6 +514,7 @@ mod tests {
                 }),
             },
             space: LayoutSpace { width: 320.0, height: 200.0 },
+            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
         };
 
         let response_a = compute_layout_from_request(&request).unwrap();
@@ -531,6 +545,7 @@ mod tests {
                 width: 320.0,
                 height: 200.0,
             },
+            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
         };
 
         let request_b = SceneRequest {

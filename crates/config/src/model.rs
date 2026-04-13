@@ -32,6 +32,23 @@ pub struct LayoutSelectionConfig {
     pub per_monitor: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResizeConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_px: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_branch_size_px: Option<f32>,
+}
+
+impl Default for ResizeConfig {
+    fn default() -> Self {
+        Self {
+            step_px: None,
+            min_branch_size_px: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -40,6 +57,8 @@ pub struct Config {
     pub global_stylesheet_path: Option<String>,
     #[serde(default)]
     pub layout_selection: LayoutSelectionConfig,
+    #[serde(default)]
+    pub resize: ResizeConfig,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -217,6 +236,7 @@ impl Config {
 
     pub fn build_scene_request(
         &self,
+        state: &StateSnapshot,
         workspace: &WorkspaceSnapshot,
         output: Option<&OutputSnapshot>,
         root: ResolvedLayoutNode,
@@ -254,6 +274,7 @@ impl Config {
                     .or_else(|| output.map(|output| output.logical_height as f32))
                     .unwrap_or_default(),
             },
+            resize_state: state.workspace_resize_state(&workspace.id),
         };
 
         debug!(
@@ -282,7 +303,7 @@ impl Config {
             .and_then(|output_id| state.output_by_id(output_id))
             .or_else(|| state.current_output());
 
-        self.build_scene_request(workspace, output, root, artifact)
+        self.build_scene_request(state, workspace, output, root, artifact)
             .map(Some)
     }
 
@@ -302,7 +323,7 @@ impl Config {
         };
         let output = state.output_by_id(output_id);
 
-        self.build_scene_request(workspace, output, root, artifact)
+        self.build_scene_request(state, workspace, output, root, artifact)
             .map(Some)
     }
 }
@@ -348,6 +369,20 @@ mod tests {
             scale: 1,
             enabled: true,
             current_workspace_id: Some(WorkspaceId::from("ws-1")),
+        }
+    }
+
+    fn state_snapshot() -> StateSnapshot {
+        StateSnapshot {
+            focused_window_id: None,
+            current_output_id: Some(OutputId::from("out-1")),
+            current_workspace_id: Some(WorkspaceId::from("ws-1")),
+            outputs: vec![output()],
+            workspaces: vec![workspace("master-stack")],
+            windows: vec![],
+            visible_window_ids: vec![],
+            workspace_names: vec!["1".into()],
+            resize_state: hypreact_core::resize::ResizeState::default(),
         }
     }
 
@@ -400,6 +435,7 @@ mod tests {
 
         let request = config
             .build_scene_request(
+                &state_snapshot(),
                 &workspace("master-stack"),
                 Some(&output()),
                 ResolvedLayoutNode::Workspace {
@@ -430,6 +466,7 @@ mod tests {
 
         let request = config
             .build_scene_request(
+                &state_snapshot(),
                 &WorkspaceSnapshot {
                     layout_space: Some(hypreact_core::wm::DrawableSpace {
                         width: 1600,
@@ -498,6 +535,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
+            resize_state: hypreact_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -541,6 +579,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
+            resize_state: hypreact_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -606,6 +645,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into(), "2".into()],
+            resize_state: hypreact_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -632,6 +672,7 @@ mod tests {
         let config = Config::default();
         let error = config
             .build_scene_request(
+                &state_snapshot(),
                 &workspace("missing"),
                 Some(&output()),
                 ResolvedLayoutNode::Workspace {
@@ -665,6 +706,7 @@ mod tests {
 
         let error = config
             .build_scene_request(
+                &state_snapshot(),
                 &workspace("master-stack"),
                 Some(&output()),
                 ResolvedLayoutNode::Workspace {

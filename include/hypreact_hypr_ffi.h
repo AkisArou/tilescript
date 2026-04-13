@@ -199,6 +199,7 @@ HypreactPlacementResult hypreact_runtime_layout_placement_for_workspace(
 HypreactStringResult hypreact_runtime_layout_focus_candidate(HypreactRuntimeHandle* handle, const char* direction);
 HypreactStringResult hypreact_runtime_layout_close_focus_candidate(HypreactRuntimeHandle* handle, const char* window_id);
 HypreactStringResult hypreact_runtime_layout_swap_candidate(HypreactRuntimeHandle* handle, const char* direction);
+HypreactStatusResult hypreact_runtime_resize_direction(HypreactRuntimeHandle* handle, const char* direction);
 HypreactStatusResult hypreact_runtime_move_tiled_window(
     HypreactRuntimeHandle* handle,
     const char* first_window_id,

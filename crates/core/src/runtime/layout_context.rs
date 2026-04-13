@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::resize::LayoutAdjustmentState;
+use crate::resize::WorkspaceResizeState;
 use crate::snapshot::OutputSnapshot;
 use crate::{LayoutSpace, OutputId, WindowId, WorkspaceId};
 
@@ -78,6 +78,6 @@ pub struct LayoutStateContext {
     pub workspace_names: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_layout_name: Option<String>,
-    #[serde(default, skip_serializing_if = "LayoutAdjustmentState::is_empty")]
-    pub layout_adjustments: LayoutAdjustmentState,
+    #[serde(default, skip_serializing_if = "WorkspaceResizeState::is_empty")]
+    pub resize_state: WorkspaceResizeState,
 }

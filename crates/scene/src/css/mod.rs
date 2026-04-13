@@ -284,6 +284,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_removed_hypreact_resize_properties() {
+        let error = parse_stylesheet("#frame { -hypreact-partition-axis: row; }").unwrap_err();
+
+        assert_eq!(
+            error,
+            CssParseError::UnsupportedProperty {
+                property: "-hypreact-partition-axis".into()
+            }
+        );
+    }
+
+    #[test]
     fn supports_color_property() {
         let sheet = parse_stylesheet("window { color: rgba(12, 34, 56, 0.5); }").unwrap();
         let node = runtime_window_with_meta(LayoutNodeMeta::default());

@@ -146,8 +146,16 @@ pub struct LinearStopValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MotionEasingValue {
     Keyword(MotionEasingKeywordValue),
-    CubicBezier { x1: f32, y1: f32, x2: f32, y2: f32 },
-    Steps { count: u16, position: StepPositionValue },
+    CubicBezier {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    },
+    Steps {
+        count: u16,
+        position: StepPositionValue,
+    },
     LinearFunction(Vec<LinearStopValue>),
 }
 

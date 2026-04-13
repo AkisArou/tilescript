@@ -6,4 +6,8 @@ export interface LayoutsConfig {
 
 export interface HypreactConfig {
   layouts?: LayoutsConfig;
+  resize?: {
+    step_px?: number;
+    min_branch_size_px?: number;
+  };
 }

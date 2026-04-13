@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::resize::LayoutAdjustmentState;
+use crate::resize::{ResizeState, WorkspaceResizeState};
 use crate::runtime::layout_context::{
     LayoutEvaluationContext, LayoutMonitorContext, LayoutStateContext, LayoutWindowContext,
     LayoutWorkspaceContext,
@@ -67,6 +67,8 @@ pub struct StateSnapshot {
     pub windows: Vec<WindowSnapshot>,
     pub visible_window_ids: Vec<WindowId>,
     pub workspace_names: Vec<String>,
+    #[serde(default)]
+    pub resize_state: ResizeState,
 }
 
 impl StateSnapshot {
@@ -86,6 +88,14 @@ impl StateSnapshot {
 
     pub fn output_by_id(&self, output_id: &OutputId) -> Option<&OutputSnapshot> {
         self.outputs.iter().find(|output| &output.id == output_id)
+    }
+
+    pub fn workspace_resize_state(&self, workspace_id: &WorkspaceId) -> WorkspaceResizeState {
+        self.resize_state
+            .by_workspace_id
+            .get(workspace_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn filtered_for_output(
@@ -237,7 +247,7 @@ impl StateSnapshot {
                 visible_window_ids: self.visible_window_ids.clone(),
                 workspace_names: self.workspace_names.clone(),
                 selected_layout_name: selected_layout_name.clone(),
-                layout_adjustments: LayoutAdjustmentState::default(),
+                resize_state: self.workspace_resize_state(&workspace.id),
             }),
             workspace_id: workspace.id.clone(),
             output,
@@ -281,6 +291,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
 
         let workspace = state.current_workspace().unwrap();
@@ -326,6 +337,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
         let workspace = state.current_workspace().unwrap();
 
@@ -377,6 +389,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
         let workspace = state.current_workspace().unwrap();
 
@@ -479,6 +492,7 @@ mod tests {
             ],
             visible_window_ids: vec![WindowId::from("w1")],
             workspace_names: vec!["1".into(), "2".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
 
         let windows = state.windows_for_workspace(state.current_workspace().unwrap());
@@ -579,6 +593,7 @@ mod tests {
             ],
             visible_window_ids: vec![WindowId::from("w1"), WindowId::from("w2")],
             workspace_names: vec!["1".into(), "2".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
 
         let filtered = state
@@ -684,6 +699,7 @@ mod tests {
                 WindowId::from("fullscreen"),
             ],
             workspace_names: vec!["1".into()],
+            resize_state: crate::resize::ResizeState::default(),
         };
 
         let workspace = state.current_workspace().unwrap();
