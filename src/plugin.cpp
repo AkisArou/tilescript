@@ -717,8 +717,6 @@ void recalculateWorkspace(const PHLWORKSPACE& workspace) {
     if (monitor && g_layoutManager) {
         g_layoutManager->recalculateMonitor(monitor);
     }
-
-    applyPlacementForWorkspace(workspace);
 }
 
 void applyPlacementForWorkspace(const PHLWORKSPACE& workspace) {
