@@ -328,10 +328,10 @@ Those should remain no-op rather than guessed incorrectly.
 
 The authored config may expose top-level resize behavior knobs for runtime tuning without changing layout structure:
 
-- `resize.step_px`
+- `resize.stepPx`
   - requested pixel resize increment per command
   - this is the equivalent of i3-style configurable resize amount
-- `resize.min_branch_size_px`
+- `resize.minBranchSizePx`
   - practical minimum inferred branch size on the partition main axis
   - used only to derive inferred minimum share constraints for flex-inferred partitions
 
@@ -486,7 +486,7 @@ The user-facing step may be defined in pixels, but the runtime still applies res
 
 The runtime may source it from top-level config:
 
-- `resize.step_px`
+- `resize.stepPx`
 
 The runtime converts that requested pixel step into share-space against the active partition size and current share total.
 
@@ -496,7 +496,7 @@ The step value should be globally consistent for a running config.
 
 For flex-inferred partitions, practical minimum branch size may be configured in pixels:
 
-- `resize.min_branch_size_px`
+- `resize.minBranchSizePx`
 
 The runtime converts that floor into share-space using the current partition size and total default branch shares, then clamps shrinking branches against the resulting minimum share.
 

@@ -2,7 +2,6 @@
   "extends": "../packages/tsconfig/tsconfig.react.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "jsxImportSource": "@hypreact/sdk",
     "noEmit": true,
     "declaration": false,
@@ -10,9 +9,15 @@
     "emitDeclarationOnly": false,
     "composite": false,
     "paths": {
-      "@hypreact/sdk/*": ["../packages/sdk/js/src/*"]
+      "@hypreact/sdk/*": [
+        "../packages/sdk/js/src/*"
+      ]
     },
     "tsBuildInfoFile": "./node_modules/.tsbuild/test-config.tsbuildinfo"
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "./**/*.d.ts"]
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "./**/*.d.ts"
+  ]
 }

@@ -434,7 +434,7 @@ mod tests {
             r#"
                 import "./index.css";
                 import type { HypreactConfig } from "@hypreact/sdk/config";
-                export default { layouts: { default: "master-stack" } } satisfies HypreactConfig;
+                export default { defaultLayout: "master-stack" } satisfies HypreactConfig;
             "#,
         )
         .unwrap();

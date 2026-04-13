@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
@@ -22,21 +21,22 @@ pub struct LayoutDefinition {
     pub runtime_cache_payload: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct LayoutSelectionConfig {
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayoutRule {
+    pub layout: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub per_workspace: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub per_monitor: BTreeMap<String, String>,
+    pub index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monitor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResizeConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "stepPx")]
     pub step_px: Option<f32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "minBranchSizePx")]
     pub min_branch_size_px: Option<f32>,
 }
 
@@ -53,10 +53,12 @@ impl Default for ResizeConfig {
 pub struct Config {
     #[serde(default)]
     pub layouts: Vec<LayoutDefinition>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "globalStylesheetPath")]
     pub global_stylesheet_path: Option<String>,
-    #[serde(default)]
-    pub layout_selection: LayoutSelectionConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "defaultLayout")]
+    pub default_layout: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "layoutRules")]
+    pub layout_rules: Vec<LayoutRule>,
     #[serde(default)]
     pub resize: ResizeConfig,
 }
@@ -187,27 +189,18 @@ impl Config {
         &self,
         workspace_name: &str,
         output_id: Option<&OutputId>,
-        workspace_names: &[String],
     ) -> Option<LayoutRef> {
-        let workspace_index = workspace_names.iter().position(|name| name == workspace_name);
-        if let Some(index) = workspace_index
-            && let Some(layout_name) = self.layout_selection.per_workspace.get(index)
-        {
-            return Some(LayoutRef {
-                name: layout_name.clone(),
-            });
-        }
+        let workspace_index = workspace_name_index(workspace_name);
 
-        if let Some(output_id) = output_id
-            && let Some(layout_name) = self.layout_selection.per_monitor.get(output_id.as_str())
-        {
-            return Some(LayoutRef {
-                name: layout_name.clone(),
-            });
-        }
-
-        self.layout_selection
-            .default
+        self.layout_rules
+            .iter()
+            .enumerate()
+            .filter(|(_, rule)| {
+                layout_rule_matches(rule, workspace_name, workspace_index, output_id)
+            })
+            .max_by_key(|(order, rule)| (layout_rule_specificity(rule), *order))
+            .map(|(_, rule)| rule.layout.clone())
+            .or_else(|| self.default_layout.clone())
             .clone()
             .map(|name| LayoutRef { name })
     }
@@ -326,6 +319,50 @@ impl Config {
         self.build_scene_request(state, workspace, output, root, artifact)
             .map(Some)
     }
+}
+
+fn workspace_name_index(workspace_name: &str) -> Option<usize> {
+    workspace_name
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| index.checked_sub(1))
+}
+
+fn layout_rule_matches(
+    rule: &LayoutRule,
+    workspace_name: &str,
+    workspace_index: Option<usize>,
+    output_id: Option<&OutputId>,
+) -> bool {
+    if let Some(index) = rule.index && workspace_index != Some(index) {
+        return false;
+    }
+
+    if let Some(name) = rule.name.as_deref() && name != workspace_name {
+        return false;
+    }
+
+    if let Some(monitor) = rule.monitor.as_deref()
+        && output_id.map(OutputId::as_str) != Some(monitor)
+    {
+        return false;
+    }
+
+    true
+}
+
+fn layout_rule_specificity(rule: &LayoutRule) -> u8 {
+    let mut score = 0;
+    if rule.index.is_some() {
+        score += 2;
+    }
+    if rule.name.is_some() {
+        score += 2;
+    }
+    if rule.monitor.is_some() {
+        score += 1;
+    }
+    score
 }
 
 impl From<&LayoutDefinition> for LayoutRef {
@@ -822,5 +859,71 @@ mod tests {
 
         assert_eq!(paths.authored_config, authored);
         assert_eq!(paths.prepared_config, runtime);
+    }
+
+    #[test]
+    fn selects_layout_rule_by_numeric_workspace_index() {
+        let config = Config {
+            default_layout: Some("master-stack".into()),
+            layout_rules: vec![LayoutRule {
+                index: Some(4),
+                layout: "testing".into(),
+                ..LayoutRule::default()
+            }],
+            ..Config::default()
+        };
+
+        let layout = config.selected_layout_ref_for_workspace("5", Some(&OutputId::from("eDP-1")));
+
+        assert_eq!(layout.map(|layout| layout.name), Some("testing".to_string()));
+    }
+
+    #[test]
+    fn later_layout_rule_wins_when_multiple_rules_match() {
+        let config = Config {
+            default_layout: Some("master-stack".into()),
+            layout_rules: vec![
+                LayoutRule {
+                    monitor: Some("eDP-1".into()),
+                    layout: "master-stack".into(),
+                    ..LayoutRule::default()
+                },
+                LayoutRule {
+                    index: Some(4),
+                    monitor: Some("eDP-1".into()),
+                    layout: "testing".into(),
+                    ..LayoutRule::default()
+                },
+            ],
+            ..Config::default()
+        };
+
+        let layout = config.selected_layout_ref_for_workspace("5", Some(&OutputId::from("eDP-1")));
+
+        assert_eq!(layout.map(|layout| layout.name), Some("testing".to_string()));
+    }
+
+    #[test]
+    fn monitor_fallback_does_not_override_more_specific_workspace_index_rule() {
+        let config = Config {
+            default_layout: Some("master-stack".into()),
+            layout_rules: vec![
+                LayoutRule {
+                    index: Some(4),
+                    layout: "testing".into(),
+                    ..LayoutRule::default()
+                },
+                LayoutRule {
+                    monitor: Some("eDP-1".into()),
+                    layout: "master-stack".into(),
+                    ..LayoutRule::default()
+                },
+            ],
+            ..Config::default()
+        };
+
+        let layout = config.selected_layout_ref_for_workspace("5", Some(&OutputId::from("eDP-1")));
+
+        assert_eq!(layout.map(|layout| layout.name), Some("testing".to_string()));
     }
 }

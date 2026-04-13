@@ -258,13 +258,11 @@ impl LayoutRuntimeService {
 
 pub fn apply_layout_selection_to_model(model: &mut WmModel, config: &Config) {
     let current_output_id = model.current_output_id().cloned();
-    let workspace_names = model.workspace_names();
 
     for workspace in model.workspaces.values_mut() {
         workspace.effective_layout = config.selected_layout_ref_for_workspace(
             &workspace.name,
             workspace.output_id.as_ref().or(current_output_id.as_ref()),
-            &workspace_names,
         );
     }
 }
@@ -1283,21 +1281,7 @@ mod tests {
             model.set_window_mapped(window_id, true);
         }
 
-        let workspace_names = model.workspace_names();
-        for workspace in model.workspaces.values_mut() {
-            workspace.effective_layout = loaded
-                .config
-                .layout_selection
-                .per_workspace
-                .get(
-                    workspace_names
-                        .iter()
-                        .position(|name| name == &workspace.name)
-                        .unwrap(),
-                )
-                .cloned()
-                .map(|name| hypreact_core::types::LayoutRef { name });
-        }
+        apply_layout_selection_to_model(&mut model, &loaded.config);
 
         let snapshot = state_snapshot_for_model(&model);
         let workspace = snapshot.current_workspace().expect("current workspace");
@@ -1986,7 +1970,7 @@ mod tests {
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
-        for workspace_name in ["1", "2", "3", "4", "5"] {
+        for workspace_name in ["1", "2", "3", "4", "5", "6"] {
             model.upsert_workspace(
                 WorkspaceId::from(workspace_name),
                 workspace_name.to_string(),
@@ -1997,24 +1981,24 @@ mod tests {
             "eDP-1".to_string(),
             1600,
             1000,
-            Some(WorkspaceId::from("5")),
+            Some(WorkspaceId::from("6")),
         );
-        model.attach_workspace_to_output(WorkspaceId::from("5"), OutputId::from("eDP-1"));
+        model.attach_workspace_to_output(WorkspaceId::from("6"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
-            WorkspaceId::from("5"),
+            WorkspaceId::from("6"),
             Some(hypreact_core::wm::DrawableSpace {
                 width: 1600,
                 height: 1000,
             }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
-        model.set_current_workspace(WorkspaceId::from("5"));
+        model.set_current_workspace(WorkspaceId::from("6"));
 
         for id in ["master", "stack"] {
             let window_id = WindowId::from(id.to_string());
             model.insert_window(
                 window_id.clone(),
-                Some(WorkspaceId::from("5")),
+                Some(WorkspaceId::from("6")),
                 Some(OutputId::from("eDP-1")),
             );
             model.set_window_mapped(window_id, true);
@@ -2028,7 +2012,7 @@ mod tests {
         )
         .expect("resize result"));
 
-        let resize_state = model.workspace_resize_state(&WorkspaceId::from("5"));
+        let resize_state = model.workspace_resize_state(&WorkspaceId::from("6"));
         assert!(resize_state.adjustments_by_partition_id.is_empty());
     }
 

@@ -1,13 +1,14 @@
-export interface LayoutsConfig {
-  default?: string;
-  per_workspace?: string[];
-  per_monitor?: Record<string, string>;
-}
+export type LayoutRule =
+  | { layout: string; index: number; monitor?: string; name?: never }
+  | { layout: string; name: string; index?: never; monitor?: string }
+  | { layout: string; monitor: string; index?: never; name?: never }
+  | { layout: string; index?: never; name?: never; monitor?: never };
 
 export interface HypreactConfig {
-  layouts?: LayoutsConfig;
+  defaultLayout?: string;
+  layoutRules?: LayoutRule[];
   resize?: {
-    step_px?: number;
-    min_branch_size_px?: number;
+    stepPx?: number;
+    minBranchSizePx?: number;
   };
 }

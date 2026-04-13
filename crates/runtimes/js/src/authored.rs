@@ -8,7 +8,7 @@ use tracing::debug;
 
 use crate::module_graph_runtime::evaluate_entry_export_to_json;
 use hypreact_config::model::{
-    Config, LayoutConfigError, LayoutDefinition, LayoutSelectionConfig, ResizeConfig,
+    Config, LayoutConfigError, LayoutDefinition, LayoutRule, ResizeConfig,
 };
 use crate::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
 use crate::graph::{
@@ -107,7 +107,7 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
         );
     }
 
-    validate_layout_selection(path, &config.layout_selection, &layout_defs)?;
+    validate_layout_selection(path, config.default_layout.as_deref(), &config.layout_rules, &layout_defs)?;
     config.layouts = layout_defs;
     Ok(config)
 }
@@ -624,20 +624,22 @@ fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutConfi
     Ok(Config {
         layouts: Vec::new(),
         global_stylesheet_path: None,
-        layout_selection: decode_layout_selection(root.get("layouts"), path)?,
+        default_layout: decode_optional_string(root.get("defaultLayout"), path, "root.defaultLayout")?,
+        layout_rules: decode_layout_rules(root.get("layoutRules"), path)?,
         resize: decode_resize_config(root.get("resize"), path)?,
     })
 }
 
 fn validate_layout_selection(
     path: &Path,
-    selection: &LayoutSelectionConfig,
+    default_layout: Option<&str>,
+    layout_rules: &[LayoutRule],
     layouts: &[LayoutDefinition],
 ) -> Result<(), LayoutConfigError> {
     let known = layouts.iter().map(|layout| layout.name.as_str()).collect::<Vec<_>>();
     let is_known = |name: &str| known.iter().any(|known_name| *known_name == name);
 
-    if let Some(default) = &selection.default {
+    if let Some(default) = default_layout {
         if !is_known(default) {
             return Err(LayoutConfigError::DecodeAuthoredConfig {
                 path: path.to_path_buf(),
@@ -648,12 +650,13 @@ fn validate_layout_selection(
         }
     }
 
-    for layout in selection.per_workspace.iter().chain(selection.per_monitor.values()) {
-        if !is_known(layout) {
+    for rule in layout_rules {
+        if !is_known(&rule.layout) {
             return Err(LayoutConfigError::DecodeAuthoredConfig {
                 path: path.to_path_buf(),
                 message: format!(
-                    "selected layout `{layout}` is not defined by discovered layout modules"
+                    "selected layout `{}` is not defined by discovered layout modules",
+                    rule.layout
                 ),
             });
         }
@@ -662,38 +665,36 @@ fn validate_layout_selection(
     Ok(())
 }
 
-fn decode_layout_selection(
+fn decode_layout_rules(
     value: Option<&Value>,
     path: &Path,
-) -> Result<LayoutSelectionConfig, LayoutConfigError> {
+) -> Result<Vec<LayoutRule>, LayoutConfigError> {
     let Some(value) = value else {
-        return Ok(LayoutSelectionConfig::default());
+        return Ok(Vec::new());
     };
-    let object = expect_object(path, value, "root.layouts")?;
-    let per_monitor = match object.get("per_monitor") {
-        Some(value) => {
-            let map = expect_object(path, value, "root.layouts.per_monitor")?;
-            let mut out = BTreeMap::new();
-            for (name, value) in map {
-                out.insert(
-                    name.clone(),
-                    expect_string(path, value, &format!("root.layouts.per_monitor.{name}"))?
-                        .to_owned(),
-                );
-            }
-            out
-        }
-        None => BTreeMap::new(),
-    };
+    let items = expect_array(path, value, "root.layoutRules")?;
 
-    Ok(LayoutSelectionConfig {
-        default: decode_optional_string(object.get("default"), path, "root.layouts.default")?,
-        per_workspace: decode_string_array(
-            object.get("per_workspace"),
-            path,
-            "root.layouts.per_workspace",
-        )?,
-        per_monitor,
+    items.iter()
+        .enumerate()
+        .map(|(index, value)| decode_layout_rule(value, path, &format!("root.layoutRules[{index}]")))
+        .collect()
+}
+
+fn decode_layout_rule(
+    value: &Value,
+    path: &Path,
+    field: &str,
+) -> Result<LayoutRule, LayoutConfigError> {
+    let object = expect_object(path, value, field)?;
+
+    Ok(LayoutRule {
+        layout: expect_string(path, object.get("layout").ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
+            path: path.to_path_buf(),
+            message: format!("expected string at {field}.layout"),
+        })?, &format!("{field}.layout"))?.to_owned(),
+        index: decode_optional_usize(object.get("index"), path, &format!("{field}.index"))?,
+        name: decode_optional_string(object.get("name"), path, &format!("{field}.name"))?,
+        monitor: decode_optional_string(object.get("monitor"), path, &format!("{field}.monitor"))?,
     })
 }
 
@@ -707,11 +708,11 @@ fn decode_resize_config(
     let object = expect_object(path, value, "root.resize")?;
 
     Ok(ResizeConfig {
-        step_px: decode_optional_f32(object.get("step_px"), path, "root.resize.step_px")?,
+        step_px: decode_optional_f32(object.get("stepPx"), path, "root.resize.stepPx")?,
         min_branch_size_px: decode_optional_f32(
-            object.get("min_branch_size_px"),
+            object.get("minBranchSizePx"),
             path,
-            "root.resize.min_branch_size_px",
+            "root.resize.minBranchSizePx",
         )?,
     })
 }
@@ -725,16 +726,12 @@ fn decode_optional_string(
     value.map(|value| expect_string(path, value, field).map(str::to_owned)).transpose()
 }
 
-fn decode_string_array(
+fn decode_optional_usize(
     value: Option<&Value>,
     path: &Path,
     field: &str,
-) -> Result<Vec<String>, LayoutConfigError> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    let items = expect_array(path, value, field)?;
-    items.iter().map(|value| expect_string(path, value, field).map(str::to_owned)).collect()
+) -> Result<Option<usize>, LayoutConfigError> {
+    value.map(|value| expect_usize(path, value, field)).transpose()
 }
 
 fn decode_optional_f32(
@@ -789,6 +786,16 @@ fn expect_f32(path: &Path, value: &Value, field: &str) -> Result<f32, LayoutConf
         })
 }
 
+fn expect_usize(path: &Path, value: &Value, field: &str) -> Result<usize, LayoutConfigError> {
+    value
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
+            path: path.to_path_buf(),
+            message: format!("expected non-negative integer at {field}"),
+        })
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -815,22 +822,14 @@ mod tests {
             root.join("config.ts"),
             r#"
                 import type { HypreactConfig } from "@hypreact/sdk/config";
-                import { layouts } from "./config/layouts";
 
                 export default {
-                  layouts,
+                  defaultLayout: "master-stack",
+                  layoutRules: [
+                    { index: 0, layout: "master-stack" },
+                    { monitor: "eDP-1", layout: "master-stack" },
+                  ],
                 } satisfies HypreactConfig;
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("config/layouts.ts"),
-            r#"
-                export const layouts = {
-                  default: "master-stack",
-                  per_workspace: ["master-stack", "master-stack"],
-                  per_monitor: { "eDP-1": "master-stack" },
-                };
             "#,
         )
         .unwrap();
@@ -848,7 +847,8 @@ mod tests {
 
         let config = load_authored_config(root.join("config.ts")).unwrap();
 
-        assert_eq!(config.layout_selection.default.as_deref(), Some("master-stack"));
+        assert_eq!(config.default_layout.as_deref(), Some("master-stack"));
+        assert_eq!(config.layout_rules.len(), 2);
         assert_eq!(config.layouts.len(), 1);
         assert_eq!(config.layouts[0].module, "layouts/master-stack/index.tsx");
         let runtime_graph =
@@ -874,24 +874,14 @@ mod tests {
             root.join("config.ts"),
             r#"
                 import type { HypreactConfig } from "@hypreact/sdk/config";
-                import { layouts } from "./config/layouts";
 
                 export default {
-                  layouts,
+                  defaultLayout: "master-stack",
                   resize: {
-                    step_px: 80,
-                    min_branch_size_px: 144,
+                    stepPx: 80,
+                    minBranchSizePx: 144,
                   },
                 } satisfies HypreactConfig;
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("config/layouts.ts"),
-            r#"
-                export const layouts = {
-                  default: "master-stack",
-                };
             "#,
         )
         .unwrap();
@@ -920,7 +910,7 @@ mod tests {
             root.join("config.ts"),
             r#"
                 export default {
-                  layouts: { default: "master-stack" },
+                  defaultLayout: "master-stack",
                 };
             "#,
         )
@@ -963,7 +953,7 @@ mod tests {
                 import type { HypreactConfig } from "@hypreact/sdk/config";
 
                 export default {
-                  layouts: { default: "master-stack" },
+                  defaultLayout: "master-stack",
                 } satisfies HypreactConfig;
             "#,
         )
@@ -982,7 +972,7 @@ mod tests {
         rebuild_prepared_config(root.join("config.ts"), &runtime_entry).unwrap();
 
         let config = load_prepared_config(&runtime_entry).unwrap();
-        assert_eq!(config.layout_selection.default.as_deref(), Some("master-stack"));
+        assert_eq!(config.default_layout.as_deref(), Some("master-stack"));
     }
 
 }

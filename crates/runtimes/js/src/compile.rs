@@ -542,7 +542,7 @@ mod tests {
         fs::write(
             root.join("config.ts"),
             r#"
-                export default { layouts: { default: "master-stack" } };
+                export default { defaultLayout: "master-stack" };
             "#,
         )
         .unwrap();

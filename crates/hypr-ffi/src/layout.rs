@@ -178,31 +178,32 @@ fn map_layout_status(status: LayoutStatusSnapshot) -> LayoutRuntimeStatus {
 mod tests {
     use super::layout_focus_candidate;
     use crate::types::{HypreactRuntimeHandle, LayoutRuntimeState};
-    use hypreact_config::model::{Config, LayoutSelectionConfig};
+    use hypreact_config::model::{Config, LayoutRule};
     use hypreact_core::wm::WmModel;
     use hypreact_core::{OutputId, WindowId, WorkspaceId};
     use hypreact_layout_runtime::{LayoutRuntimePaths, LayoutRuntimeService};
-    use std::collections::BTreeMap;
 
     #[test]
-    fn per_workspace_takes_precedence_over_per_monitor() {
-        let mut per_monitor = BTreeMap::new();
-        per_monitor.insert("eDP-1".to_string(), "master-stack".to_string());
-
+    fn later_layout_rule_overrides_earlier_matching_rule() {
         let config = Config {
-            layout_selection: LayoutSelectionConfig {
-                default: Some("default-layout".to_string()),
-                per_workspace: vec!["master-stack".to_string(), "primary-stack".to_string()],
-                per_monitor,
-            },
+            default_layout: Some("default-layout".to_string()),
+            layout_rules: vec![
+                LayoutRule {
+                    layout: "master-stack".to_string(),
+                    monitor: Some("eDP-1".to_string()),
+                    ..LayoutRule::default()
+                },
+                LayoutRule {
+                    layout: "primary-stack".to_string(),
+                    index: Some(1),
+                    monitor: Some("eDP-1".to_string()),
+                    ..LayoutRule::default()
+                },
+            ],
             ..Config::default()
         };
 
-        let layout = config.selected_layout_ref_for_workspace(
-            "2",
-            Some(&OutputId::from("eDP-1")),
-            &["1".to_string(), "2".to_string()],
-        );
+        let layout = config.selected_layout_ref_for_workspace("2", Some(&OutputId::from("eDP-1")));
 
         assert_eq!(
             layout.map(|layout| layout.name),
