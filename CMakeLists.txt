@@ -21,15 +21,13 @@ pkg_check_modules(LIBDRM REQUIRED libdrm)
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-add_custom_command(
-  OUTPUT "${HYPREACT_FFI_STATICLIB}"
+add_custom_target(
+  hypreact_ffi ALL
   COMMAND "${CARGO_EXECUTABLE}" build --release -p hypreact-hypr-ffi
   WORKING_DIRECTORY "${HYPREACT_ROOT}"
   COMMENT "Building hypreact-hypr-ffi release staticlib"
   VERBATIM
 )
-
-add_custom_target(hypreact_ffi ALL DEPENDS "${HYPREACT_FFI_STATICLIB}")
 
 add_library(hypreact SHARED src/plugin.cpp)
 add_dependencies(hypreact hypreact_ffi)

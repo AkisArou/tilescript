@@ -3,6 +3,7 @@ use std::mem;
 use std::path::Path;
 use std::path::PathBuf;
 
+use oxc::CompilerInterface;
 use oxc::allocator::Allocator;
 use oxc::ast::ast::Statement;
 use oxc::codegen::CodegenReturn;
@@ -11,7 +12,6 @@ use oxc::parser::Parser;
 use oxc::span::GetSpan;
 use oxc::span::SourceType;
 use oxc::transformer::{JsxRuntime, TransformOptions};
-use oxc::CompilerInterface;
 
 use crate::graph::{ImportedModuleKind, ModuleGraph, ModuleId, ModuleKind};
 use crate::module_graph::{JavaScriptModule, JavaScriptModuleGraph};
@@ -115,18 +115,12 @@ impl AppBuildPlan {
         }
 
         if needs_jsx_runtime
-            && !virtual_modules
-                .iter()
-                .any(|name| name == "@hypreact/sdk/jsx-runtime")
+            && !virtual_modules.iter().any(|name| name == "@hypreact/sdk/jsx-runtime")
         {
             virtual_modules.push("@hypreact/sdk/jsx-runtime".into());
         }
 
-        Self {
-            script_modules,
-            stylesheet_modules,
-            virtual_modules,
-        }
+        Self { script_modules, stylesheet_modules, virtual_modules }
     }
 }
 
@@ -143,11 +137,7 @@ impl Default for AppScriptCompiler {
         transform.jsx.pragma = Some("sp".into());
         transform.jsx.pragma_frag = Some("Fragment".into());
 
-        Self {
-            printed: String::new(),
-            errors: Vec::new(),
-            transform,
-        }
+        Self { printed: String::new(), errors: Vec::new(), transform }
     }
 }
 
@@ -201,10 +191,7 @@ pub fn compile_app(plan: &AppBuildPlan) -> Result<CompiledApp, CompileError> {
             .execute(&injected_source, source_type, path)
             .map_err(|_| CompileError::Transpile { path: path.clone() })?;
         let code = strip_stylesheet_imports(path, &code)?;
-        scripts.push(CompiledScriptModule {
-            path: path.clone(),
-            code,
-        });
+        scripts.push(CompiledScriptModule { path: path.clone(), code });
     }
 
     let mut stylesheet_chunks = Vec::new();
@@ -225,11 +212,7 @@ pub fn compile_app(plan: &AppBuildPlan) -> Result<CompiledApp, CompileError> {
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
 
-    Ok(CompiledApp {
-        scripts,
-        stylesheet: stylesheet_chunks.join("\n"),
-        virtual_modules,
-    })
+    Ok(CompiledApp { scripts, stylesheet: stylesheet_chunks.join("\n"), virtual_modules })
 }
 
 pub fn compiled_app_to_module_graph(
@@ -278,10 +261,7 @@ pub fn compiled_app_to_module_graph(
             .iter()
             .filter(|import| !matches!(import.kind, ImportedModuleKind::Stylesheet))
             .map(|import| {
-                (
-                    import.specifier.clone(),
-                    module_key(&graph.app.root_dir, &import.module_id),
-                )
+                (import.specifier.clone(), module_key(&graph.app.root_dir, &import.module_id))
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -289,10 +269,8 @@ pub fn compiled_app_to_module_graph(
             && compiled_virtuals
                 .contains_key(&ModuleId::Virtual("@hypreact/sdk/jsx-runtime".into()))
         {
-            resolved_imports.insert(
-                "@hypreact/sdk/jsx-runtime".into(),
-                "@hypreact/sdk/jsx-runtime".into(),
-            );
+            resolved_imports
+                .insert("@hypreact/sdk/jsx-runtime".into(), "@hypreact/sdk/jsx-runtime".into());
         }
 
         modules.push(JavaScriptModule {
@@ -303,10 +281,7 @@ pub fn compiled_app_to_module_graph(
     }
 
     for module in &compiled.virtual_modules {
-        if modules
-            .iter()
-            .any(|existing| existing.specifier == module.specifier)
-        {
+        if modules.iter().any(|existing| existing.specifier == module.specifier) {
             continue;
         }
 
@@ -318,25 +293,18 @@ pub fn compiled_app_to_module_graph(
     }
 
     Ok(JavaScriptModuleGraph {
-        entry: module_key(
-            &graph.app.root_dir,
-            &ModuleId::File(graph.app.entry_path.clone()),
-        ),
+        entry: module_key(&graph.app.root_dir, &ModuleId::File(graph.app.entry_path.clone())),
         modules,
     })
 }
 
 fn strip_stylesheet_imports(path: &Path, source: &str) -> Result<String, CompileError> {
     let allocator = Allocator::default();
-    let source_type =
-        SourceType::from_path(path).map_err(|_| CompileError::UnsupportedSourceType {
-            path: path.to_path_buf(),
-        })?;
+    let source_type = SourceType::from_path(path)
+        .map_err(|_| CompileError::UnsupportedSourceType { path: path.to_path_buf() })?;
     let parsed = Parser::new(&allocator, source, source_type).parse();
     if !parsed.errors.is_empty() {
-        return Err(CompileError::Transpile {
-            path: path.to_path_buf(),
-        });
+        return Err(CompileError::Transpile { path: path.to_path_buf() });
     }
 
     let mut out = String::new();
@@ -363,15 +331,14 @@ fn read_virtual_module_source(specifier: &str) -> Result<String, CompileError> {
             include_str!("../../../../packages/sdk/js/src/commands.js")
         }
         "@hypreact/sdk/config" => include_str!("virtual/config.js"),
+        "@hypreact/sdk/css.d.ts" => "export {};",
         "@hypreact/sdk/jsx-runtime" => {
             include_str!("../../../../packages/sdk/js/src/jsx-runtime.js")
         }
         "@hypreact/sdk/layout" => include_str!("virtual/layout.js"),
         "@hypreact/sdk/api" => include_str!("virtual/api.js"),
         _ => {
-            return Err(CompileError::UnsupportedVirtualModule {
-                specifier: specifier.into(),
-            });
+            return Err(CompileError::UnsupportedVirtualModule { specifier: specifier.into() });
         }
     };
 
@@ -380,11 +347,9 @@ fn read_virtual_module_source(specifier: &str) -> Result<String, CompileError> {
 
 fn module_key(root_dir: &Path, module_id: &ModuleId) -> String {
     match module_id {
-        ModuleId::File(path) => path
-            .strip_prefix(root_dir)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/"),
+        ModuleId::File(path) => {
+            path.strip_prefix(root_dir).unwrap_or(path).to_string_lossy().replace('\\', "/")
+        }
         ModuleId::Virtual(specifier) => specifier.clone(),
     }
 }
@@ -393,15 +358,13 @@ fn module_key(root_dir: &Path, module_id: &ModuleId) -> String {
 mod tests {
     use std::fs;
 
-    use crate::graph::{discover_project_apps, ModuleGraphBuilder};
+    use crate::graph::{ModuleGraphBuilder, discover_project_apps};
 
     use super::*;
 
     fn unique_root(name: &str) -> PathBuf {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        let unique =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         std::env::temp_dir().join(format!("hypreact-config-compile-{name}-{unique}"))
     }
 
@@ -429,20 +392,12 @@ mod tests {
         fs::write(root.join("components/StackGroup.css"), ".stack {}").unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.layout_apps[0])
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.layout_apps[0]).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
 
-        assert!(plan
-            .script_modules
-            .contains(&root.join("layouts/master-stack/index.tsx")));
-        assert!(plan
-            .script_modules
-            .contains(&root.join("components/StackGroup.tsx")));
-        assert!(plan
-            .stylesheet_modules
-            .contains(&root.join("layouts/master-stack/index.css")));
+        assert!(plan.script_modules.contains(&root.join("layouts/master-stack/index.tsx")));
+        assert!(plan.script_modules.contains(&root.join("components/StackGroup.tsx")));
+        assert!(plan.stylesheet_modules.contains(&root.join("layouts/master-stack/index.css")));
         assert_eq!(
             plan.stylesheet_modules,
             vec![
@@ -465,9 +420,7 @@ mod tests {
         fs::write(root.join("layouts/master-stack/index.css"), "workspace {}").unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.layout_apps[0])
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.layout_apps[0]).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
         let compiled = compile_app(&plan).unwrap();
 
@@ -491,20 +444,13 @@ mod tests {
         .unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.config_app)
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.config_app).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
         let compiled = compile_app(&plan).unwrap();
 
         assert_eq!(compiled.virtual_modules.len(), 1);
-        assert_eq!(
-            compiled.virtual_modules[0].specifier,
-            "@hypreact/sdk/commands"
-        );
-        assert!(compiled.virtual_modules[0]
-            .code
-            .contains("export const spawn"));
+        assert_eq!(compiled.virtual_modules[0].specifier, "@hypreact/sdk/commands");
+        assert!(compiled.virtual_modules[0].code.contains("export const spawn"));
     }
 
     #[test]
@@ -523,15 +469,11 @@ mod tests {
         .unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.layout_apps[0])
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.layout_apps[0]).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
         let compiled = compile_app(&plan).unwrap();
 
-        assert!(compiled.scripts[0]
-            .code
-            .contains("@hypreact/sdk/jsx-runtime"));
+        assert!(compiled.scripts[0].code.contains("@hypreact/sdk/jsx-runtime"));
         assert!(!compiled.scripts[0].code.contains("<workspace"));
     }
 
@@ -548,23 +490,15 @@ mod tests {
         .unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.config_app)
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.config_app).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
         let compiled = compile_app(&plan).unwrap();
         let module_graph = compiled_app_to_module_graph(&graph, &compiled).unwrap();
 
         assert_eq!(module_graph.entry, "config.ts");
-        assert!(module_graph
-            .modules
-            .iter()
-            .any(|module| module.specifier == "config.ts"));
-        let config_module = module_graph
-            .modules
-            .iter()
-            .find(|module| module.specifier == "config.ts")
-            .unwrap();
+        assert!(module_graph.modules.iter().any(|module| module.specifier == "config.ts"));
+        let config_module =
+            module_graph.modules.iter().find(|module| module.specifier == "config.ts").unwrap();
         assert!(config_module.resolved_imports.is_empty());
     }
 
@@ -599,9 +533,7 @@ mod tests {
         fs::write(root.join("components/StackGroup.css"), ".stack {}").unwrap();
 
         let project = discover_project_apps(root.join("config.ts")).unwrap();
-        let graph = ModuleGraphBuilder::new()
-            .build(&project.layout_apps[0])
-            .unwrap();
+        let graph = ModuleGraphBuilder::new().build(&project.layout_apps[0]).unwrap();
         let plan = AppBuildPlan::from_graph(&graph);
         let compiled = compile_app(&plan).unwrap();
         let module_graph = compiled_app_to_module_graph(&graph, &compiled).unwrap();
@@ -613,23 +545,19 @@ mod tests {
             .unwrap();
         assert!(!layout_module.source.contains("./index.css"));
         assert_eq!(
-            layout_module
-                .resolved_imports
-                .get("../../components/StackGroup")
-                .map(String::as_str),
+            layout_module.resolved_imports.get("../../components/StackGroup").map(String::as_str),
             Some("components/StackGroup.ts")
         );
         assert_eq!(
-            layout_module
-                .resolved_imports
-                .get("@hypreact/sdk/jsx-runtime")
-                .map(String::as_str),
+            layout_module.resolved_imports.get("@hypreact/sdk/jsx-runtime").map(String::as_str),
             Some("@hypreact/sdk/jsx-runtime")
         );
-        assert!(module_graph
-            .modules
-            .iter()
-            .any(|module| module.specifier == "@hypreact/sdk/jsx-runtime"));
+        assert!(
+            module_graph
+                .modules
+                .iter()
+                .any(|module| module.specifier == "@hypreact/sdk/jsx-runtime")
+        );
         assert!(compiled.stylesheet.contains(".layout {}"));
         assert!(compiled.stylesheet.contains(".stack {}"));
     }
