@@ -367,6 +367,25 @@ where
     FocusUpdate::Set(next_focus)
 }
 
+pub fn preferred_focus_after_removing_window<I>(
+    model: &WmModel,
+    removed_id: &WindowId,
+    hinted_window_ids: I,
+) -> Option<WindowId>
+where
+    I: IntoIterator<Item = WindowId>,
+{
+    if !model.windows.contains_key(removed_id) {
+        return None;
+    }
+
+    let mut clone = model.clone();
+    match remove_window(&mut clone, removed_id.clone(), hinted_window_ids) {
+        FocusUpdate::Set(window_id) => window_id,
+        FocusUpdate::Unchanged => clone.focused_window_id,
+    }
+}
+
 pub fn unmap_window<I>(
     model: &mut WmModel,
     unmapped_id: WindowId,

@@ -7,7 +7,7 @@ use crate::runtime::layout_context::{
 };
 use crate::runtime::prepared_layout::SelectedLayout;
 use crate::types::{LayoutRef, WindowMode, WindowShell};
-use crate::wm::LayoutSpaceBox;
+use crate::wm::DrawableSpace;
 use crate::{LayoutSpace, OutputId, WindowId, WorkspaceId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct WorkspaceSnapshot {
     pub id: WorkspaceId,
     pub name: String,
     pub output_id: Option<OutputId>,
-    pub layout_space: Option<LayoutSpaceBox>,
+    pub layout_space: Option<DrawableSpace>,
     pub active_workspaces: Vec<String>,
     pub focused: bool,
     pub visible: bool,
@@ -302,9 +302,7 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
-                layout_space: Some(LayoutSpaceBox {
-                    x: 0,
-                    y: 40,
+                layout_space: Some(DrawableSpace {
                     width: 1920,
                     height: 1040,
                 }),

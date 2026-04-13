@@ -4,20 +4,29 @@ mod layout;
 mod response;
 mod types;
 
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use hypreact_core::focus::remove_window as remove_window_with_focus;
-use hypreact_core::wm::LayoutSpaceBox;
+use hypreact_core::query::state_snapshot_for_model;
+use hypreact_core::wm::DrawableSpace;
 use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
-use hypreact_core::query::state_snapshot_for_model;
+use hypreact_layout_runtime as runtime_facade;
 
 use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
 use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
-use layout::{layout_close_focus_candidate, layout_focus_candidate, layout_runtime_placement, layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config, reload_layout_config};
-use response::{FfiError, response_ok};
-pub use types::{HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult, HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle, HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync, HypreactWorkspaceLayoutSpaceSync};
+use layout::{
+    layout_close_focus_candidate, layout_focus_candidate, layout_runtime_placement,
+    layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config,
+    reload_layout_config,
+};
+use response::{response_ok, FfiError};
 use types::StatusResult;
+pub use types::{
+    HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult,
+    HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle,
+    HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync,
+    HypreactWorkspaceLayoutSpaceSync,
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn hypreact_runtime_new() -> *mut HypreactRuntimeHandle {
@@ -65,8 +74,11 @@ pub extern "C" fn hypreact_runtime_reset_state(
 ) -> *mut std::ffi::c_char {
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
-        handle.model = hypreact_core::wm::WmModel::default();
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        runtime_facade::reset_model(&mut handle.model);
+        response_ok(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -84,20 +96,18 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_output(
         let output = unsafe { &*output };
         let output_id = OutputId::from(cstr_to_str(output.output_id)?.to_string());
         let name = cstr_to_str(output.name)?.to_string();
-        let current_workspace_id = handle
-            .model
-            .outputs
-            .get(&output_id)
-            .and_then(|existing| existing.focused_workspace_id.clone());
-        handle.model.upsert_output(
+        runtime_facade::upsert_output(
+            &mut handle.model,
             output_id,
             name,
             output.logical_width,
             output.logical_height,
-            current_workspace_id,
         );
 
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        response_ok(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -109,9 +119,11 @@ pub extern "C" fn hypreact_runtime_remove_output(
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let output_id = OutputId::from(cstr_to_str(output_id)?.to_string());
-        let changed = handle.model.outputs.contains_key(&output_id);
-        handle.model.remove_output(&output_id);
-        response_ok(StatusResult { changed, focused_window_id: None })
+        let changed = runtime_facade::remove_output(&mut handle.model, &output_id);
+        response_ok(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -124,22 +136,17 @@ pub extern "C" fn hypreact_runtime_activate_workspace(
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let workspace_id = WorkspaceId::from(cstr_to_str(workspace_id)?.to_string());
-        let workspace_name = workspace_id.as_str().to_string();
-        handle.model.upsert_workspace(workspace_id.clone(), workspace_name);
-        handle.model.set_current_workspace(workspace_id.clone());
+        let output_id = if output_id.is_null() {
+            None
+        } else {
+            Some(OutputId::from(cstr_to_str(output_id)?.to_string()))
+        };
+        runtime_facade::activate_workspace(&mut handle.model, workspace_id, output_id);
 
-        if !output_id.is_null() {
-            let output_id = OutputId::from(cstr_to_str(output_id)?.to_string());
-            handle.model.set_current_output(output_id.clone());
-            handle
-                .model
-                .attach_workspace_to_output(workspace_id.clone(), output_id.clone());
-            if let Some(output) = handle.model.outputs.get_mut(&output_id) {
-                output.focused_workspace_id = Some(workspace_id.clone());
-            }
-        }
-
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        response_ok(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -158,23 +165,20 @@ pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space(
         let workspace_id = WorkspaceId::from(cstr_to_str(layout_space.workspace_id)?.to_string());
         let output_id = optional_cstr_to_string(layout_space.output_id)?.map(OutputId::from);
 
-        handle
-            .model
-            .upsert_workspace(workspace_id.clone(), workspace_id.as_str().to_string());
-        if let Some(output_id) = output_id.clone() {
-            handle.model.attach_workspace_to_output(workspace_id.clone(), output_id);
-        }
-        handle.model.set_workspace_layout_space(
+        runtime_facade::set_workspace_layout_space(
+            &mut handle.model,
             workspace_id,
-            Some(LayoutSpaceBox {
-                x: layout_space.x,
-                y: layout_space.y,
+            output_id,
+            DrawableSpace {
                 width: layout_space.width as i32,
                 height: layout_space.height as i32,
-            }),
+            },
         );
 
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        response_ok(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -186,8 +190,11 @@ pub extern "C" fn hypreact_runtime_focus_window(
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = optional_cstr_to_window_id(window_id)?;
-        handle.model.set_window_focused(window_id);
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        runtime_facade::focus_window(&mut handle.model, window_id);
+        response_ok(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -200,11 +207,11 @@ pub extern "C" fn hypreact_runtime_set_window_closing(
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window_id)?.to_string());
-        let changed = handle.model.windows.contains_key(&window_id);
-        if changed {
-            handle.model.set_window_closing(window_id, closing);
-        }
-        response_ok(StatusResult { changed, focused_window_id: None })
+        let changed = runtime_facade::set_window_closing(&mut handle.model, &window_id, closing);
+        response_ok(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -216,15 +223,12 @@ pub extern "C" fn hypreact_runtime_remove_window(
     into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window_id)?.to_string());
-        let changed = handle.model.windows.contains_key(&window_id);
-        let update = remove_window_with_focus(&mut handle.model, window_id, Vec::new());
-        let focused_window_id = match update {
-            hypreact_core::focus::FocusUpdate::Set(window_id) => {
-                window_id.map(|window_id| window_id.to_string())
-            }
-            hypreact_core::focus::FocusUpdate::Unchanged => None,
-        };
-        response_ok(StatusResult { changed, focused_window_id })
+        let (changed, focused_window_id) =
+            runtime_facade::remove_window(&mut handle.model, window_id);
+        response_ok(StatusResult {
+            changed,
+            focused_window_id: focused_window_id.map(|window_id| window_id.to_string()),
+        })
     })))
 }
 
@@ -244,44 +248,28 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_window(
         let workspace_id = optional_cstr_to_string(window.workspace_id)?.map(WorkspaceId::from);
         let output_id = optional_cstr_to_string(window.output_id)?.map(OutputId::from);
 
-        if !window.mapped {
-            let changed = handle.model.windows.contains_key(&window_id);
-            if changed {
-                handle.model.remove_window(window_id);
-            }
-            return response_ok(StatusResult { changed, focused_window_id: None });
-        }
+        let changed = runtime_facade::upsert_window(
+            &mut handle.model,
+            window_id,
+            workspace_id,
+            output_id,
+            window.is_xwayland,
+            window.mapped,
+            optional_cstr_to_string(window.title)?,
+            optional_cstr_to_string(window.app_id)?,
+            optional_cstr_to_string(window.class_name)?,
+            optional_cstr_to_string(window.instance)?,
+            optional_cstr_to_string(window.role)?,
+            optional_cstr_to_string(window.window_type)?,
+            window.urgent,
+            window.floating,
+            window.fullscreen,
+        );
 
-        if let Some(workspace_id) = workspace_id.as_ref() {
-            handle
-                .model
-                .upsert_workspace(workspace_id.clone(), workspace_id.as_str().to_string());
-        }
-
-        let existed = handle.model.windows.contains_key(&window_id);
-        if !existed {
-            handle
-                .model
-                .insert_window(window_id.clone(), workspace_id.clone(), output_id.clone());
-        }
-
-        if let Some(window_model) = handle.model.windows.get_mut(&window_id) {
-            window_model.is_xwayland = window.is_xwayland;
-            window_model.workspace_id = workspace_id;
-            window_model.output_id = output_id;
-            window_model.mapped = window.mapped;
-            window_model.title = optional_cstr_to_string(window.title)?;
-            window_model.app_id = optional_cstr_to_string(window.app_id)?;
-            window_model.class = optional_cstr_to_string(window.class_name)?;
-            window_model.instance = optional_cstr_to_string(window.instance)?;
-            window_model.role = optional_cstr_to_string(window.role)?;
-            window_model.window_type = optional_cstr_to_string(window.window_type)?;
-            window_model.urgent = window.urgent;
-            window_model.floating = window.floating;
-            window_model.fullscreen = window.fullscreen;
-        }
-
-        response_ok(StatusResult { changed: true, focused_window_id: None })
+        response_ok(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
     })))
 }
 
@@ -294,7 +282,10 @@ pub extern "C" fn hypreact_runtime_load_layout_config_result(
         let handle = ffi_handle_mut(handle)?;
         let config_path = cstr_to_str(config_path)?.to_string();
         let _ = load_layout_config(handle, config_path)?;
-        status_result(StatusResult { changed: true, focused_window_id: None })
+        status_result(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -309,7 +300,10 @@ pub extern "C" fn hypreact_runtime_reload_layout_config_result(
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let _ = reload_layout_config(handle)?;
-        status_result(StatusResult { changed: true, focused_window_id: None })
+        status_result(StatusResult {
+            changed: true,
+            focused_window_id: None,
+        })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -374,7 +368,10 @@ pub extern "C" fn hypreact_runtime_layout_close_focus_candidate(
 ) -> HypreactStringResult {
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
-        string_result(layout_close_focus_candidate(handle, cstr_to_str(window_id)?)?)
+        string_result(layout_close_focus_candidate(
+            handle,
+            cstr_to_str(window_id)?,
+        )?)
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(_)) | Err(_) => HypreactStringResult {
@@ -407,10 +404,19 @@ pub extern "C" fn hypreact_runtime_move_tiled_window(
 ) -> HypreactStatusResult {
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
-        let first_window_id = hypreact_core::WindowId::from(cstr_to_str(first_window_id)?.to_string());
-        let second_window_id = hypreact_core::WindowId::from(cstr_to_str(second_window_id)?.to_string());
-        let changed = handle.model.move_tiled_window(&first_window_id, &second_window_id);
-        status_result(StatusResult { changed, focused_window_id: None })
+        let first_window_id =
+            hypreact_core::WindowId::from(cstr_to_str(first_window_id)?.to_string());
+        let second_window_id =
+            hypreact_core::WindowId::from(cstr_to_str(second_window_id)?.to_string());
+        let changed = runtime_facade::move_tiled_window(
+            &mut handle.model,
+            &first_window_id,
+            &second_window_id,
+        );
+        status_result(StatusResult {
+            changed,
+            focused_window_id: None,
+        })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -468,7 +474,11 @@ pub unsafe extern "C" fn hypreact_runtime_free_placement_result(result: Hypreact
     }
 
     let geometries = unsafe {
-        Vec::from_raw_parts(result.geometries, result.geometry_count, result.geometry_count)
+        Vec::from_raw_parts(
+            result.geometries,
+            result.geometry_count,
+            result.geometry_count,
+        )
     };
 
     for geometry in geometries {
@@ -490,7 +500,8 @@ pub unsafe extern "C" fn hypreact_runtime_free_action_result(result: HypreactAct
         return;
     }
 
-    let actions = unsafe { Vec::from_raw_parts(result.actions, result.action_count, result.action_count) };
+    let actions =
+        unsafe { Vec::from_raw_parts(result.actions, result.action_count, result.action_count) };
     for action in actions {
         if !action.string_value.is_null() {
             unsafe {
@@ -504,26 +515,40 @@ pub unsafe extern "C" fn hypreact_runtime_free_action_result(result: HypreactAct
 pub unsafe extern "C" fn hypreact_runtime_free_state_result(result: HypreactStateResult) {
     free_string_array(result.workspace_names, result.workspace_name_count);
     if !result.current_workspace_id.is_null() {
-        unsafe { string_free(result.current_workspace_id); }
+        unsafe {
+            string_free(result.current_workspace_id);
+        }
     }
     if !result.current_output_id.is_null() {
-        unsafe { string_free(result.current_output_id); }
+        unsafe {
+            string_free(result.current_output_id);
+        }
     }
     if !result.focused_window_id.is_null() {
-        unsafe { string_free(result.focused_window_id); }
+        unsafe {
+            string_free(result.focused_window_id);
+        }
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn hypreact_runtime_free_layout_status_result(result: HypreactLayoutStatusResult) {
+pub unsafe extern "C" fn hypreact_runtime_free_layout_status_result(
+    result: HypreactLayoutStatusResult,
+) {
     if !result.config_path.is_null() {
-        unsafe { string_free(result.config_path); }
+        unsafe {
+            string_free(result.config_path);
+        }
     }
     if !result.selected_layout_name.is_null() {
-        unsafe { string_free(result.selected_layout_name); }
+        unsafe {
+            string_free(result.selected_layout_name);
+        }
     }
     if !result.error.is_null() {
-        unsafe { string_free(result.error); }
+        unsafe {
+            string_free(result.error);
+        }
     }
     free_string_array(result.workspace_names, result.workspace_name_count);
 }
@@ -531,7 +556,9 @@ pub unsafe extern "C" fn hypreact_runtime_free_layout_status_result(result: Hypr
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hypreact_runtime_free_status_result(result: HypreactStatusResult) {
     if !result.error.is_null() {
-        unsafe { string_free(result.error); }
+        unsafe {
+            string_free(result.error);
+        }
     }
 }
 
@@ -624,7 +651,9 @@ fn error_action_result(error: FfiError) -> HypreactActionResult {
     }
 }
 
-fn state_result(snapshot: hypreact_core::snapshot::StateSnapshot) -> Result<HypreactStateResult, FfiError> {
+fn state_result(
+    snapshot: hypreact_core::snapshot::StateSnapshot,
+) -> Result<HypreactStateResult, FfiError> {
     let workspace_name_count = snapshot.workspace_names.len();
     Ok(HypreactStateResult {
         workspace_names: string_array(snapshot.workspace_names)?,
@@ -635,7 +664,9 @@ fn state_result(snapshot: hypreact_core::snapshot::StateSnapshot) -> Result<Hypr
     })
 }
 
-fn layout_status_result(status: types::LayoutRuntimeStatus) -> Result<HypreactLayoutStatusResult, FfiError> {
+fn layout_status_result(
+    status: types::LayoutRuntimeStatus,
+) -> Result<HypreactLayoutStatusResult, FfiError> {
     let workspace_names = status.workspace_names.unwrap_or_default();
     Ok(HypreactLayoutStatusResult {
         loaded: status.loaded,
@@ -679,7 +710,9 @@ fn free_string_array(values: *mut *mut std::ffi::c_char, count: usize) {
     let values = unsafe { Vec::from_raw_parts(values, count, count) };
     for value in values {
         if !value.is_null() {
-            unsafe { string_free(value); }
+            unsafe {
+                string_free(value);
+            }
         }
     }
 }

@@ -164,6 +164,35 @@ impl Config {
             .and_then(|layout| self.layout_by_name(&layout.name))
     }
 
+    pub fn selected_layout_ref_for_workspace(
+        &self,
+        workspace_name: &str,
+        output_id: Option<&OutputId>,
+        workspace_names: &[String],
+    ) -> Option<LayoutRef> {
+        let workspace_index = workspace_names.iter().position(|name| name == workspace_name);
+        if let Some(index) = workspace_index
+            && let Some(layout_name) = self.layout_selection.per_workspace.get(index)
+        {
+            return Some(LayoutRef {
+                name: layout_name.clone(),
+            });
+        }
+
+        if let Some(output_id) = output_id
+            && let Some(layout_name) = self.layout_selection.per_monitor.get(output_id.as_str())
+        {
+            return Some(LayoutRef {
+                name: layout_name.clone(),
+            });
+        }
+
+        self.layout_selection
+            .default
+            .clone()
+            .map(|name| LayoutRef { name })
+    }
+
     pub fn resolve_selected_layout(
         &self,
         workspace: &WorkspaceSnapshot,
@@ -402,9 +431,7 @@ mod tests {
         let request = config
             .build_scene_request(
                 &WorkspaceSnapshot {
-                    layout_space: Some(hypreact_core::wm::LayoutSpaceBox {
-                        x: 0,
-                        y: 17,
+                    layout_space: Some(hypreact_core::wm::DrawableSpace {
                         width: 1600,
                         height: 983,
                     }),

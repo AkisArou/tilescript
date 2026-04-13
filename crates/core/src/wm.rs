@@ -28,9 +28,7 @@ pub struct WindowGeometry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct LayoutSpaceBox {
-    pub x: i32,
-    pub y: i32,
+pub struct DrawableSpace {
     pub width: i32,
     pub height: i32,
 }
@@ -85,7 +83,7 @@ pub struct WorkspaceModel {
     pub id: WorkspaceId,
     pub name: String,
     pub output_id: Option<OutputId>,
-    pub layout_space: Option<LayoutSpaceBox>,
+    pub layout_space: Option<DrawableSpace>,
     pub focused: bool,
     pub visible: bool,
     pub effective_layout: Option<LayoutRef>,
@@ -562,7 +560,7 @@ impl WmModel {
     pub fn set_workspace_layout_space(
         &mut self,
         workspace_id: WorkspaceId,
-        layout_space: Option<LayoutSpaceBox>,
+        layout_space: Option<DrawableSpace>,
     ) {
         if let Some(workspace) = self.workspaces.get_mut(&workspace_id) {
             workspace.layout_space = layout_space;
