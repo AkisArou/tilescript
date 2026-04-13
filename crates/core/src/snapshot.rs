@@ -120,7 +120,8 @@ impl StateSnapshot {
     }
 
     fn windows_for_workspace(&self, workspace: &WorkspaceSnapshot) -> Vec<WindowSnapshot> {
-        self.windows
+        let mut windows = self
+            .windows
             .iter()
             .filter(|window| {
                 let matches_workspace = window.workspace_id.as_ref() == Some(&workspace.id);
@@ -138,7 +139,16 @@ impl StateSnapshot {
                 matches_workspace && matches_output && is_visible && is_layout_eligible
             })
             .cloned()
-            .collect()
+            .collect::<Vec<_>>();
+
+        windows.sort_by_key(|window| {
+            self.windows
+                .iter()
+                .position(|candidate| candidate.id == window.id)
+                .unwrap_or(self.windows.len())
+        });
+
+        windows
     }
 
     fn layout_space_for_workspace(&self, workspace: &WorkspaceSnapshot) -> LayoutSpace {

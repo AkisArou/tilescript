@@ -241,7 +241,10 @@ std::string stringify(const Json::Value& value) {
 SDispatchResult callDispatcher(const std::string& name, const std::string& arg);
 std::string makeWindowId(const PHLWINDOW& window);
 std::string workspaceName(const PHLWORKSPACE& workspace);
+void syncWorkspace(const PHLWORKSPACE& workspace, const PHLMONITOR& monitor);
+void syncWindow(const PHLWINDOW& window);
 void removeWindow(const PHLWINDOW& window);
+void recalculateWorkspace(const PHLWORKSPACE& workspace);
 void syncFocusedWindow(const PHLWINDOW& window);
 void syncWorkspaceLayoutSpace(const PHLWORKSPACE& workspace);
 void queueWorkspaceRecalculate(const PHLWORKSPACE& workspace);
@@ -305,6 +308,13 @@ SDispatchResult hypreactMoveFocusDispatcher(std::string arg) {
         return {.success = false, .error = "invalid direction"};
     }
 
+    const auto focusedWindow = Desktop::focusState()->window();
+    if (focusedWindow) {
+        syncWindow(focusedWindow);
+        syncWorkspace(focusedWindow->m_workspace, focusedWindow->m_monitor.lock());
+        syncFocusedWindow(focusedWindow);
+    }
+
     const auto target = g_runtime->layoutFocusCandidate(*direction);
     if (!target.has_value()) {
         return {};
@@ -341,6 +351,10 @@ SDispatchResult hypreactMoveWindowDispatcher(std::string arg) {
         return callDispatcher("movewindow", direction->substr(0, 1));
     }
 
+    syncWindow(focusedWindow);
+    syncWorkspace(focusedWindow->m_workspace, focusedWindow->m_monitor.lock());
+    syncFocusedWindow(focusedWindow);
+
     const auto candidateId = g_runtime->layoutSwapCandidate(*direction);
     if (!candidateId.has_value()) {
         return {};
@@ -358,7 +372,7 @@ SDispatchResult hypreactMoveWindowDispatcher(std::string arg) {
 
     const auto workspace = focusedWindow->m_workspace;
     if (workspace) {
-        queueWorkspaceRecalculate(workspace);
+        recalculateWorkspace(workspace);
     }
 
     return {};

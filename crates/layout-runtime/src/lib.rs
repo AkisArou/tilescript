@@ -770,4 +770,62 @@ mod tests {
         assert!(!scene.focus_tree.contains_window(&WindowId::from("w2-a")));
         assert!(!scene.focus_tree.contains_window(&WindowId::from("w2-b")));
     }
+
+    #[test]
+    fn move_tiled_window_changes_master_stack_placement_order() {
+        let config_path = "/home/akisarou/projects/hypreact/test_config/test_config/config.ts";
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+                .expect("layout runtime service");
+
+        let mut model = WmModel::default();
+        model.upsert_output(
+            OutputId::from("eDP-1"),
+            "eDP-1".to_string(),
+            1600,
+            1000,
+            Some(WorkspaceId::from("1")),
+        );
+        model.upsert_workspace(WorkspaceId::from("1"), "1".to_string());
+        model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
+        model.set_workspace_layout_space(
+            WorkspaceId::from("1"),
+            Some(hypreact_core::wm::DrawableSpace {
+                width: 1600,
+                height: 1000,
+            }),
+        );
+        model.set_current_output(OutputId::from("eDP-1"));
+        model.set_current_workspace(WorkspaceId::from("1"));
+
+        for id in ["master", "stack"] {
+            let window_id = WindowId::from(id.to_string());
+            model.insert_window(
+                window_id.clone(),
+                Some(WorkspaceId::from("1")),
+                Some(OutputId::from("eDP-1")),
+            );
+            model.set_window_mapped(window_id, true);
+        }
+
+        let initial = placement_for_workspace(&mut service, &model, "1")
+            .expect("initial placement")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert!(initial[&WindowId::from("master")].x < initial[&WindowId::from("stack")].x);
+
+        assert!(move_tiled_window(
+            &mut model,
+            &WindowId::from("master"),
+            &WindowId::from("stack"),
+        ));
+
+        let moved = placement_for_workspace(&mut service, &model, "1")
+            .expect("moved placement")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert!(moved[&WindowId::from("master")].x > moved[&WindowId::from("stack")].x);
+    }
 }
