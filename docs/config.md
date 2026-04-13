@@ -100,9 +100,11 @@ layouts/
     index.css
 .sdk/
   tsconfig.json
-  config.d.ts
-  layout.d.ts
-  jsx-runtime.js
+  package.json
+  src/
+    config.d.ts
+    layout.d.ts
+    jsx-runtime.js
 ```
 
 ## SDK Support

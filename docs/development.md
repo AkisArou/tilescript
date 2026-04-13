@@ -63,6 +63,16 @@ hyprctl plugin load /absolute/path/to/build/hypreact-live.so
 
 Use a fresh `.so` filename when testing repeatedly to avoid stale deleted plugin mappings.
 
+Useful runtime inspection commands:
+
+```sh
+hyprctl hypreact
+hyprctl hypreact reload-layouts
+hyprctl hypreact debug-layout-workspace 1
+```
+
+`hyprctl hypreact` returns plugin/runtime status, layout load state, errors, and structured CSS diagnostics.
+
 ## Authoring Fixtures
 
 `test_config/` is the main local authored-config fixture.

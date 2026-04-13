@@ -633,6 +633,11 @@ pub unsafe extern "C" fn hypreact_runtime_free_layout_status_result(
             string_free(result.error);
         }
     }
+    if !result.diagnostics_json.is_null() {
+        unsafe {
+            string_free(result.diagnostics_json);
+        }
+    }
     free_string_array(result.workspace_names, result.workspace_name_count);
 }
 
@@ -756,6 +761,7 @@ fn layout_status_result(
         config_path: optional_owned_string(status.config_path)?,
         selected_layout_name: optional_owned_string(status.selected_layout_name)?,
         error: optional_owned_string(status.error)?,
+        diagnostics_json: optional_owned_string(status.diagnostics_json)?,
         workspace_names: string_array(workspace_names.clone())?,
         workspace_name_count: workspace_names.len(),
     })
@@ -816,6 +822,7 @@ fn empty_layout_status_result() -> HypreactLayoutStatusResult {
         config_path: std::ptr::null_mut(),
         selected_layout_name: std::ptr::null_mut(),
         error: std::ptr::null_mut(),
+        diagnostics_json: std::ptr::null_mut(),
         workspace_names: std::ptr::null_mut(),
         workspace_name_count: 0,
     }

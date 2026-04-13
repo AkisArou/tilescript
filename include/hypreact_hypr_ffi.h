@@ -147,6 +147,7 @@ struct HypreactLayoutStatusResult {
     char* config_path;
     char* selected_layout_name;
     char* error;
+    char* diagnostics_json;
     char** workspace_names;
     unsigned long workspace_name_count;
 };

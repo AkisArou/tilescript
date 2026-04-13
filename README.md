@@ -110,6 +110,26 @@ For editor support, your config `tsconfig.json` should extend `./.sdk/tsconfig.j
 
 For a starter project, see `template/`.
 
+## Runtime Status
+
+Use `hyprctl hypreact` to inspect plugin/runtime state.
+
+It includes:
+
+- current runtime workspace/output/focus state
+- whether layouts loaded successfully
+- selected layout name
+- blocking layout/config errors
+- structured CSS diagnostics
+
+Useful commands:
+
+```sh
+hyprctl hypreact
+hyprctl hypreact reload-layouts
+hyprctl hypreact debug-layout-workspace 1
+```
+
 ## Docs
 
 - `docs/config.md`

@@ -643,8 +643,11 @@ version = "0.1.0"
 dependencies = [
  "hypreact-config",
  "hypreact-core",
+ "hypreact-css",
  "hypreact-runtime-js",
  "hypreact-scene",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

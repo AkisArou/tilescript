@@ -19,6 +19,7 @@ use hypreact_core::resize::{
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
+use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
 use hypreact_runtime_js::build_runtime_bundle;
 use hypreact_scene::Display;
 use hypreact_scene::FlexDirectionValue;
@@ -104,6 +105,27 @@ pub struct LayoutStatusSnapshot {
     pub window_geometries: Vec<(hypreact_core::WindowId, WindowGeometry)>,
     pub ordered_window_ids: Vec<hypreact_core::WindowId>,
     pub error: Option<String>,
+    pub diagnostics_json: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LayoutDiagnostic {
+    source: String,
+    severity: String,
+    code: String,
+    message: String,
+    path: Option<String>,
+    range: LayoutDiagnosticRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LayoutDiagnosticRange {
+    start_line: u32,
+    start_column: u32,
+    end_line: u32,
+    end_column: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,11 +296,15 @@ pub fn layout_status_for_model(
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: None,
+            diagnostics_json: None,
         });
     };
 
     match service.evaluate_workspace_scene(&loaded.config, &snapshot, &workspace) {
         Ok(evaluation) => {
+            let diagnostics_json = evaluation.as_ref().and_then(|evaluation| {
+                diagnostics_json_for_stylesheets(&evaluation.evaluation.artifact.stylesheets)
+            });
             if let Some(evaluation) = evaluation.as_ref() {
                 model.set_focus_tree_value(Some(evaluation.focus_tree.clone()));
             }
@@ -309,6 +335,7 @@ pub fn layout_status_for_model(
                     .map(|evaluation| evaluation.ordered_window_ids.clone())
                     .unwrap_or_default(),
                 error: None,
+                diagnostics_json,
             })
         }
         Err(error) => Ok(LayoutStatusSnapshot {
@@ -323,8 +350,66 @@ pub fn layout_status_for_model(
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: Some(error.to_string()),
+            diagnostics_json: None,
         }),
     }
+}
+
+fn diagnostics_json_for_stylesheets(
+    stylesheets: &hypreact_core::runtime::prepared_layout::PreparedStylesheets,
+) -> Option<String> {
+    let mut diagnostics = Vec::new();
+
+    if let Some(stylesheet) = stylesheets.global.as_ref() {
+        diagnostics.extend(layout_diagnostics_from_stylesheet(
+            &stylesheet.source,
+            Some(stylesheet.path.as_str()),
+        ));
+    }
+
+    if let Some(stylesheet) = stylesheets.layout.as_ref() {
+        diagnostics.extend(layout_diagnostics_from_stylesheet(
+            &stylesheet.source,
+            Some(stylesheet.path.as_str()),
+        ));
+    }
+
+    if diagnostics.is_empty() { None } else { serde_json::to_string(&diagnostics).ok() }
+}
+
+fn layout_diagnostics_from_stylesheet(source: &str, path: Option<&str>) -> Vec<LayoutDiagnostic> {
+    analyze_stylesheet(source)
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| LayoutDiagnostic {
+            source: "css".into(),
+            severity: match diagnostic.severity {
+                CssDiagnosticSeverity::Error => "error",
+                CssDiagnosticSeverity::Warning => "warning",
+                CssDiagnosticSeverity::Information => "information",
+            }
+            .into(),
+            code: match diagnostic.code {
+                CssDiagnosticCode::UnsupportedAtRule => "unsupportedAtRule",
+                CssDiagnosticCode::UnsupportedSelector => "unsupportedSelector",
+                CssDiagnosticCode::UnsupportedProperty => "unsupportedProperty",
+                CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
+                CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
+                CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
+                CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
+                CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
+            }
+            .into(),
+            message: diagnostic.message,
+            path: path.map(str::to_string),
+            range: LayoutDiagnosticRange {
+                start_line: diagnostic.range.start_line,
+                start_column: diagnostic.range.start_column,
+                end_line: diagnostic.range.end_line,
+                end_column: diagnostic.range.end_column,
+            },
+        })
+        .collect()
 }
 
 pub fn placement_for_workspace(

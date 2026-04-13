@@ -57,6 +57,7 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: None,
+            diagnostics_json: None,
         };
     };
 
@@ -71,6 +72,7 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: Some(error.to_string()),
+            diagnostics_json: None,
         },
     }
 }
@@ -165,6 +167,7 @@ fn map_layout_status(status: LayoutStatusSnapshot) -> LayoutRuntimeStatus {
             .map(|window_id| window_id.to_string())
             .collect(),
         error: status.error,
+        diagnostics_json: status.diagnostics_json,
     }
 }
 

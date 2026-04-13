@@ -202,6 +202,7 @@ int g_pendingWorkspaceLayoutRefreshTicks = 0;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
 bool g_registeredHypreactAlgo = false;
 std::optional<std::filesystem::path> g_resolvedConfigRoot;
+std::string g_lastDiagnosticNotificationKey;
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
 }
@@ -236,6 +237,68 @@ std::string trim(std::string value) {
     }
 
     return value;
+}
+
+void notifyHypreact(const std::string& text, uint64_t icon = ICON_WARNING, uint64_t time = 5000) {
+    if (PHANDLE == nullptr) {
+        return;
+    }
+
+    HyprlandAPI::addNotificationV2(PHANDLE, {
+        {"text", text},
+        {"time", time},
+        {"icon", icon},
+    });
+}
+
+void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
+    std::string key;
+    if (layout.error != nullptr) {
+        key.append("error:");
+        key.append(layout.error);
+    }
+    if (layout.diagnostics_json != nullptr) {
+        key.append("|diagnostics:");
+        key.append(layout.diagnostics_json);
+    }
+
+    if (key.empty() || key == g_lastDiagnosticNotificationKey) {
+        return;
+    }
+
+    g_lastDiagnosticNotificationKey = key;
+
+    if (layout.error != nullptr) {
+        notifyHypreact(std::string{"hypreact: "} + layout.error, ICON_ERROR, 8000);
+    }
+
+    if (layout.diagnostics_json == nullptr) {
+        return;
+    }
+
+    const auto diagnostics = parseJson(layout.diagnostics_json);
+    if (!diagnostics || !diagnostics->isArray()) {
+        return;
+    }
+
+    for (const auto& diagnostic : *diagnostics) {
+        const auto message = diagnostic["message"].asString();
+        const auto path = diagnostic["path"].asString();
+        const auto range = diagnostic["range"];
+        std::ostringstream text;
+        text << "hypreact css: " << message;
+        if (!path.empty()) {
+            text << " (" << path;
+            if (range.isObject() && range["startLine"].isUInt()) {
+                text << ":" << range["startLine"].asUInt();
+            }
+            text << ")";
+        }
+
+        const auto severity = diagnostic["severity"].asString();
+        const auto icon = severity == "error" ? ICON_ERROR : ICON_WARNING;
+        notifyHypreact(text.str(), icon, 7000);
+    }
 }
 
 std::vector<std::string> splitWords(const std::string& value) {
@@ -1133,6 +1196,12 @@ void loadLayoutRuntimeConfig() {
     const auto result = g_runtime->loadLayoutConfig(configEntry->string());
     logStatusResult("layout-runtime", result);
     hypreact_runtime_free_status_result(result);
+
+    if (g_runtime != nullptr) {
+        const auto layout = g_runtime->layoutStatusResult();
+        notifyDiagnostics(layout);
+        hypreact_runtime_free_layout_status_result(layout);
+    }
 }
 
 bool layoutRuntimeLoaded() {
@@ -1403,6 +1472,11 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
         if (layout.error != nullptr) {
             response["data"]["error"] = layout.error;
         }
+        if (layout.diagnostics_json != nullptr) {
+            if (const auto diagnostics = parseJson(layout.diagnostics_json)) {
+                response["data"]["diagnostics"] = *diagnostics;
+            }
+        }
         for (size_t i = 0; i < layout.workspace_name_count; ++i) {
             if (layout.workspace_names[i] != nullptr) {
                 response["data"]["workspaceNames"].append(layout.workspace_names[i]);
@@ -1518,6 +1592,11 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg) {
     }
     if (layout.error != nullptr) {
         response["data"]["layouts"]["error"] = layout.error;
+    }
+    if (layout.diagnostics_json != nullptr) {
+        if (const auto diagnostics = parseJson(layout.diagnostics_json)) {
+            response["data"]["layouts"]["diagnostics"] = *diagnostics;
+        }
     }
     for (size_t i = 0; i < layout.workspace_name_count; ++i) {
         if (layout.workspace_names[i] != nullptr) {

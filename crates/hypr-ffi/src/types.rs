@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use hypreact_core::wm::WmModel;
 use hypreact_core::SourceLayoutNode;
+use hypreact_core::wm::WmModel;
 use hypreact_layout_runtime::LayoutRuntimeService;
 
 pub struct HypreactRuntimeHandle {
@@ -78,6 +78,8 @@ pub struct LayoutRuntimeStatus {
     pub ordered_window_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics_json: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +218,7 @@ pub struct HypreactLayoutStatusResult {
     pub config_path: *mut c_char,
     pub selected_layout_name: *mut c_char,
     pub error: *mut c_char,
+    pub diagnostics_json: *mut c_char,
     pub workspace_names: *mut *mut c_char,
     pub workspace_name_count: usize,
 }
