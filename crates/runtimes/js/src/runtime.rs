@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn prepared_test_config_master_stack_layout_evaluates() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/config.ts");
+        let authored_config = repo_root.join("dev/test-config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn checked_in_prepared_test_config_master_stack_layout_evaluates() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/config.ts");
+        let authored_config = repo_root.join("dev/test-config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-genymotion-checked-in-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn prepared_template_config_loads() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let authored_config = repo_root.join("test_config/config.ts");
+        let authored_config = repo_root.join("dev/test-config/config.ts");
         let runtime_root = std::env::temp_dir().join(format!(
             "hypreact-runtime-template-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()

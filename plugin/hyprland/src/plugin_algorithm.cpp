@@ -1,5 +1,6 @@
 #include "hypreact_plugin_algorithm.hpp"
 
+#include <optional>
 #include <iostream>
 #include <typeinfo>
 
@@ -14,7 +15,7 @@
 namespace hypreact_plugin {
 namespace {
 
-const AlgorithmCallbacks *g_algorithmCallbacks = nullptr;
+std::optional<AlgorithmCallbacks> g_algorithmCallbacks;
 bool g_registeredHypreactAlgo = false;
 
 class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
@@ -33,7 +34,7 @@ public:
 
   void recalculate() override {
     const auto parent = m_parent.lock();
-    if (!parent || !runtime() || !g_algorithmCallbacks) {
+    if (!parent || !runtime() || !g_algorithmCallbacks.has_value()) {
       return;
     }
 
@@ -62,8 +63,7 @@ public:
         continue;
       }
 
-      const auto windowId =
-          g_algorithmCallbacks->makeWindowId(target->window());
+      const auto windowId = g_algorithmCallbacks->makeWindowId(target->window());
       const auto it = byWindowId.find(windowId);
       if (it == byWindowId.end()) {
         continue;
@@ -84,7 +84,7 @@ public:
 
   void moveTargetInDirection(SP<Layout::ITarget> t, Math::eDirection dir,
                              bool silent) override {
-    if (!t || !t->window() || !runtime() || !g_algorithmCallbacks) {
+    if (!t || !t->window() || !runtime() || !g_algorithmCallbacks.has_value()) {
       return;
     }
 
@@ -129,7 +129,7 @@ public:
   SP<Layout::ITarget> getNextCandidate(SP<Layout::ITarget> old) override {
     const auto parent = m_parent.lock();
     if (!parent || !old || !old->window() || !runtime() ||
-        !g_algorithmCallbacks) {
+        !g_algorithmCallbacks.has_value()) {
       return old;
     }
 
@@ -218,7 +218,7 @@ void registerHypreactAlgorithm(HANDLE pluginHandle,
     return;
   }
 
-  g_algorithmCallbacks = &callbacks;
+  g_algorithmCallbacks = callbacks;
   g_registeredHypreactAlgo = HyprlandAPI::addTiledAlgo(
       pluginHandle, "hypreact", &typeid(CHypreactAlgorithm),
       []() -> UP<Layout::ITiledAlgorithm> {
@@ -246,7 +246,7 @@ void unregisterHypreactAlgorithm(HANDLE pluginHandle) {
 
   std::cout << "[hypreact] unregistered tiled algorithm: hypreact" << std::endl;
   g_registeredHypreactAlgo = false;
-  g_algorithmCallbacks = nullptr;
+  g_algorithmCallbacks.reset();
 }
 
 } // namespace hypreact_plugin

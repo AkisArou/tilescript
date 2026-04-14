@@ -1,5 +1,6 @@
 #include "hypreact_plugin_hooks.hpp"
 
+#include <optional>
 #include <vector>
 
 #include "hypreact_plugin_sync.hpp"
@@ -12,12 +13,12 @@ namespace hypreact_plugin {
 namespace {
 
 std::vector<CHyprSignalListener> g_listeners;
-const HookCallbacks *g_hookCallbacks = nullptr;
+std::optional<HookCallbacks> g_hookCallbacks;
 
 } // namespace
 
 void registerHooks(const HookCallbacks &callbacks) {
-  g_hookCallbacks = &callbacks;
+  g_hookCallbacks = callbacks;
 
   auto &events = Event::bus()->m_events;
 
@@ -103,6 +104,10 @@ void registerHooks(const HookCallbacks &callbacks) {
       }));
 
   g_listeners.push_back(events.config.reloaded.listen([] {
+    if (!g_hookCallbacks.has_value()) {
+      return;
+    }
+
     g_hookCallbacks->loadLayoutRuntimeConfig();
     if (g_hookCallbacks->layoutRuntimeLoaded()) {
       g_hookCallbacks->registerHypreactAlgorithm();
@@ -115,7 +120,7 @@ void registerHooks(const HookCallbacks &callbacks) {
 
 void clearHooks() {
   g_listeners.clear();
-  g_hookCallbacks = nullptr;
+  g_hookCallbacks.reset();
 }
 
 } // namespace hypreact_plugin

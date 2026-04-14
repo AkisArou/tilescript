@@ -28,7 +28,6 @@ pub fn build_default_runtime(paths: &ConfigPaths) -> DefaultLayoutRuntime {
         paths
             .authored_config
             .parent()
-            .and_then(|dir| dir.parent())
             .map(std::path::Path::to_path_buf)
             .unwrap_or_else(|| std::path::PathBuf::from(".")),
         paths
