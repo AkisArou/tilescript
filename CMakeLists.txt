@@ -29,7 +29,7 @@ add_custom_target(
   VERBATIM
 )
 
-add_library(hypreact SHARED src/plugin.cpp)
+add_library(hypreact SHARED src/plugin.cpp src/plugin_runtime.cpp)
 add_dependencies(hypreact hypreact_ffi)
 
 target_include_directories(
