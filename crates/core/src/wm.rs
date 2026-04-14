@@ -481,11 +481,13 @@ impl WmModel {
     pub fn set_focus_tree(&mut self, root: Option<&ResolvedLayoutNode>) {
         self.focus_tree = root.map(FocusTree::from_resolved_root);
         self.prune_focus_memory();
+        self.refresh_focus_memory_for_current_focus();
     }
 
     pub fn set_focus_tree_value(&mut self, focus_tree: Option<FocusTree>) {
         self.focus_tree = focus_tree;
         self.prune_focus_memory();
+        self.refresh_focus_memory_for_current_focus();
     }
 
     pub fn set_focus_navigation(
@@ -689,6 +691,12 @@ impl WmModel {
             for scope_key in scope_path {
                 self.last_focused_window_id_by_scope.insert(scope_key.clone(), window_id.clone());
             }
+        }
+    }
+
+    fn refresh_focus_memory_for_current_focus(&mut self) {
+        if let Some(focused_window_id) = self.focused_window_id.clone() {
+            self.remember_focus_for_window(&focused_window_id);
         }
     }
 
