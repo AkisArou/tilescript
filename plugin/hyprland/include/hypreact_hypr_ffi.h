@@ -142,18 +142,36 @@ struct HypreactStateResult {
     char* focused_window_id;
 };
 
+struct HypreactDiagnosticRange {
+    unsigned int start_line;
+    unsigned int start_column;
+    unsigned int end_line;
+    unsigned int end_column;
+};
+
+struct HypreactDiagnostic {
+    char* source;
+    char* severity;
+    char* code;
+    char* message;
+    char* path;
+    HypreactDiagnosticRange range;
+};
+
 struct HypreactLayoutStatusResult {
     bool loaded;
     char* config_path;
     char* selected_layout_name;
     char* error;
-    char* diagnostics_json;
+    HypreactDiagnostic* diagnostics;
+    unsigned long diagnostic_count;
     char** workspace_names;
     unsigned long workspace_name_count;
 };
 
 struct HypreactStatusResult {
     bool changed;
+    char* focused_window_id;
     char* error;
 };
 
@@ -161,32 +179,32 @@ HypreactRuntimeHandle* hypreact_runtime_new();
 void hypreact_runtime_free(HypreactRuntimeHandle* handle);
 
 HypreactActionResult hypreact_runtime_dispatch_command(HypreactRuntimeHandle* handle, const HypreactCommandInput* command);
-char* hypreact_runtime_reset_state(HypreactRuntimeHandle* handle);
-char* hypreact_runtime_upsert_output(
+HypreactStatusResult hypreact_runtime_reset_state_result(HypreactRuntimeHandle* handle);
+HypreactStatusResult hypreact_runtime_upsert_output_result(
     HypreactRuntimeHandle* handle,
     const HypreactOutputSync* output
 );
-char* hypreact_runtime_remove_output(HypreactRuntimeHandle* handle, const char* output_id);
-char* hypreact_runtime_activate_workspace(
+HypreactStatusResult hypreact_runtime_remove_output_result(HypreactRuntimeHandle* handle, const char* output_id);
+HypreactStatusResult hypreact_runtime_activate_workspace_result(
     HypreactRuntimeHandle* handle,
     const char* workspace_id,
     const char* output_id
 );
-char* hypreact_runtime_set_workspace_layout_space(
+HypreactStatusResult hypreact_runtime_set_workspace_layout_space_result(
     HypreactRuntimeHandle* handle,
     const HypreactWorkspaceLayoutSpaceSync* layout_space
 );
-char* hypreact_runtime_focus_window(
+HypreactStatusResult hypreact_runtime_focus_window_result(
     HypreactRuntimeHandle* handle,
     const char* window_id
 );
-char* hypreact_runtime_set_window_closing(
+HypreactStatusResult hypreact_runtime_set_window_closing_result(
     HypreactRuntimeHandle* handle,
     const char* window_id,
     bool closing
 );
-char* hypreact_runtime_remove_window(HypreactRuntimeHandle* handle, const char* window_id);
-char* hypreact_runtime_upsert_window(
+HypreactStatusResult hypreact_runtime_remove_window_result(HypreactRuntimeHandle* handle, const char* window_id);
+HypreactStatusResult hypreact_runtime_upsert_window_result(
     HypreactRuntimeHandle* handle,
     const HypreactWindowSync* window
 );
@@ -208,7 +226,6 @@ HypreactStatusResult hypreact_runtime_move_tiled_window(
     const char* first_window_id,
     const char* second_window_id
 );
-char* hypreact_runtime_state(HypreactRuntimeHandle* handle);
 HypreactStateResult hypreact_runtime_state_result(HypreactRuntimeHandle* handle);
 HypreactLayoutStatusResult hypreact_runtime_layout_status_result(HypreactRuntimeHandle* handle);
 

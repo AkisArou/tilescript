@@ -1,51 +1,29 @@
-use crate::response::FfiError;
-use crate::types::{
+use crate::abi::{
     HypreactAction, HypreactActionKind, HypreactCommandInput, HypreactCommandKind,
     HypreactDirection, HypreactLayoutCycleDirection,
 };
+use crate::response::FfiError;
 use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::{WindowId, WorkspaceId};
 
 #[derive(Debug)]
 pub enum HostAction {
-    SpawnCommand {
-        command: String,
-    },
+    SpawnCommand { command: String },
     ReloadConfig,
-    SetLayout {
-        name: String,
-    },
-    CycleLayout {
-        direction: Option<LayoutCycleDirection>,
-    },
-    ActivateWorkspace {
-        workspace_id: String,
-    },
-    AssignFocusedWindowToWorkspace {
-        workspace: u8,
-    },
-    ToggleAssignFocusedWindowToWorkspace {
-        workspace: u8,
-    },
+    SetLayout { name: String },
+    CycleLayout { direction: Option<LayoutCycleDirection> },
+    ActivateWorkspace { workspace_id: String },
+    AssignFocusedWindowToWorkspace { workspace: u8 },
+    ToggleAssignFocusedWindowToWorkspace { workspace: u8 },
     ToggleFloating,
     ToggleFullscreen,
-    FocusWindow {
-        window_id: String,
-    },
-    FocusDirection {
-        direction: FocusDirection,
-    },
+    FocusWindow { window_id: String },
+    FocusDirection { direction: FocusDirection },
     FocusNextWindow,
     FocusPreviousWindow,
-    SwapDirection {
-        direction: FocusDirection,
-    },
-    MoveDirection {
-        direction: FocusDirection,
-    },
-    ResizeDirection {
-        direction: FocusDirection,
-    },
+    SwapDirection { direction: FocusDirection },
+    MoveDirection { direction: FocusDirection },
+    ResizeDirection { direction: FocusDirection },
     CloseFocusedWindow,
 }
 
@@ -56,18 +34,18 @@ pub fn dispatch_wm_command(command: WmCommand) -> Vec<HostAction> {
         WmCommand::SetLayout { name } => vec![HostAction::SetLayout { name }],
         WmCommand::CycleLayout { direction } => vec![HostAction::CycleLayout { direction }],
         WmCommand::ActivateWorkspace { workspace_id }
-        | WmCommand::SelectWorkspace { workspace_id } => vec![HostAction::ActivateWorkspace {
-            workspace_id: workspace_id.0,
-        }],
-        WmCommand::SelectNextWorkspace => vec![HostAction::ActivateWorkspace {
-            workspace_id: "e+1".to_string(),
-        }],
-        WmCommand::SelectPreviousWorkspace => vec![HostAction::ActivateWorkspace {
-            workspace_id: "e-1".to_string(),
-        }],
-        WmCommand::ViewWorkspace { workspace } => vec![HostAction::ActivateWorkspace {
-            workspace_id: workspace.to_string(),
-        }],
+        | WmCommand::SelectWorkspace { workspace_id } => {
+            vec![HostAction::ActivateWorkspace { workspace_id: workspace_id.0 }]
+        }
+        WmCommand::SelectNextWorkspace => {
+            vec![HostAction::ActivateWorkspace { workspace_id: "e+1".to_string() }]
+        }
+        WmCommand::SelectPreviousWorkspace => {
+            vec![HostAction::ActivateWorkspace { workspace_id: "e-1".to_string() }]
+        }
+        WmCommand::ViewWorkspace { workspace } => {
+            vec![HostAction::ActivateWorkspace { workspace_id: workspace.to_string() }]
+        }
         WmCommand::AssignFocusedWindowToWorkspace { workspace } => {
             vec![HostAction::AssignFocusedWindowToWorkspace { workspace }]
         }
@@ -76,9 +54,9 @@ pub fn dispatch_wm_command(command: WmCommand) -> Vec<HostAction> {
         }
         WmCommand::ToggleFloating => vec![HostAction::ToggleFloating],
         WmCommand::ToggleFullscreen => vec![HostAction::ToggleFullscreen],
-        WmCommand::FocusWindow { window_id } => vec![HostAction::FocusWindow {
-            window_id: window_id.0,
-        }],
+        WmCommand::FocusWindow { window_id } => {
+            vec![HostAction::FocusWindow { window_id: window_id.0 }]
+        }
         WmCommand::FocusDirection { direction } => vec![HostAction::FocusDirection { direction }],
         WmCommand::FocusNextWindow => vec![HostAction::FocusNextWindow],
         WmCommand::FocusPreviousWindow => vec![HostAction::FocusPreviousWindow],
@@ -91,51 +69,47 @@ pub fn dispatch_wm_command(command: WmCommand) -> Vec<HostAction> {
 
 pub fn wm_command_from_ffi(input: &HypreactCommandInput) -> Result<WmCommand, FfiError> {
     Ok(match input.kind {
-        HypreactCommandKind::Spawn => WmCommand::Spawn {
-            command: required_string(input.string_value, "command")?,
-        },
+        HypreactCommandKind::Spawn => {
+            WmCommand::Spawn { command: required_string(input.string_value, "command")? }
+        }
         HypreactCommandKind::ReloadConfig => WmCommand::ReloadConfig,
-        HypreactCommandKind::SetLayout => WmCommand::SetLayout {
-            name: required_string(input.string_value, "name")?,
-        },
+        HypreactCommandKind::SetLayout => {
+            WmCommand::SetLayout { name: required_string(input.string_value, "name")? }
+        }
         HypreactCommandKind::CycleLayout => WmCommand::CycleLayout {
             direction: input
                 .has_cycle_direction
                 .then(|| cycle_direction_from_ffi(input.cycle_direction)),
         },
-        HypreactCommandKind::ViewWorkspace => WmCommand::ViewWorkspace {
-            workspace: input.workspace,
-        },
+        HypreactCommandKind::ViewWorkspace => {
+            WmCommand::ViewWorkspace { workspace: input.workspace }
+        }
         HypreactCommandKind::ActivateWorkspace => WmCommand::ActivateWorkspace {
             workspace_id: WorkspaceId(required_string(input.string_value, "workspace_id")?),
         },
         HypreactCommandKind::ToggleFloating => WmCommand::ToggleFloating,
         HypreactCommandKind::ToggleFullscreen => WmCommand::ToggleFullscreen,
         HypreactCommandKind::AssignFocusedWindowToWorkspace => {
-            WmCommand::AssignFocusedWindowToWorkspace {
-                workspace: input.workspace,
-            }
+            WmCommand::AssignFocusedWindowToWorkspace { workspace: input.workspace }
         }
         HypreactCommandKind::ToggleAssignFocusedWindowToWorkspace => {
-            WmCommand::ToggleAssignFocusedWindowToWorkspace {
-                workspace: input.workspace,
-            }
+            WmCommand::ToggleAssignFocusedWindowToWorkspace { workspace: input.workspace }
         }
         HypreactCommandKind::FocusWindow => WmCommand::FocusWindow {
             window_id: WindowId(required_string(input.string_value, "window_id")?),
         },
-        HypreactCommandKind::FocusDirection => WmCommand::FocusDirection {
-            direction: direction_from_ffi(input.direction),
-        },
-        HypreactCommandKind::SwapDirection => WmCommand::SwapDirection {
-            direction: direction_from_ffi(input.direction),
-        },
-        HypreactCommandKind::ResizeDirection => WmCommand::ResizeDirection {
-            direction: direction_from_ffi(input.direction),
-        },
-        HypreactCommandKind::MoveDirection => WmCommand::MoveDirection {
-            direction: direction_from_ffi(input.direction),
-        },
+        HypreactCommandKind::FocusDirection => {
+            WmCommand::FocusDirection { direction: direction_from_ffi(input.direction) }
+        }
+        HypreactCommandKind::SwapDirection => {
+            WmCommand::SwapDirection { direction: direction_from_ffi(input.direction) }
+        }
+        HypreactCommandKind::ResizeDirection => {
+            WmCommand::ResizeDirection { direction: direction_from_ffi(input.direction) }
+        }
+        HypreactCommandKind::MoveDirection => {
+            WmCommand::MoveDirection { direction: direction_from_ffi(input.direction) }
+        }
         HypreactCommandKind::FocusNextWindow => WmCommand::FocusNextWindow,
         HypreactCommandKind::FocusPreviousWindow => WmCommand::FocusPreviousWindow,
         HypreactCommandKind::SelectNextWorkspace => WmCommand::SelectNextWorkspace,

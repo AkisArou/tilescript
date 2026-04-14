@@ -20,15 +20,15 @@ class Runtime {
     Runtime();
     ~Runtime();
 
-    [[nodiscard]] std::string resetState() const;
-    [[nodiscard]] std::string upsertOutput(const HypreactOutputSync& output) const;
-    [[nodiscard]] std::string removeOutput(const std::string& outputId) const;
-    [[nodiscard]] std::string activateWorkspace(const std::string& workspaceId, const std::string& outputId) const;
-    [[nodiscard]] std::string setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const;
-    [[nodiscard]] std::string focusWindow(const std::optional<std::string>& windowId) const;
-    [[nodiscard]] std::string setWindowClosing(const std::string& windowId, bool closing) const;
-    [[nodiscard]] std::string removeWindow(const std::string& windowId) const;
-    [[nodiscard]] std::string upsertWindow(const HypreactWindowSync& window) const;
+    [[nodiscard]] HypreactStatusResult resetState() const;
+    [[nodiscard]] HypreactStatusResult upsertOutput(const HypreactOutputSync& output) const;
+    [[nodiscard]] HypreactStatusResult removeOutput(const std::string& outputId) const;
+    [[nodiscard]] HypreactStatusResult activateWorkspace(const std::string& workspaceId, const std::string& outputId) const;
+    [[nodiscard]] HypreactStatusResult setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const;
+    [[nodiscard]] HypreactStatusResult focusWindow(const std::optional<std::string>& windowId) const;
+    [[nodiscard]] HypreactStatusResult setWindowClosing(const std::string& windowId, bool closing) const;
+    [[nodiscard]] HypreactStatusResult removeWindow(const std::string& windowId) const;
+    [[nodiscard]] HypreactStatusResult upsertWindow(const HypreactWindowSync& window) const;
     [[nodiscard]] HypreactStatusResult loadLayoutConfig(const std::string& configPath) const;
     [[nodiscard]] HypreactStatusResult reloadLayoutConfig() const;
     [[nodiscard]] HypreactLayoutStatusResult layoutStatusResult() const;
@@ -40,9 +40,6 @@ class Runtime {
     [[nodiscard]] bool moveTiledWindow(const std::string& firstWindowId, const std::string& secondWindowId) const;
     [[nodiscard]] bool resizeDirection(const std::string& direction) const;
     [[nodiscard]] HypreactStateResult stateResult() const;
-
-  private:
-    static std::string take(char* raw);
 
     HypreactRuntimeHandle* handle_ = nullptr;
 };
@@ -56,8 +53,6 @@ void clearPluginHandle();
 void setConfigPathValue(Hyprlang::CConfigValue* value);
 void clearConfigPathValue();
 
-void logJson(const char* label, const std::string& json);
-std::optional<Json::Value> parseJson(const std::string& json);
 std::string trim(std::string value);
 std::string stringify(const Json::Value& value);
 

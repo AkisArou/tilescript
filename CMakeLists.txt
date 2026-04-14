@@ -29,7 +29,7 @@ add_custom_target(
   VERBATIM
 )
 
-add_library(hypreact SHARED plugin/hyprland/src/plugin.cpp plugin/hyprland/src/plugin_runtime.cpp)
+add_library(hypreact SHARED plugin/hyprland/src/plugin.cpp plugin/hyprland/src/plugin_algorithm.cpp plugin/hyprland/src/plugin_dispatchers.cpp plugin/hyprland/src/plugin_hooks.cpp plugin/hyprland/src/plugin_query.cpp plugin/hyprland/src/plugin_runtime.cpp plugin/hyprland/src/plugin_sync.cpp)
 add_dependencies(hypreact hypreact_ffi)
 
 target_include_directories(

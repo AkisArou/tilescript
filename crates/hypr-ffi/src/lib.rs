@@ -1,10 +1,11 @@
 mod action;
+mod abi;
 mod bootstrap;
 mod ffi_string;
 mod layout;
 mod response;
+mod runtime_types;
 mod sdk;
-mod types;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -17,20 +18,20 @@ use hypreact_layout_runtime as runtime_facade;
 
 use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
 use bootstrap::bootstrap_config_root;
-use ffi_string::{cstr_to_str, into_ffi_string, optional_cstr_to_string, string_free};
+use ffi_string::{cstr_to_str, optional_cstr_to_string, string_free};
 use layout::{
     layout_close_focus_candidate, layout_focus_candidate, layout_runtime_placement,
     layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config,
     reload_layout_config,
 };
-use response::{response_ok, FfiError};
+use response::FfiError;
+use runtime_types::{HypreactRuntimeHandle, LayoutRuntimeStatus, StatusResult};
 use sdk::sync_sdk_support;
-use types::StatusResult;
-pub use types::{
+pub use abi::{
     HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult,
-    HypreactOutputSync, HypreactPlacementGeometry, HypreactPlacementResult, HypreactRuntimeHandle,
-    HypreactStateResult, HypreactStatusResult, HypreactStringResult, HypreactWindowSync,
-    HypreactWorkspaceLayoutSpaceSync,
+    HypreactDiagnostic, HypreactDiagnosticRange, HypreactOutputSync, HypreactPlacementGeometry,
+    HypreactPlacementResult, HypreactStateResult, HypreactStatusResult, HypreactStringResult,
+    HypreactWindowSync, HypreactWorkspaceLayoutSpaceSync,
 };
 
 #[unsafe(no_mangle)]
@@ -74,25 +75,29 @@ pub unsafe extern "C" fn hypreact_runtime_dispatch_command(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_reset_state(
+pub extern "C" fn hypreact_runtime_reset_state_result(
     handle: *mut HypreactRuntimeHandle,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         runtime_facade::reset_model(&mut handle.model);
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed: true,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn hypreact_runtime_upsert_output(
+pub unsafe extern "C" fn hypreact_runtime_upsert_output_result(
     handle: *mut HypreactRuntimeHandle,
     output: *const HypreactOutputSync,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         if output.is_null() {
             return Err(FfiError::NullPointer);
@@ -109,36 +114,44 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_output(
             output.logical_height,
         );
 
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed: true,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_remove_output(
+pub extern "C" fn hypreact_runtime_remove_output_result(
     handle: *mut HypreactRuntimeHandle,
     output_id: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let output_id = OutputId::from(cstr_to_str(output_id)?.to_string());
         let changed = runtime_facade::remove_output(&mut handle.model, &output_id);
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_activate_workspace(
+pub extern "C" fn hypreact_runtime_activate_workspace_result(
     handle: *mut HypreactRuntimeHandle,
     workspace_id: *const std::ffi::c_char,
     output_id: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let workspace_id = WorkspaceId::from(cstr_to_str(workspace_id)?.to_string());
         let output_id = if output_id.is_null() {
@@ -148,19 +161,23 @@ pub extern "C" fn hypreact_runtime_activate_workspace(
         };
         runtime_facade::activate_workspace(&mut handle.model, workspace_id, output_id);
 
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed: true,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space(
+pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space_result(
     handle: *mut HypreactRuntimeHandle,
     layout_space: *const HypreactWorkspaceLayoutSpaceSync,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         if layout_space.is_null() {
             return Err(FfiError::NullPointer);
@@ -180,69 +197,85 @@ pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space(
             },
         );
 
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed: true,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_focus_window(
+pub extern "C" fn hypreact_runtime_focus_window_result(
     handle: *mut HypreactRuntimeHandle,
     window_id: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = optional_cstr_to_window_id(window_id)?;
         runtime_facade::focus_window(&mut handle.model, window_id);
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed: true,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_set_window_closing(
+pub extern "C" fn hypreact_runtime_set_window_closing_result(
     handle: *mut HypreactRuntimeHandle,
     window_id: *const std::ffi::c_char,
     closing: bool,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window_id)?.to_string());
         let changed = runtime_facade::set_window_closing(&mut handle.model, &window_id, closing);
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_remove_window(
+pub extern "C" fn hypreact_runtime_remove_window_result(
     handle: *mut HypreactRuntimeHandle,
     window_id: *const std::ffi::c_char,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window_id)?.to_string());
         let (changed, focused_window_id) =
             runtime_facade::remove_window(&mut handle.model, window_id);
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed,
             focused_window_id: focused_window_id.map(|window_id| window_id.to_string()),
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn hypreact_runtime_upsert_window(
+pub unsafe extern "C" fn hypreact_runtime_upsert_window_result(
     handle: *mut HypreactRuntimeHandle,
     window: *const HypreactWindowSync,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         if window.is_null() {
             return Err(FfiError::NullPointer);
@@ -271,11 +304,15 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_window(
             window.fullscreen,
         );
 
-        response_ok(StatusResult {
+        status_result(StatusResult {
             changed,
             focused_window_id: None,
         })
-    })))
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -508,16 +545,6 @@ pub extern "C" fn hypreact_runtime_resize_direction(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn hypreact_runtime_state(
-    handle: *mut HypreactRuntimeHandle,
-) -> *mut std::ffi::c_char {
-    into_ffi_string(catch_unwind(AssertUnwindSafe(|| {
-        let handle = ffi_handle_mut(handle)?;
-        response_ok(state_snapshot_for_model(&handle.model))
-    })))
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn hypreact_runtime_state_result(
     handle: *mut HypreactRuntimeHandle,
 ) -> HypreactStateResult {
@@ -633,16 +660,17 @@ pub unsafe extern "C" fn hypreact_runtime_free_layout_status_result(
             string_free(result.error);
         }
     }
-    if !result.diagnostics_json.is_null() {
-        unsafe {
-            string_free(result.diagnostics_json);
-        }
-    }
+    free_diagnostic_array(result.diagnostics, result.diagnostic_count);
     free_string_array(result.workspace_names, result.workspace_name_count);
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hypreact_runtime_free_status_result(result: HypreactStatusResult) {
+    if !result.focused_window_id.is_null() {
+        unsafe {
+            string_free(result.focused_window_id);
+        }
+    }
     if !result.error.is_null() {
         unsafe {
             string_free(result.error);
@@ -753,18 +781,47 @@ fn state_result(
 }
 
 fn layout_status_result(
-    status: types::LayoutRuntimeStatus,
+    status: LayoutRuntimeStatus,
 ) -> Result<HypreactLayoutStatusResult, FfiError> {
     let workspace_names = status.workspace_names.unwrap_or_default();
+    let diagnostic_count = status.diagnostics.len();
     Ok(HypreactLayoutStatusResult {
         loaded: status.loaded,
         config_path: optional_owned_string(status.config_path)?,
         selected_layout_name: optional_owned_string(status.selected_layout_name)?,
         error: optional_owned_string(status.error)?,
-        diagnostics_json: optional_owned_string(status.diagnostics_json)?,
+        diagnostics: diagnostic_array(status.diagnostics)?,
+        diagnostic_count,
         workspace_names: string_array(workspace_names.clone())?,
         workspace_name_count: workspace_names.len(),
     })
+}
+
+fn diagnostic_array(
+    diagnostics: Vec<hypreact_layout_runtime::LayoutDiagnostic>,
+) -> Result<*mut HypreactDiagnostic, FfiError> {
+    let mut raw_diagnostics = diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            Ok(HypreactDiagnostic {
+                source: optional_owned_string(Some(diagnostic.source))?,
+                severity: optional_owned_string(Some(diagnostic.severity))?,
+                code: optional_owned_string(Some(diagnostic.code))?,
+                message: optional_owned_string(Some(diagnostic.message))?,
+                path: optional_owned_string(diagnostic.path)?,
+                range: HypreactDiagnosticRange {
+                    start_line: diagnostic.range.start_line,
+                    start_column: diagnostic.range.start_column,
+                    end_line: diagnostic.range.end_line,
+                    end_column: diagnostic.range.end_column,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, FfiError>>()?;
+
+    let ptr = raw_diagnostics.as_mut_ptr();
+    std::mem::forget(raw_diagnostics);
+    Ok(ptr)
 }
 
 fn string_array(values: Vec<String>) -> Result<*mut *mut std::ffi::c_char, FfiError> {
@@ -806,6 +863,23 @@ fn free_string_array(values: *mut *mut std::ffi::c_char, count: usize) {
     }
 }
 
+fn free_diagnostic_array(values: *mut HypreactDiagnostic, count: usize) {
+    if values.is_null() {
+        return;
+    }
+
+    let values = unsafe { Vec::from_raw_parts(values, count, count) };
+    for value in values {
+        for string in [value.source, value.severity, value.code, value.message, value.path] {
+            if !string.is_null() {
+                unsafe {
+                    string_free(string);
+                }
+            }
+        }
+    }
+}
+
 fn empty_state_result() -> HypreactStateResult {
     HypreactStateResult {
         workspace_names: std::ptr::null_mut(),
@@ -822,15 +896,17 @@ fn empty_layout_status_result() -> HypreactLayoutStatusResult {
         config_path: std::ptr::null_mut(),
         selected_layout_name: std::ptr::null_mut(),
         error: std::ptr::null_mut(),
-        diagnostics_json: std::ptr::null_mut(),
+        diagnostics: std::ptr::null_mut(),
+        diagnostic_count: 0,
         workspace_names: std::ptr::null_mut(),
         workspace_name_count: 0,
     }
 }
 
-fn status_result(status: types::StatusResult) -> Result<HypreactStatusResult, FfiError> {
+fn status_result(status: StatusResult) -> Result<HypreactStatusResult, FfiError> {
     Ok(HypreactStatusResult {
         changed: status.changed,
+        focused_window_id: optional_owned_string(status.focused_window_id)?,
         error: std::ptr::null_mut(),
     })
 }
@@ -838,6 +914,7 @@ fn status_result(status: types::StatusResult) -> Result<HypreactStatusResult, Ff
 fn error_status_result(error: FfiError) -> HypreactStatusResult {
     HypreactStatusResult {
         changed: false,
+        focused_window_id: std::ptr::null_mut(),
         error: std::ffi::CString::new(error.to_string())
             .expect("ffi error strings must not contain nul bytes")
             .into_raw(),

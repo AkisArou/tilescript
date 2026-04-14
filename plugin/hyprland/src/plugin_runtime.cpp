@@ -45,9 +45,26 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
         key.append("error:");
         key.append(layout.error);
     }
-    if (layout.diagnostics_json != nullptr) {
-        key.append("|diagnostics:");
-        key.append(layout.diagnostics_json);
+    for (size_t i = 0; i < layout.diagnostic_count; ++i) {
+        const auto& diagnostic = layout.diagnostics[i];
+        key.append("|diagnostic:");
+        if (diagnostic.severity != nullptr) {
+            key.append(diagnostic.severity);
+        }
+        key.push_back(':');
+        if (diagnostic.code != nullptr) {
+            key.append(diagnostic.code);
+        }
+        key.push_back(':');
+        if (diagnostic.message != nullptr) {
+            key.append(diagnostic.message);
+        }
+        key.push_back(':');
+        if (diagnostic.path != nullptr) {
+            key.append(diagnostic.path);
+        }
+        key.push_back(':');
+        key.append(std::to_string(diagnostic.range.start_line));
     }
 
     if (key.empty() || key == g_lastDiagnosticNotificationKey) {
@@ -60,30 +77,25 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
         notifyHypreact(std::string{"hypreact: "} + layout.error, ICON_ERROR, 8000);
     }
 
-    if (layout.diagnostics_json == nullptr) {
+    if (layout.diagnostics == nullptr || layout.diagnostic_count == 0) {
         return;
     }
 
-    const auto diagnostics = parseJson(layout.diagnostics_json);
-    if (!diagnostics || !diagnostics->isArray()) {
-        return;
-    }
-
-    for (const auto& diagnostic : *diagnostics) {
-        const auto message = diagnostic["message"].asString();
-        const auto path = diagnostic["path"].asString();
-        const auto range = diagnostic["range"];
+    for (size_t i = 0; i < layout.diagnostic_count; ++i) {
+        const auto& diagnostic = layout.diagnostics[i];
+        const auto message = diagnostic.message == nullptr ? "" : diagnostic.message;
+        const std::string path = diagnostic.path == nullptr ? "" : diagnostic.path;
         std::ostringstream text;
         text << "hypreact css: " << message;
         if (!path.empty()) {
             text << " (" << path;
-            if (range.isObject() && range["startLine"].isUInt()) {
-                text << ":" << range["startLine"].asUInt();
+            if (diagnostic.range.start_line > 0) {
+                text << ":" << diagnostic.range.start_line;
             }
             text << ")";
         }
 
-        const auto severity = diagnostic["severity"].asString();
+        const auto severity = diagnostic.severity == nullptr ? "" : diagnostic.severity;
         const auto icon = severity == "error" ? ICON_ERROR : ICON_WARNING;
         notifyHypreact(text.str(), icon, 7000);
     }
@@ -174,40 +186,40 @@ Runtime::~Runtime() {
     }
 }
 
-std::string Runtime::resetState() const {
-    return take(hypreact_runtime_reset_state(handle_));
+HypreactStatusResult Runtime::resetState() const {
+    return hypreact_runtime_reset_state_result(handle_);
 }
 
-std::string Runtime::upsertOutput(const HypreactOutputSync& output) const {
-    return take(hypreact_runtime_upsert_output(handle_, &output));
+HypreactStatusResult Runtime::upsertOutput(const HypreactOutputSync& output) const {
+    return hypreact_runtime_upsert_output_result(handle_, &output);
 }
 
-std::string Runtime::removeOutput(const std::string& outputId) const {
-    return take(hypreact_runtime_remove_output(handle_, outputId.c_str()));
+HypreactStatusResult Runtime::removeOutput(const std::string& outputId) const {
+    return hypreact_runtime_remove_output_result(handle_, outputId.c_str());
 }
 
-std::string Runtime::activateWorkspace(const std::string& workspaceId, const std::string& outputId) const {
-    return take(hypreact_runtime_activate_workspace(handle_, workspaceId.c_str(), outputId.empty() ? nullptr : outputId.c_str()));
+HypreactStatusResult Runtime::activateWorkspace(const std::string& workspaceId, const std::string& outputId) const {
+    return hypreact_runtime_activate_workspace_result(handle_, workspaceId.c_str(), outputId.empty() ? nullptr : outputId.c_str());
 }
 
-std::string Runtime::setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const {
-    return take(hypreact_runtime_set_workspace_layout_space(handle_, &layoutSpace));
+HypreactStatusResult Runtime::setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const {
+    return hypreact_runtime_set_workspace_layout_space_result(handle_, &layoutSpace);
 }
 
-std::string Runtime::focusWindow(const std::optional<std::string>& windowId) const {
-    return take(hypreact_runtime_focus_window(handle_, windowId ? windowId->c_str() : nullptr));
+HypreactStatusResult Runtime::focusWindow(const std::optional<std::string>& windowId) const {
+    return hypreact_runtime_focus_window_result(handle_, windowId ? windowId->c_str() : nullptr);
 }
 
-std::string Runtime::setWindowClosing(const std::string& windowId, bool closing) const {
-    return take(hypreact_runtime_set_window_closing(handle_, windowId.c_str(), closing));
+HypreactStatusResult Runtime::setWindowClosing(const std::string& windowId, bool closing) const {
+    return hypreact_runtime_set_window_closing_result(handle_, windowId.c_str(), closing);
 }
 
-std::string Runtime::removeWindow(const std::string& windowId) const {
-    return take(hypreact_runtime_remove_window(handle_, windowId.c_str()));
+HypreactStatusResult Runtime::removeWindow(const std::string& windowId) const {
+    return hypreact_runtime_remove_window_result(handle_, windowId.c_str());
 }
 
-std::string Runtime::upsertWindow(const HypreactWindowSync& window) const {
-    return take(hypreact_runtime_upsert_window(handle_, &window));
+HypreactStatusResult Runtime::upsertWindow(const HypreactWindowSync& window) const {
+    return hypreact_runtime_upsert_window_result(handle_, &window);
 }
 
 HypreactStatusResult Runtime::loadLayoutConfig(const std::string& configPath) const {
@@ -281,16 +293,6 @@ HypreactStateResult Runtime::stateResult() const {
     return hypreact_runtime_state_result(handle_);
 }
 
-std::string Runtime::take(char* raw) {
-    if (raw == nullptr) {
-        return R"({"ok":false,"error":"ffi returned null"})";
-    }
-
-    std::string value(raw);
-    hypreact_string_free(raw);
-    return value;
-}
-
 Runtime* runtime() {
     return g_runtime.get();
 }
@@ -319,24 +321,6 @@ void setConfigPathValue(Hyprlang::CConfigValue* value) {
 
 void clearConfigPathValue() {
     g_configPathConfig = nullptr;
-}
-
-void logJson(const char* label, const std::string& json) {
-    std::cout << "[hypreact] " << label << ": " << json << std::endl;
-}
-
-std::optional<Json::Value> parseJson(const std::string& json) {
-    Json::CharReaderBuilder builder;
-    std::string errors;
-    Json::Value root;
-    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-    const bool ok = reader->parse(json.data(), json.data() + json.size(), &root, &errors);
-    if (!ok) {
-        std::cerr << "[hypreact] failed to parse json: " << errors << std::endl;
-        return std::nullopt;
-    }
-
-    return root;
 }
 
 std::string trim(std::string value) {

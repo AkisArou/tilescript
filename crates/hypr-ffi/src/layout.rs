@@ -1,3 +1,6 @@
+use crate::runtime_types::{
+    HypreactRuntimeHandle, LayoutRuntimeState, LayoutRuntimeStatus, WindowGeometryEntry,
+};
 use hypreact_core::navigation::NavigationDirection;
 use hypreact_layout_runtime::{
     LayoutRuntimePaths, LayoutRuntimeService, LayoutStatusSnapshot, close_focus_candidate,
@@ -5,9 +8,6 @@ use hypreact_layout_runtime::{
 };
 
 use crate::response::FfiError;
-use crate::types::{
-    HypreactRuntimeHandle, LayoutRuntimeState, LayoutRuntimeStatus, WindowGeometryEntry,
-};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlacementGeometry {
@@ -57,7 +57,7 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: None,
-            diagnostics_json: None,
+            diagnostics: Vec::new(),
         };
     };
 
@@ -72,7 +72,7 @@ pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntim
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: Some(error.to_string()),
-            diagnostics_json: None,
+            diagnostics: Vec::new(),
         },
     }
 }
@@ -167,14 +167,14 @@ fn map_layout_status(status: LayoutStatusSnapshot) -> LayoutRuntimeStatus {
             .map(|window_id| window_id.to_string())
             .collect(),
         error: status.error,
-        diagnostics_json: status.diagnostics_json,
+        diagnostics: status.diagnostics,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::layout_focus_candidate;
-    use crate::types::{HypreactRuntimeHandle, LayoutRuntimeState};
+    use crate::runtime_types::{HypreactRuntimeHandle, LayoutRuntimeState};
     use hypreact_config::model::{Config, LayoutRule};
     use hypreact_core::wm::WmModel;
     use hypreact_core::{OutputId, WindowId, WorkspaceId};

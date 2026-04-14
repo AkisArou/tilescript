@@ -105,27 +105,27 @@ pub struct LayoutStatusSnapshot {
     pub window_geometries: Vec<(hypreact_core::WindowId, WindowGeometry)>,
     pub ordered_window_ids: Vec<hypreact_core::WindowId>,
     pub error: Option<String>,
-    pub diagnostics_json: Option<String>,
+    pub diagnostics: Vec<LayoutDiagnostic>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LayoutDiagnostic {
-    source: String,
-    severity: String,
-    code: String,
-    message: String,
-    path: Option<String>,
-    range: LayoutDiagnosticRange,
+pub struct LayoutDiagnostic {
+    pub source: String,
+    pub severity: String,
+    pub code: String,
+    pub message: String,
+    pub path: Option<String>,
+    pub range: LayoutDiagnosticRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LayoutDiagnosticRange {
-    start_line: u32,
-    start_column: u32,
-    end_line: u32,
-    end_column: u32,
+pub struct LayoutDiagnosticRange {
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,15 +296,18 @@ pub fn layout_status_for_model(
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: None,
-            diagnostics_json: None,
+            diagnostics: Vec::new(),
         });
     };
 
     match service.evaluate_workspace_scene(&loaded.config, &snapshot, &workspace) {
         Ok(evaluation) => {
-            let diagnostics_json = evaluation.as_ref().and_then(|evaluation| {
-                diagnostics_json_for_stylesheets(&evaluation.evaluation.artifact.stylesheets)
-            });
+            let diagnostics = evaluation
+                .as_ref()
+                .map(|evaluation| {
+                    diagnostics_for_stylesheets(&evaluation.evaluation.artifact.stylesheets)
+                })
+                .unwrap_or_default();
             if let Some(evaluation) = evaluation.as_ref() {
                 model.set_focus_tree_value(Some(evaluation.focus_tree.clone()));
             }
@@ -335,7 +338,7 @@ pub fn layout_status_for_model(
                     .map(|evaluation| evaluation.ordered_window_ids.clone())
                     .unwrap_or_default(),
                 error: None,
-                diagnostics_json,
+                diagnostics,
             })
         }
         Err(error) => Ok(LayoutStatusSnapshot {
@@ -350,14 +353,14 @@ pub fn layout_status_for_model(
             window_geometries: Vec::new(),
             ordered_window_ids: Vec::new(),
             error: Some(error.to_string()),
-            diagnostics_json: None,
+            diagnostics: Vec::new(),
         }),
     }
 }
 
-fn diagnostics_json_for_stylesheets(
+fn diagnostics_for_stylesheets(
     stylesheets: &hypreact_core::runtime::prepared_layout::PreparedStylesheets,
-) -> Option<String> {
+) -> Vec<LayoutDiagnostic> {
     let mut diagnostics = Vec::new();
 
     if let Some(stylesheet) = stylesheets.global.as_ref() {
@@ -374,7 +377,7 @@ fn diagnostics_json_for_stylesheets(
         ));
     }
 
-    if diagnostics.is_empty() { None } else { serde_json::to_string(&diagnostics).ok() }
+    diagnostics
 }
 
 fn layout_diagnostics_from_stylesheet(source: &str, path: Option<&str>) -> Vec<LayoutDiagnostic> {
@@ -1198,7 +1201,7 @@ mod tests {
 
     #[test]
     fn workspace_scene_builds_focus_tree_for_only_current_workspace_windows() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1252,7 +1255,7 @@ mod tests {
 
     #[test]
     fn move_tiled_window_changes_master_stack_placement_order() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1305,7 +1308,7 @@ mod tests {
 
     #[test]
     fn workspace_scene_derives_partition_tree_for_master_stack_layout() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1494,7 +1497,7 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_workspace_resize_state() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1592,7 +1595,7 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_nested_stack_partition_state() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1686,7 +1689,7 @@ mod tests {
 
     #[test]
     fn repeated_vertical_resize_stops_before_collapsing_stack_branches() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1738,7 +1741,7 @@ mod tests {
 
     #[test]
     fn resize_direction_matches_live_four_window_stack_focus_sequence() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1824,7 +1827,7 @@ mod tests {
 
     #[test]
     fn resize_direction_allows_horizontal_resize_for_top_stack_window() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
@@ -1880,7 +1883,7 @@ mod tests {
 
     #[test]
     fn resize_direction_respects_fixed_branch_constraints() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");
