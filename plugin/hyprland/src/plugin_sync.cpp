@@ -117,6 +117,27 @@ void logAndFreeStatusResult(const char *label, HypreactStatusResult result) {
   hypreact_runtime_free_status_result(result);
 }
 
+bool isManagedTiledTarget(const PHLWORKSPACE &workspace,
+                          const SP<Layout::ITarget> &target) {
+  return target && !target->floating() && target->window() &&
+         target->window()->m_workspace == workspace &&
+         target->window()->m_isMapped;
+}
+
+bool workspaceHasManagedTiledWindows(const PHLWORKSPACE &workspace) {
+  if (!workspace || !workspace->m_space) {
+    return false;
+  }
+
+  for (const auto &weakTarget : workspace->m_space->targets()) {
+    if (isManagedTiledTarget(workspace, weakTarget.lock())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 } // namespace
 
 std::string makeWindowId(const PHLWINDOW &window) {
@@ -238,18 +259,13 @@ void syncWindow(const PHLWINDOW &window) {
 }
 
 void syncWorkspaceWindows(const PHLWORKSPACE &workspace) {
-  if (!workspace || !workspace->m_space || !runtime()) {
+  if (!workspaceHasManagedTiledWindows(workspace) || !runtime()) {
     return;
   }
 
   for (const auto &weakTarget : workspace->m_space->targets()) {
     const auto target = weakTarget.lock();
-    if (!target || target->floating() || !target->window()) {
-      continue;
-    }
-
-    if (target->window()->m_workspace != workspace ||
-        !target->window()->m_isMapped) {
+    if (!isManagedTiledTarget(workspace, target)) {
       continue;
     }
 
@@ -258,7 +274,7 @@ void syncWorkspaceWindows(const PHLWORKSPACE &workspace) {
 }
 
 void recalculateWorkspace(const PHLWORKSPACE &workspace) {
-  if (!workspace || !workspace->m_space) {
+  if (!workspaceHasManagedTiledWindows(workspace)) {
     return;
   }
 
@@ -314,7 +330,7 @@ void applyPlacementForWorkspace(const PHLWORKSPACE &workspace) {
 }
 
 void queueWorkspaceRecalculate(const PHLWORKSPACE &workspace) {
-  if (!workspace) {
+  if (!workspaceHasManagedTiledWindows(workspace)) {
     return;
   }
 
@@ -349,8 +365,18 @@ void flushPendingWorkspaceRecalculations() {
   }
   g_recentWorkspaceResizes = std::move(stillRecentResizes);
 
-  if (g_pendingWorkspaceLayoutRefreshTicks > 0) {
+  const bool hasManagedPendingWorkspace = std::any_of(
+      g_pendingWorkspaceRecalculations.begin(),
+      g_pendingWorkspaceRecalculations.end(),
+      [](const PendingWorkspaceRecalculation &pending) {
+        return pending.workspace && !pending.workspace->inert() &&
+               workspaceHasManagedTiledWindows(pending.workspace);
+      });
+
+  if (g_pendingWorkspaceLayoutRefreshTicks > 0 && hasManagedPendingWorkspace) {
     refreshWorkspaceAlgorithms();
+  }
+  if (g_pendingWorkspaceLayoutRefreshTicks > 0) {
     --g_pendingWorkspaceLayoutRefreshTicks;
   }
 
@@ -359,6 +385,10 @@ void flushPendingWorkspaceRecalculations() {
 
   for (auto pending : g_pendingWorkspaceRecalculations) {
     if (pending.workspace && !pending.workspace->inert()) {
+      if (!workspaceHasManagedTiledWindows(pending.workspace)) {
+        continue;
+      }
+
       const auto monitor = pending.workspace->m_monitor.lock();
       if (!monitor || monitor->m_activeWorkspace != pending.workspace) {
         stillPending.push_back(std::move(pending));
