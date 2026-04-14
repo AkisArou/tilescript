@@ -49,6 +49,8 @@ struct WorkspaceLayoutSpaceSyncPayload {
 };
 
 std::unordered_map<WINDOWID, std::string> g_windowIds;
+std::unordered_map<std::string, std::string> g_lastActiveWorkspaceByMonitorId;
+std::optional<std::string> g_lastFocusedWindowId;
 std::vector<PendingWorkspaceRecalculation> g_pendingWorkspaceRecalculations;
 std::vector<RecentWorkspaceResize> g_recentWorkspaceResizes;
 int g_pendingWorkspaceLayoutRefreshTicks = 0;
@@ -136,6 +138,23 @@ bool workspaceHasManagedTiledWindows(const PHLWORKSPACE &workspace) {
   }
 
   return false;
+}
+
+std::vector<SP<Layout::ITarget>> managedTiledTargets(
+    const PHLWORKSPACE &workspace) {
+  std::vector<SP<Layout::ITarget>> targets;
+  if (!workspace || !workspace->m_space) {
+    return targets;
+  }
+
+  for (const auto &weakTarget : workspace->m_space->targets()) {
+    const auto target = weakTarget.lock();
+    if (isManagedTiledTarget(workspace, target)) {
+      targets.push_back(target);
+    }
+  }
+
+  return targets;
 }
 
 } // namespace
@@ -259,16 +278,16 @@ void syncWindow(const PHLWINDOW &window) {
 }
 
 void syncWorkspaceWindows(const PHLWORKSPACE &workspace) {
-  if (!workspaceHasManagedTiledWindows(workspace) || !runtime()) {
+  if (!runtime()) {
     return;
   }
 
-  for (const auto &weakTarget : workspace->m_space->targets()) {
-    const auto target = weakTarget.lock();
-    if (!isManagedTiledTarget(workspace, target)) {
-      continue;
-    }
+  const auto targets = managedTiledTargets(workspace);
+  if (targets.empty()) {
+    return;
+  }
 
+  for (const auto &target : targets) {
     syncWindow(target->window());
   }
 }
@@ -305,24 +324,20 @@ void applyPlacementForWorkspace(const PHLWORKSPACE &workspace) {
   const auto byWindowId = geometryMapFromPlacement(placement);
   hypreact_runtime_free_placement_result(placement);
 
-  for (const auto &window : g_pCompositor->m_windows) {
-    if (!window || !window->m_isMapped || window->m_isFloating ||
-        !window->m_target) {
-      continue;
-    }
+  const auto targets = managedTiledTargets(workspace);
+  if (targets.empty()) {
+    return;
+  }
 
-    if (window->m_workspace != workspace) {
-      continue;
-    }
-
+  for (const auto &target : targets) {
+    const auto &window = target->window();
     const auto it = byWindowId.find(makeWindowId(window));
     if (it == byWindowId.end() || it->second.w <= 0 || it->second.h <= 0) {
       continue;
     }
 
-    window->m_target->setPositionGlobal(
-        offsetPlacementToWorkspace(it->second, workspace));
-    window->m_target->warpPositionSize();
+    target->setPositionGlobal(offsetPlacementToWorkspace(it->second, workspace));
+    target->warpPositionSize();
   }
 
   workspace->updateWindows();
@@ -365,13 +380,18 @@ void flushPendingWorkspaceRecalculations() {
   }
   g_recentWorkspaceResizes = std::move(stillRecentResizes);
 
-  const bool hasManagedPendingWorkspace = std::any_of(
-      g_pendingWorkspaceRecalculations.begin(),
-      g_pendingWorkspaceRecalculations.end(),
-      [](const PendingWorkspaceRecalculation &pending) {
-        return pending.workspace && !pending.workspace->inert() &&
-               workspaceHasManagedTiledWindows(pending.workspace);
-      });
+  std::vector<PendingWorkspaceRecalculation> activePending;
+  activePending.reserve(g_pendingWorkspaceRecalculations.size());
+  bool hasManagedPendingWorkspace = false;
+  for (auto &pending : g_pendingWorkspaceRecalculations) {
+    if (!pending.workspace || pending.workspace->inert() ||
+        !workspaceHasManagedTiledWindows(pending.workspace)) {
+      continue;
+    }
+
+    hasManagedPendingWorkspace = true;
+    activePending.push_back(pending);
+  }
 
   if (g_pendingWorkspaceLayoutRefreshTicks > 0 && hasManagedPendingWorkspace) {
     refreshWorkspaceAlgorithms();
@@ -381,25 +401,19 @@ void flushPendingWorkspaceRecalculations() {
   }
 
   std::vector<PendingWorkspaceRecalculation> stillPending;
-  stillPending.reserve(g_pendingWorkspaceRecalculations.size());
+  stillPending.reserve(activePending.size());
 
-  for (auto pending : g_pendingWorkspaceRecalculations) {
-    if (pending.workspace && !pending.workspace->inert()) {
-      if (!workspaceHasManagedTiledWindows(pending.workspace)) {
-        continue;
-      }
+  for (auto pending : activePending) {
+    const auto monitor = pending.workspace->m_monitor.lock();
+    if (!monitor || monitor->m_activeWorkspace != pending.workspace) {
+      stillPending.push_back(std::move(pending));
+      continue;
+    }
 
-      const auto monitor = pending.workspace->m_monitor.lock();
-      if (!monitor || monitor->m_activeWorkspace != pending.workspace) {
-        stillPending.push_back(std::move(pending));
-        continue;
-      }
+    recalculateWorkspace(pending.workspace);
 
-      recalculateWorkspace(pending.workspace);
-
-      if (--pending.remainingTicks > 0) {
-        stillPending.push_back(std::move(pending));
-      }
+    if (--pending.remainingTicks > 0) {
+      stillPending.push_back(std::move(pending));
     }
   }
 
@@ -440,12 +454,31 @@ void syncActiveRuntimeState() {
 
   for (const auto &monitor : g_pCompositor->m_monitors) {
     if (monitor && monitor->m_activeWorkspace) {
-      syncWorkspace(monitor->m_activeWorkspace, monitor);
+      const auto monitorKey = monitorId(monitor);
+      const auto workspaceKey = workspaceName(monitor->m_activeWorkspace);
+      const auto it = g_lastActiveWorkspaceByMonitorId.find(monitorKey);
+      if (it == g_lastActiveWorkspaceByMonitorId.end() ||
+          it->second != workspaceKey) {
+        syncWorkspace(monitor->m_activeWorkspace, monitor);
+        g_lastActiveWorkspaceByMonitorId[monitorKey] = workspaceKey;
+      }
     }
   }
 
+  std::optional<std::string> focusedWindowId;
   if (const auto focus = Desktop::focusState()) {
-    syncFocusedWindow(focus->window());
+    if (focus->window()) {
+      focusedWindowId = makeWindowId(focus->window());
+    }
+  }
+
+  if (focusedWindowId != g_lastFocusedWindowId) {
+    if (const auto focus = Desktop::focusState()) {
+      syncFocusedWindow(focus->window());
+    } else {
+      syncFocusedWindow(nullptr);
+    }
+    g_lastFocusedWindowId = std::move(focusedWindowId);
   }
 }
 
@@ -466,6 +499,8 @@ void syncFocusedWindow(const PHLWINDOW &window) {
       "focus-window",
       runtime()->focusWindow(window ? std::optional<std::string>(makeWindowId(window))
                                     : std::nullopt));
+  g_lastFocusedWindowId =
+      window ? std::optional<std::string>(makeWindowId(window)) : std::nullopt;
 }
 
 void markWindowClosing(const PHLWINDOW &window, bool closing) {
@@ -498,6 +533,7 @@ void removeOutput(const PHLMONITOR &monitor) {
     return;
   }
 
+  g_lastActiveWorkspaceByMonitorId.erase(monitorId(monitor));
   logAndFreeStatusResult("remove-output",
                          runtime()->removeOutput(monitorId(monitor)));
 }
@@ -508,6 +544,8 @@ void resyncAll() {
   }
 
   g_windowIds.clear();
+  g_lastActiveWorkspaceByMonitorId.clear();
+  g_lastFocusedWindowId.reset();
   logAndFreeStatusResult("reset-state", runtime()->resetState());
 
   for (const auto &monitor : g_pCompositor->m_monitors) {
@@ -539,6 +577,8 @@ void clearSyncState() {
   g_recentWorkspaceResizes.clear();
   g_pendingWorkspaceLayoutRefreshTicks = 0;
   g_windowIds.clear();
+  g_lastActiveWorkspaceByMonitorId.clear();
+  g_lastFocusedWindowId.reset();
 }
 
 } // namespace hypreact_plugin
