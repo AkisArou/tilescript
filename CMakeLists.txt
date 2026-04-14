@@ -29,13 +29,14 @@ add_custom_target(
   VERBATIM
 )
 
-add_library(hypreact SHARED src/plugin.cpp src/plugin_runtime.cpp)
+add_library(hypreact SHARED plugin/hyprland/src/plugin.cpp plugin/hyprland/src/plugin_runtime.cpp)
 add_dependencies(hypreact hypreact_ffi)
 
 target_include_directories(
   hypreact
   PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugin/hyprland/include"
     "${HYPRLAND_SOURCE_DIR}"
     ${HYPRLAND_INCLUDE_DIRS}
     ${JSONCPP_INCLUDE_DIRS}

@@ -6,7 +6,7 @@ In the Hyprland plugin, `config_path` should point to the config directory. The 
 
 If `config_path` is omitted, the plugin falls back to `~/.config/hypreact` and probes those same entry names there.
 
-If that config root does not exist yet, the plugin bootstraps it from the repo `template/`.
+If that config root does not exist yet, the plugin bootstraps it from the repo `examples/template/`.
 
 The current recommended shape is:
 

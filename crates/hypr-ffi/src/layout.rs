@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn layout_focus_candidate_persists_scene_focus_tree_on_model() {
-        let config_path = "/home/akisarou/projects/hypreact/test_config/config.ts";
+        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
         let service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
                 .expect("layout runtime service");

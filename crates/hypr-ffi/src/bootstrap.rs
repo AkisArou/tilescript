@@ -17,9 +17,9 @@ pub fn bootstrap_config_root(config_root: &Path) -> Result<bool, FfiError> {
 
 fn template_source_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../template")
+        .join("../../examples/template")
         .canonicalize()
-        .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../template"))
+        .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/template"))
 }
 
 fn sync_missing_template_files(

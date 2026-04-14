@@ -21,6 +21,12 @@ Hyprlang::CConfigValue* g_configPathConfig = nullptr;
 std::optional<std::filesystem::path> g_resolvedConfigRoot;
 std::string g_lastDiagnosticNotificationKey;
 
+void logStatusResult(const char* label, const HypreactStatusResult& result) {
+    if (result.error != nullptr) {
+        std::cerr << "[hypreact] " << label << " failed: " << result.error << std::endl;
+    }
+}
+
 void notifyHypreact(const std::string& text, uint64_t icon = ICON_WARNING, uint64_t time = 5000) {
     if (g_pluginHandle == nullptr) {
         return;
@@ -317,12 +323,6 @@ void clearConfigPathValue() {
 
 void logJson(const char* label, const std::string& json) {
     std::cout << "[hypreact] " << label << ": " << json << std::endl;
-}
-
-void logStatusResult(const char* label, const HypreactStatusResult& result) {
-    if (result.error != nullptr) {
-        std::cerr << "[hypreact] " << label << " failed: " << result.error << std::endl;
-    }
 }
 
 std::optional<Json::Value> parseJson(const std::string& json) {

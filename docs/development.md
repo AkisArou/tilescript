@@ -8,11 +8,11 @@
 - `crates/runtimes/js` - authored config and layout JS/TSX pipeline
 - `crates/layout-runtime` - end-to-end workspace evaluation and placement logic
 - `crates/hypr-ffi` - Rust bridge exposed to the Hyprland plugin
-- `src/plugin.cpp` - Hyprland-side plugin adapter
+- `plugin/hyprland/src/plugin.cpp` - Hyprland-side plugin adapter
 - `packages/sdk/js` - authored config/layout SDK surface
 - `packages/lsp/vscode` - VS Code client for `hypreact-css-lsp`
-- `test_config` - local authored config fixture
-- `template` - minimal starter config
+- `dev/test-config` - local authored config fixture
+- `examples/template` - minimal starter config
 
 ## Common Commands
 
@@ -75,7 +75,7 @@ hyprctl hypreact debug-layout-workspace 1
 
 ## Authoring Fixtures
 
-`test_config/` is the main local authored-config fixture.
+`dev/test-config/` is the main local authored-config fixture.
 
 Use it for:
 
@@ -83,7 +83,7 @@ Use it for:
 - layout-runtime tests
 - local Hyprland plugin validation
 
-`template/` is the starter project skeleton.
+`examples/template/` is the starter project skeleton.
 
 For external config roots, the Hyprland plugin now manages a local SDK mirror under:
 
@@ -93,7 +93,7 @@ For external config roots, the Hyprland plugin now manages a local SDK mirror un
 - `.sdk/src/*.d.ts`
 - `.sdk/src/*.js`
 
-The plugin bootstraps missing config roots from `template/` and refreshes that managed SDK support when it resolves and loads the config root.
+The plugin bootstraps missing config roots from `examples/template/` and refreshes that managed SDK support when it resolves and loads the config root.
 
 ## Style And Tooling
 

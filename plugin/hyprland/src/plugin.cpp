@@ -37,7 +37,6 @@ using hypreact_plugin::layoutRuntimeLoaded;
 using hypreact_plugin::loadLayoutRuntimeConfig;
 using hypreact_plugin::logJson;
 using hypreact_plugin::parseJson;
-using hypreact_plugin::Runtime;
 using hypreact_plugin::runtime;
 using hypreact_plugin::setConfigPathValue;
 using hypreact_plugin::setPluginHandle;

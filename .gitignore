@@ -38,7 +38,7 @@ packages/lsp/vscode/server/
 !.vscode/extensions.json
 .idea/
 
-test_config/.hypreact/
-test_config/.hypreact-build/
-template/.hypreact/
-template/.hypreact-build/
+dev/test-config/.hypreact/
+dev/test-config/.hypreact-build/
+examples/template/.hypreact/
+examples/template/.hypreact-build/

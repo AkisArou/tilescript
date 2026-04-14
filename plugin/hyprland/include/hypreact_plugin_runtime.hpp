@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -58,7 +57,6 @@ void setConfigPathValue(Hyprlang::CConfigValue* value);
 void clearConfigPathValue();
 
 void logJson(const char* label, const std::string& json);
-void logStatusResult(const char* label, const HypreactStatusResult& result);
 std::optional<Json::Value> parseJson(const std::string& json);
 std::string trim(std::string value);
 std::string stringify(const Json::Value& value);
