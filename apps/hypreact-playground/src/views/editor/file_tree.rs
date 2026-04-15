@@ -14,8 +14,29 @@ fn branch_indent(depth: usize, is_root: bool) -> String {
     if is_root {
         "padding-left: 6px".to_string()
     } else {
-        format!("padding-left: {}px", depth * 16 + 6)
+        format!("padding-left: {}px", depth * 14 + 4)
     }
+}
+
+fn branch_guide(depth: usize, elbow: bool) -> String {
+    if depth == 0 {
+        return String::new();
+    }
+
+    let offset = depth * 14 - 6;
+    if elbow {
+        format!(
+            "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)), linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%, 9px 1px; background-position: {offset}px 0, {offset}px 50%; background-repeat: no-repeat;"
+        )
+    } else {
+        format!(
+            "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%; background-position: {offset}px 0; background-repeat: no-repeat;"
+        )
+    }
+}
+
+fn tree_row_style(depth: usize, elbow: bool, is_root: bool) -> String {
+    format!("{} {}", branch_indent(depth, is_root), branch_guide(depth, elbow))
 }
 
 fn is_directory_open(
@@ -45,26 +66,24 @@ pub fn FileTreeDirectoryView(
     let can_download = directory.download_root_path.is_some();
     let download_directory_node = directory.clone();
     let child_nodes = directory.children.clone();
-    let branch_style = branch_indent(depth, is_root);
 
     view! {
         <div class="grid">
             {(!is_root)
                 .then(|| {
                     let directory_name_text = directory_name.clone();
-                    let row_padding = branch_style.clone();
 
                     view! {
                         <div class="group/layout-subtree flex items-center gap-1">
                             <button
-                                class="text-terminal-dim flex flex-1 items-center gap-1.5 py-0 text-left text-[13px] leading-5 hover:text-terminal-fg"
-                                style=row_padding
+                                class="text-terminal-dim flex flex-1 items-center gap-1 py-0 text-left text-[12px] leading-4 hover:text-terminal-fg"
+                                style=tree_row_style(depth, true, is_root)
                                 on:click=move |_| {
                                     app_state.toggle_directory(directory_path.clone(), default_open)
                                 }
                             >
-                                <span class="w-3 text-terminal-faint">"│"</span>
-                                <span class="w-3 text-terminal-faint">
+                                <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
+                                <span class="w-2 text-terminal-faint">
                                     {move || {
                                         if app_state
                                             .directory_open_state
@@ -79,7 +98,7 @@ pub fn FileTreeDirectoryView(
                                         }
                                     }}
                                 </span>
-                                <span class="text-terminal-info shrink-0 text-[12px]">""</span>
+                                <span class="text-terminal-info shrink-0 text-[11px]">""</span>
                                 <span class="min-w-0 flex-1 truncate text-terminal-fg">{directory_name_text}</span>
                             </button>
 
@@ -151,26 +170,27 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                     <button
                         class=move || {
                             if app_state.active_file_id.get() == Some(file_id) {
-                                "flex w-full items-center gap-1.5 py-0 text-left text-[13px] leading-5 bg-terminal-bg-hover text-terminal-fg-strong"
+                                "flex w-full items-center gap-1 py-0 text-left text-[12px] leading-4 bg-terminal-bg-hover text-terminal-fg-strong"
                             } else {
-                                "flex w-full items-center gap-1.5 py-0 text-left text-[13px] leading-5 text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
+                                "flex w-full items-center gap-1 py-0 text-left text-[12px] leading-4 text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
                             }
                         }
-                        style=branch_indent(depth, false)
+                        style=tree_row_style(depth, true, false)
                         on:click=move |_| app_state.select_editor_file(file_id)
                     >
-                        <span class="w-3 text-terminal-faint">"│"</span>
-                        <span class="w-3 text-terminal-faint">" "</span>
+                        <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                         <span
-                            class=move || {
-                                if file.language == "css" {
-                                    "shrink-0 text-[#7b4fc9]"
-                                } else {
-                                    "shrink-0 text-terminal-info"
-                                }
+                            class=move || match file.language {
+                                "css" => "shrink-0 text-[#7b4fc9]",
+                                "typescript" | "typescriptreact" => "shrink-0 text-[#519aba]",
+                                _ => "shrink-0 text-terminal-info",
                             }
                         >
-                            {if file.language == "css" { "" } else { "󰈔" }}
+                            {match file.language {
+                                "css" => "",
+                                "typescript" | "typescriptreact" => "󰛦",
+                                _ => "󰈔",
+                            }}
                         </span>
                         <span class="min-w-0 flex-1 truncate">{label}</span>
 

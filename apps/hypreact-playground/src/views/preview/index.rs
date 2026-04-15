@@ -1,13 +1,17 @@
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::snapshot::WindowSnapshot;
 
 use crate::app_state::AppState;
-use crate::session::{PreviewDiagnostic, PreviewSessionState};
+use crate::session::{
+    PreviewDiagnostic, PreviewSessionState, focus_preview_window_by_direction,
+    move_preview_window_by_direction, resize_preview_window_by_direction,
+};
 use crate::views::editor::EditorView;
-use crate::views::system::SystemView;
 
 use super::scene::{body_style, frame_style, pane_style};
 
@@ -49,13 +53,17 @@ fn claimed_visible_windows(session: &PreviewSessionState) -> Vec<WindowSnapshot>
         .collect()
 }
 
+fn has_error_diagnostics(session: &PreviewSessionState) -> bool {
+    session.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error")
+}
+
 const TOGGLE_BUTTON_BASE: &str = "border px-2 py-0.5 transition-colors duration-150";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreviewSurfaceMode {
     Preview,
     Editor,
-    System,
+    Diagnostics,
     Binds,
 }
 
@@ -64,23 +72,69 @@ pub fn PreviewView() -> impl IntoView {
     let app_state = expect_context::<AppState>();
     let surface_mode = RwSignal::new(PreviewSurfaceMode::Preview);
 
+    {
+        let app_state = app_state;
+        let installed = StoredValue::new(false);
+        Effect::new(move |_| {
+            if installed.get_value() {
+                return;
+            }
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+
+            let handle_keydown = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+                if surface_mode.get_untracked() != PreviewSurfaceMode::Preview {
+                    return;
+                }
+
+                if event.default_prevented() || should_ignore_preview_key_event(&event) {
+                    return;
+                }
+
+                let event: KeyboardEvent = event.unchecked_into();
+                if let Some(action) = preview_command_from_key(&event) {
+                    event.prevent_default();
+                    match action {
+                        PreviewKeyAction::Command(command) => {
+                            app_state.session.update(|state| {
+                                let config = app_state.loaded_config.get_untracked();
+                                state.apply_command(command, config.as_ref());
+                            });
+                        }
+                        PreviewKeyAction::FocusDirection(direction) => {
+                            app_state.session.update(|state| {
+                                focus_preview_window_by_direction(state, direction);
+                            });
+                        }
+                        PreviewKeyAction::MoveDirection(direction) => {
+                            app_state.session.update(|state| {
+                                move_preview_window_by_direction(state, direction);
+                            });
+                        }
+                        PreviewKeyAction::ResizeDirection(direction) => {
+                            app_state.session.update(|state| {
+                                resize_preview_window_by_direction(state, direction);
+                            });
+                        }
+                    }
+                    app_state.request_preview_reevaluation();
+                }
+            })
+                as Box<dyn FnMut(web_sys::KeyboardEvent)>);
+
+            window.set_onkeydown(Some(handle_keydown.as_ref().unchecked_ref()));
+            handle_keydown.forget();
+            installed.set_value(true);
+        });
+    }
+
     view! {
         <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2">
             <div class="grid min-h-0 gap-2">
                 <div class="border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border">
                     <div
                         class="border-terminal-border bg-terminal-topbar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b pr-2 text-xs text-terminal-dim"
-                        tabindex="0"
-                        on:keydown=move |event: KeyboardEvent| {
-                            if let Some(command) = preview_command_from_key(&event) {
-                                event.prevent_default();
-                                app_state.session.update(|state| {
-                                    let config = app_state.loaded_config.get_untracked();
-                                    state.apply_command(command, config.as_ref());
-                                });
-                                app_state.request_preview_reevaluation();
-                            }
-                        }
                     >
                         <div class="flex min-w-0 items-center gap-1 overflow-x-auto">
                             {move || {
@@ -124,7 +178,9 @@ pub fn PreviewView() -> impl IntoView {
                                 match surface_mode.get() {
                                     PreviewSurfaceMode::Preview => focused_window_label(app_state),
                                     PreviewSurfaceMode::Editor => "editor://workspace".to_string(),
-                                    PreviewSurfaceMode::System => "system://state".to_string(),
+                                    PreviewSurfaceMode::Diagnostics => {
+                                        "diagnostics://journal".to_string()
+                                    }
                                     PreviewSurfaceMode::Binds => "binds://hyprland".to_string(),
                                 }
                             }}
@@ -134,6 +190,7 @@ pub fn PreviewView() -> impl IntoView {
                             <div class="ui-select-wrap">
                                 <select
                                     class="ui-select"
+                                    name="layout"
                                     prop:value=move || app_state.session.get().active_layout_name()
                                     on:change=move |event| {
                                         let next = event_target_value(&event);
@@ -202,19 +259,33 @@ pub fn PreviewView() -> impl IntoView {
 
                             <button
                                 class=move || {
-                                    if surface_mode.get() == PreviewSurfaceMode::System {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                                        )
+                                    let session = app_state.session.get();
+                                    let has_errors = has_error_diagnostics(&session);
+                                    if surface_mode.get() == PreviewSurfaceMode::Diagnostics {
+                                        if has_errors {
+                                            format!(
+                                                "{TOGGLE_BUTTON_BASE} border-terminal-error bg-terminal-error/12 text-terminal-error"
+                                            )
+                                        } else {
+                                            format!(
+                                                "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
+                                            )
+                                        }
                                     } else {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                                        )
+                                        if has_errors {
+                                            format!(
+                                                "{TOGGLE_BUTTON_BASE} border-terminal-error/50 bg-terminal-error/6 text-terminal-error hover:text-terminal-error"
+                                            )
+                                        } else {
+                                            format!(
+                                                "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
+                                            )
+                                        }
                                     }
                                 }
-                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::System)
+                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Diagnostics)
                             >
-                                "System"
+                                "Diagnostics"
                             </button>
 
                             <button
@@ -374,9 +445,11 @@ pub fn PreviewView() -> impl IntoView {
                                 </OverlaySurface>
                             }
                                 .into_any(),
-                            PreviewSurfaceMode::System => view! {
+                            PreviewSurfaceMode::Diagnostics => view! {
                                 <OverlaySurface>
-                                    <SystemView />
+                                    <DiagnosticsWindow diagnostics=Signal::derive(move || {
+                                        app_state.session.get().diagnostics.clone()
+                                    }) />
                                 </OverlaySurface>
                             }
                                 .into_any(),
@@ -447,6 +520,59 @@ fn DiagnosticsList(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) ->
 }
 
 #[component]
+fn DiagnosticsWindow(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) -> impl IntoView {
+    view! {
+        <div class="h-full w-full overflow-auto bg-[#0a0b0d] px-3 py-3 font-mono text-[0.8rem] leading-[1.45] text-[#c9d1d9]">
+            <Show
+                when=move || !diagnostics.get().is_empty()
+                fallback=move || {
+                    view! {
+                        <div class="text-[#8b949e]">
+                            "Apr 15 18:24:03 hypreact-playground diagnostics[913]: -- No entries --"
+                        </div>
+                    }
+                }
+            >
+                <div class="grid auto-rows-min gap-1">
+                    {move || {
+                        diagnostics
+                            .get()
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, diagnostic)| {
+                                let timestamp = format!("Apr 15 18:24:{:02}", (index + 3) % 60);
+                                let severity_color = if diagnostic.severity == "error" {
+                                    "text-[#ff7b72]"
+                                } else {
+                                    "text-[#d29922]"
+                                };
+
+                                view! {
+                                    <div class="border-l-2 border-[#2d333b] pl-3">
+                                        <div class="text-[#8b949e]">
+                                            {timestamp}
+                                            <span class="ml-2 text-[#6cb6ff]">"hypreact-playground"</span>
+                                            <span class="ml-1 text-[#8b949e]">"diagnostics[913]:"</span>
+                                            <span class=format!("ml-2 {}", severity_color)>{format!("{} {}", diagnostic.severity, diagnostic.code)}</span>
+                                        </div>
+                                        <div class="mt-0.5 text-[#c9d1d9]">
+                                            <span class="text-[#8b949e]">{diagnostic.path.clone()}</span>
+                                            <span class="text-[#6e7681]">": "</span>
+                                            <span>{diagnostic.message.clone()}</span>
+                                        </div>
+                                        <div class="mt-0.5 text-[#6e7681]">{diagnostic.range.clone()}</div>
+                                    </div>
+                                }
+                            })
+                            .collect_view()
+                    }}
+                </div>
+            </Show>
+        </div>
+    }
+}
+
+#[component]
 fn BindsWindow() -> impl IntoView {
     #[derive(Clone, Copy)]
     enum BindsLine<'a> {
@@ -462,8 +588,12 @@ fn BindsWindow() -> impl IntoView {
         BindsLine::Comment("####################"),
         BindsLine::Blank,
         BindsLine::Var("$mainMod = ALT"),
-        BindsLine::Comment("# Move focus with mainMod + hjkl"),
         BindsLine::Blank,
+        BindsLine::Comment("# Base"),
+        BindsLine::Bind { mods: "$mainMod", key: "RETURN", command: "exec", arg: "$openRandom" },
+        BindsLine::Bind { mods: "$mainMod", key: "Q", command: "killactive", arg: "" },
+        BindsLine::Blank,
+        BindsLine::Comment("# Move focus with mainMod + hjkl"),
         BindsLine::Bind { mods: "$mainMod", key: "H", command: "hypreact:movefocus", arg: "left" },
         BindsLine::Bind { mods: "$mainMod", key: "L", command: "hypreact:movefocus", arg: "right" },
         BindsLine::Bind { mods: "$mainMod", key: "K", command: "hypreact:movefocus", arg: "up" },
@@ -911,22 +1041,90 @@ fn NvimStartupWindow() -> impl IntoView {
     }
 }
 
-fn preview_command_from_key(event: &KeyboardEvent) -> Option<WmCommand> {
-    match event.key().as_str() {
-        "j" if event.shift_key() => Some(WmCommand::SelectNextWorkspace),
-        "k" if event.shift_key() => Some(WmCommand::SelectPreviousWorkspace),
-        "j" | "ArrowDown" => Some(WmCommand::FocusNextWindow),
-        "k" | "ArrowUp" => Some(WmCommand::FocusPreviousWindow),
-        "h" | "ArrowLeft" => Some(WmCommand::FocusDirection { direction: FocusDirection::Left }),
-        "l" | "ArrowRight" => Some(WmCommand::FocusDirection { direction: FocusDirection::Right }),
-        "[" => Some(WmCommand::CycleLayout { direction: Some(LayoutCycleDirection::Previous) }),
-        "]" => Some(WmCommand::CycleLayout { direction: Some(LayoutCycleDirection::Next) }),
-        "f" => Some(WmCommand::ToggleFloating),
-        "Enter" => Some(WmCommand::ToggleFullscreen),
-        "x" | "Backspace" | "Delete" => Some(WmCommand::CloseFocusedWindow),
-        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
-            Some(WmCommand::SelectWorkspace { workspace_id: event.key().as_str().into() })
+enum PreviewKeyAction {
+    Command(WmCommand),
+    FocusDirection(FocusDirection),
+    MoveDirection(FocusDirection),
+    ResizeDirection(FocusDirection),
+}
+
+fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
+    let key = event.key();
+    let key_lower = key.to_ascii_lowercase();
+
+    if event.alt_key() {
+        if event.shift_key() {
+            return match key_lower.as_str() {
+                "h" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Left)),
+                "j" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Down)),
+                "k" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Up)),
+                "l" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Right)),
+                _ => None,
+            };
+        }
+
+        if event.ctrl_key() {
+            return match key_lower.as_str() {
+                "h" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Left)),
+                "j" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Down)),
+                "k" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Up)),
+                "l" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Right)),
+                _ => None,
+            };
+        }
+
+        return match key_lower.as_str() {
+            "h" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Left)),
+            "j" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Down)),
+            "k" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Up)),
+            "l" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Right)),
+            "q" => Some(PreviewKeyAction::Command(WmCommand::CloseFocusedWindow)),
+            "enter" => Some(PreviewKeyAction::Command(WmCommand::Spawn {
+                command: "$openRandom".to_string(),
+            })),
+            "0" => Some(PreviewKeyAction::Command(WmCommand::SelectWorkspace {
+                workspace_id: "10".into(),
+            })),
+            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                Some(PreviewKeyAction::Command(WmCommand::SelectWorkspace {
+                    workspace_id: key_lower.as_str().into(),
+                }))
+            }
+            _ => None,
+        };
+    }
+
+    match key.as_str() {
+        "[" => Some(PreviewKeyAction::Command(WmCommand::CycleLayout {
+            direction: Some(LayoutCycleDirection::Previous),
+        })),
+        "]" => Some(PreviewKeyAction::Command(WmCommand::CycleLayout {
+            direction: Some(LayoutCycleDirection::Next),
+        })),
+        "f" => Some(PreviewKeyAction::Command(WmCommand::ToggleFloating)),
+        "Enter" => Some(PreviewKeyAction::Command(WmCommand::ToggleFullscreen)),
+        "x" | "Backspace" | "Delete" => {
+            Some(PreviewKeyAction::Command(WmCommand::CloseFocusedWindow))
         }
         _ => None,
     }
+}
+
+fn should_ignore_preview_key_event(event: &web_sys::KeyboardEvent) -> bool {
+    let Some(target) = event.target() else {
+        return false;
+    };
+    let Some(element) = target.dyn_ref::<web_sys::Element>() else {
+        return false;
+    };
+
+    let tag = element.tag_name();
+    if matches!(tag.as_str(), "INPUT" | "TEXTAREA" | "SELECT") {
+        return true;
+    }
+
+    element
+        .get_attribute("contenteditable")
+        .as_deref()
+        .is_some_and(|value| value == "" || value.eq_ignore_ascii_case("true"))
 }

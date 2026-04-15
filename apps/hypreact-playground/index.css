@@ -61,10 +61,15 @@
 
 @layer components {
   .ui-select {
-    @apply text-terminal-fg-strong min-w-28 border-0 bg-transparent pl-0 pr-4 py-0 text-xs leading-none;
+    @apply text-terminal-fg-strong min-w-28 border border-terminal-border bg-terminal-bg-panel pl-1.5 pr-4 text-[11px];
     appearance: none;
     letter-spacing: 0.01em;
-    height: 1rem;
+    height: 18px;
+    line-height: 18px;
+    margin: 0;
+    border-radius: 0;
+    -webkit-appearance: none;
+    -moz-appearance: none;
   }
 
   .ui-select:focus,
@@ -74,7 +79,7 @@
   }
 
   .ui-select-wrap {
-    @apply relative inline-flex items-center leading-none;
+    @apply relative inline-flex h-[18px] items-center leading-none align-middle;
   }
 
   .ui-select-wrap::after {
@@ -82,7 +87,7 @@
     position: absolute;
     right: 0.65rem;
     top: 50%;
-    transform: translateY(-48%);
+    transform: translateY(-50%);
     pointer-events: none;
     font-size: 0.62rem;
     color: #989898;
@@ -95,28 +100,7 @@
 
   @supports (appearance: base-select) {
     .ui-select {
-      appearance: base-select;
-    }
-
-    .ui-select::picker(select) {
-      appearance: base-select;
-      border: 1px solid #3c3c3c;
-      background: color-mix(in srgb, #1f1f1f 92%, black 8%);
-      color: #ffffff;
-      margin-top: 0.35rem;
-      padding: 0.25rem;
-      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
-    }
-
-    .ui-select::picker-icon {
-      color: #989898;
-    }
-
-    .ui-select option:checked {
-      background: #1f1f1f;
-      color: #ffffff;
-      outline: none;
-      box-shadow: none;
+      appearance: none;
     }
   }
 

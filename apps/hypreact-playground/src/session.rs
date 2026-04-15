@@ -1,16 +1,33 @@
 use hypreact_config::model::Config;
 use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
+use hypreact_core::focus::{
+    FocusTree, FocusTreeWindowGeometry, preferred_focus_after_removing_window, set_focused_window,
+};
 use hypreact_core::host::{HostAction, dispatch_wm_command};
+use hypreact_core::navigation::{
+    NavigationDirection, WindowGeometryCandidate, select_directional_focus_candidate,
+};
 use hypreact_core::query::state_snapshot_for_model;
+use hypreact_core::resize::{
+    ResizeDirection, apply_resize_step, gc_resize_state, select_resize_candidate,
+};
 use hypreact_core::snapshot::{StateSnapshot, WindowSnapshot};
 use hypreact_core::types::LayoutRef;
 use hypreact_core::window_id;
-use hypreact_core::wm::{DrawableSpace, WmModel};
+use hypreact_core::wm::{DrawableSpace, WindowGeometry, WmModel};
 use hypreact_core::workspace::{ensure_default_workspace, ensure_workspace};
 use hypreact_core::{OutputId, WindowId, WorkspaceId};
 use hypreact_scene::SceneResponse;
 
-use crate::layout_runtime::{EvaluatedPreview, apply_layout_selection};
+use crate::layout_runtime::{
+    EvaluatedPreview, apply_layout_selection, resize_step_units_for_partition,
+};
+
+const RANDOM_WINDOW_APPS: [(&str, &str, &str); 3] = [
+    ("random-foot", "Terminal", "foot"),
+    ("random-htop", "Process Monitor", "htop"),
+    ("random-nvim", "Editor", "nvim"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreviewDiagnostic {
@@ -25,6 +42,7 @@ pub struct PreviewDiagnostic {
 pub struct PreviewSessionState {
     pub model: WmModel,
     pub scene: Option<SceneResponse>,
+    pub partition_tree: Option<hypreact_core::resize::PartitionTree>,
     pub diagnostics: Vec<PreviewDiagnostic>,
     pub event_log: Vec<String>,
     pub last_action: String,
@@ -38,6 +56,7 @@ impl PreviewSessionState {
         Self {
             model: build_demo_model(),
             scene: None,
+            partition_tree: None,
             diagnostics: Vec::new(),
             event_log: vec!["preview booted from template source bundle".to_string()],
             last_action: "boot preview".to_string(),
@@ -52,14 +71,18 @@ impl PreviewSessionState {
     }
 
     pub fn apply_loaded_preview(&mut self, preview: EvaluatedPreview) {
+        self.model.set_focus_tree_value(preview.focus_tree.clone());
         self.scene = preview.scene;
+        self.partition_tree = preview.partition_tree;
         self.diagnostics = preview.diagnostics;
         self.error = preview.error;
         self.rendered_layout_name = preview.selected_layout_name;
     }
 
     pub fn apply_preview_failure(&mut self, error: String) {
+        self.model.set_focus_tree_value(None);
         self.scene = None;
+        self.partition_tree = None;
         self.error = Some(error);
     }
 
@@ -260,7 +283,12 @@ fn insert_demo_window(
 
 fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Config>) {
     match action {
-        HostAction::ReloadConfig | HostAction::SpawnCommand { .. } => {}
+        HostAction::ReloadConfig => {}
+        HostAction::SpawnCommand { command } => {
+            if command == "$openRandom" || command == "$randomWindow" {
+                spawn_random_window(model);
+            }
+        }
         HostAction::SetLayout { name } => {
             if let Some(workspace_id) = model.current_workspace_id().cloned() {
                 model.set_workspace_effective_layout(workspace_id, Some(LayoutRef { name }));
@@ -319,17 +347,24 @@ fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Co
         }
         HostAction::CloseFocusedWindow => {
             if let Some(window_id) = model.focused_window_id().cloned() {
+                let next_focus =
+                    preferred_focus_after_removing_window(model, &window_id, Vec::new());
                 model.remove_window(window_id);
-                let ordered = model.ordered_focusable_window_ids_on_current_workspace(Vec::new());
-                model.set_window_focused(ordered.last().cloned());
+                model.set_window_focused(next_focus);
             }
         }
         HostAction::FocusDirection { direction } => {
-            focus_window_by_direction(model, direction);
+            let _ = config;
+            focus_window_by_direction(model, direction, None);
         }
-        HostAction::SwapDirection { .. }
-        | HostAction::MoveDirection { .. }
-        | HostAction::ResizeDirection { .. } => {}
+        HostAction::SwapDirection { .. } => {}
+        HostAction::MoveDirection { direction } => {
+            let _ = config;
+            move_focused_window_by_direction(model, direction, None);
+        }
+        HostAction::ResizeDirection { direction } => {
+            resize_focused_window_by_direction(model, direction, config);
+        }
     }
 }
 
@@ -370,11 +405,205 @@ fn focus_window_by_offset(model: &mut WmModel, delta: isize) {
     model.set_window_focused(Some(ordered[next_index].clone()));
 }
 
-fn focus_window_by_direction(model: &mut WmModel, direction: FocusDirection) {
-    match direction {
-        FocusDirection::Left | FocusDirection::Up => focus_window_by_offset(model, -1),
-        FocusDirection::Right | FocusDirection::Down => focus_window_by_offset(model, 1),
+fn focus_window_by_direction(
+    model: &mut WmModel,
+    direction: FocusDirection,
+    scene: Option<&SceneResponse>,
+) {
+    let Some(candidates) = directional_candidates(model, scene) else {
+        match direction {
+            FocusDirection::Left | FocusDirection::Up => focus_window_by_offset(model, -1),
+            FocusDirection::Right | FocusDirection::Down => focus_window_by_offset(model, 1),
+        }
+        return;
+    };
+
+    let next = select_directional_focus_candidate(
+        &candidates,
+        model.focused_window_id().cloned(),
+        navigation_direction(direction),
+        &model.last_focused_window_id_by_scope,
+        model.focus_tree.as_ref(),
+    );
+    let _ = set_focused_window(model, next);
+}
+
+pub fn focus_preview_window_by_direction(
+    state: &mut PreviewSessionState,
+    direction: FocusDirection,
+) {
+    focus_window_by_direction(&mut state.model, direction, state.scene.as_ref());
+}
+
+fn move_focused_window_by_direction(
+    model: &mut WmModel,
+    direction: FocusDirection,
+    scene: Option<&SceneResponse>,
+) {
+    let Some(focused_id) = model.focused_window_id().cloned() else {
+        return;
+    };
+    let Some(candidates) = directional_candidates(model, scene) else {
+        return;
+    };
+
+    let Some(target_id) = select_directional_focus_candidate(
+        &candidates,
+        Some(focused_id.clone()),
+        navigation_direction(direction),
+        &model.last_focused_window_id_by_scope,
+        model.focus_tree.as_ref(),
+    ) else {
+        return;
+    };
+
+    if target_id != focused_id && model.move_tiled_window(&focused_id, &target_id) {
+        model.set_window_focused(Some(focused_id));
     }
+}
+
+pub fn move_preview_window_by_direction(
+    state: &mut PreviewSessionState,
+    direction: FocusDirection,
+) {
+    move_focused_window_by_direction(&mut state.model, direction, state.scene.as_ref());
+}
+
+fn resize_focused_window_by_direction(
+    _model: &mut WmModel,
+    direction: FocusDirection,
+    _config: Option<&Config>,
+) {
+    let _ = resize_direction(direction);
+}
+
+pub fn resize_preview_window_by_direction(
+    state: &mut PreviewSessionState,
+    direction: FocusDirection,
+) {
+    let Some(workspace_id) = state.model.current_workspace_id().cloned() else {
+        return;
+    };
+    let Some(focused_window_id) = state.model.focused_window_id().cloned() else {
+        return;
+    };
+    let Some(partition_tree) = state.partition_tree.clone() else {
+        return;
+    };
+
+    let resize_state = state.model.workspace_resize_state_mut(&workspace_id);
+    gc_resize_state(resize_state, &partition_tree);
+    let Some(candidate) =
+        select_resize_candidate(&partition_tree, &focused_window_id, resize_direction(direction))
+    else {
+        return;
+    };
+
+    let step_units =
+        resize_step_units_for_partition(&partition_tree, &candidate.partition_id, 96.0);
+    let _ = apply_resize_step(resize_state, &partition_tree, &candidate, step_units);
+}
+
+fn directional_candidates(
+    model: &WmModel,
+    scene: Option<&SceneResponse>,
+) -> Option<Vec<WindowGeometryCandidate>> {
+    let scene = scene?;
+    let window_geometries = scene
+        .root
+        .window_nodes()
+        .into_iter()
+        .filter_map(|node| {
+            let hypreact_scene::LayoutSnapshotNode::Window {
+                window_id: Some(window_id), rect, ..
+            } = node
+            else {
+                return None;
+            };
+            model.window_is_focus_cycle_candidate(window_id).then_some(FocusTreeWindowGeometry {
+                window_id: window_id.clone(),
+                geometry: WindowGeometry {
+                    x: rect.x.round() as i32,
+                    y: rect.y.round() as i32,
+                    width: rect.width.round() as i32,
+                    height: rect.height.round() as i32,
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if window_geometries.is_empty() {
+        return None;
+    }
+
+    let focus_tree = FocusTree::from_window_geometries(&window_geometries);
+
+    Some(
+        window_geometries
+            .into_iter()
+            .map(|entry| WindowGeometryCandidate {
+                window_id: entry.window_id.clone(),
+                geometry: entry.geometry,
+                scope_path: focus_tree.scope_path(&entry.window_id).unwrap_or(&[]).to_vec(),
+            })
+            .collect(),
+    )
+}
+
+fn navigation_direction(direction: FocusDirection) -> NavigationDirection {
+    match direction {
+        FocusDirection::Left => NavigationDirection::Left,
+        FocusDirection::Right => NavigationDirection::Right,
+        FocusDirection::Up => NavigationDirection::Up,
+        FocusDirection::Down => NavigationDirection::Down,
+    }
+}
+
+fn resize_direction(direction: FocusDirection) -> ResizeDirection {
+    match direction {
+        FocusDirection::Left => ResizeDirection::Left,
+        FocusDirection::Right => ResizeDirection::Right,
+        FocusDirection::Up => ResizeDirection::Up,
+        FocusDirection::Down => ResizeDirection::Down,
+    }
+}
+
+fn spawn_random_window(model: &mut WmModel) {
+    let current_count = model.windows.len();
+    let selection = &RANDOM_WINDOW_APPS[current_count % RANDOM_WINDOW_APPS.len()];
+    let next_index = next_random_window_index(model, selection.0);
+    let window_id = window_id(format!("{}-{next_index}", selection.0));
+    let workspace_id = model.current_workspace_id().cloned();
+    let output_id = model.current_output_id().cloned();
+
+    model.insert_window(window_id.clone(), workspace_id, output_id.clone());
+    model.set_window_mapped(window_id.clone(), true);
+    model.set_window_identity(
+        window_id.clone(),
+        Some(selection.1.to_string()),
+        Some(selection.2.to_string()),
+        Some(selection.2.to_string()),
+        Some(selection.2.to_string()),
+        None,
+        None,
+        false,
+    );
+    model.set_window_focused(Some(window_id));
+}
+
+fn next_random_window_index(model: &WmModel, prefix: &str) -> usize {
+    model
+        .windows
+        .keys()
+        .filter_map(|window_id| {
+            let raw = window_id.as_str();
+            raw.strip_prefix(prefix)
+                .and_then(|suffix| suffix.strip_prefix('-'))
+                .and_then(|suffix| suffix.parse::<usize>().ok())
+        })
+        .max()
+        .map(|index| index + 1)
+        .unwrap_or(1)
 }
 
 fn cycle_layout(model: &mut WmModel, config: Option<&Config>, direction: LayoutCycleDirection) {
