@@ -8,7 +8,8 @@
     "build:css-lsp-web": "wasm-pack build ../../../crates/css-lsp/web --target web --out-dir /home/akisarou/projects/hypreact/apps/hypreact-playground/js/generated/css-lsp-web --out-name index --no-opt --no-pack"
   },
   "dependencies": {
-    "monaco-editor": "^0.55.1"
+    "monaco-editor": "^0.55.1",
+    "wasmoon": "1.16.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

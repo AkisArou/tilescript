@@ -6,6 +6,8 @@ use crate::runtime::layout_context::{
     LayoutWorkspaceContext,
 };
 use crate::runtime::prepared_layout::SelectedLayout;
+#[cfg(test)]
+use crate::runtime::runtime_kind::RuntimeKind;
 use crate::types::{LayoutRef, WindowMode, WindowShell};
 use crate::wm::DrawableSpace;
 use crate::{LayoutSpace, OutputId, WindowId, WorkspaceId};
@@ -74,9 +76,7 @@ pub struct StateSnapshot {
 impl StateSnapshot {
     pub fn current_workspace(&self) -> Option<&WorkspaceSnapshot> {
         self.current_workspace_id.as_ref().and_then(|workspace_id| {
-            self.workspaces
-                .iter()
-                .find(|workspace| &workspace.id == workspace_id)
+            self.workspaces.iter().find(|workspace| &workspace.id == workspace_id)
         })
     }
 
@@ -91,11 +91,7 @@ impl StateSnapshot {
     }
 
     pub fn workspace_resize_state(&self, workspace_id: &WorkspaceId) -> WorkspaceResizeState {
-        self.resize_state
-            .by_workspace_id
-            .get(workspace_id)
-            .cloned()
-            .unwrap_or_default()
+        self.resize_state.by_workspace_id.get(workspace_id).cloned().unwrap_or_default()
     }
 
     pub fn filtered_for_output(
@@ -109,11 +105,8 @@ impl StateSnapshot {
             visible_window_ids.iter().any(|id| id == &window.id)
                 && window.output_id.as_ref() == Some(output_id)
         });
-        snapshot.visible_window_ids = snapshot
-            .windows
-            .iter()
-            .map(|window| window.id.clone())
-            .collect();
+        snapshot.visible_window_ids =
+            snapshot.windows.iter().map(|window| window.id.clone()).collect();
         snapshot.workspaces.iter_mut().for_each(|workspace| {
             workspace.focused = workspace.output_id.as_ref() == Some(output_id);
             workspace.visible = workspace.output_id.as_ref() == Some(output_id);
@@ -176,12 +169,8 @@ impl StateSnapshot {
             .or_else(|| self.current_output());
 
         LayoutSpace {
-            width: output
-                .map(|output| output.logical_width as f32)
-                .unwrap_or_default(),
-            height: output
-                .map(|output| output.logical_height as f32)
-                .unwrap_or_default(),
+            width: output.map(|output| output.logical_width as f32).unwrap_or_default(),
+            height: output.map(|output| output.logical_height as f32).unwrap_or_default(),
         }
     }
 
@@ -202,10 +191,7 @@ impl StateSnapshot {
 
         LayoutEvaluationContext {
             monitor: LayoutMonitorContext {
-                name: output
-                    .as_ref()
-                    .map(|output| output.name.clone())
-                    .unwrap_or_default(),
+                name: output.as_ref().map(|output| output.name.clone()).unwrap_or_default(),
                 width: layout_space
                     .map(|layout_space| layout_space.width as u32)
                     .or_else(|| output.as_ref().map(|output| output.logical_width))
@@ -284,9 +270,7 @@ mod tests {
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
-                effective_layout: Some(LayoutRef {
-                    name: "master-stack".into(),
-                }),
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             }],
             windows: vec![],
             visible_window_ids: vec![],
@@ -323,16 +307,11 @@ mod tests {
                 id: WorkspaceId::from("ws-1"),
                 name: "1".into(),
                 output_id: Some(OutputId::from("out-1")),
-                layout_space: Some(DrawableSpace {
-                    width: 1920,
-                    height: 1040,
-                }),
+                layout_space: Some(DrawableSpace { width: 1920, height: 1040 }),
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
-                effective_layout: Some(LayoutRef {
-                    name: "master-stack".into(),
-                }),
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             }],
             windows: vec![],
             visible_window_ids: vec![],
@@ -345,6 +324,7 @@ mod tests {
             workspace,
             Some(SelectedLayout {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
             }),
@@ -382,9 +362,7 @@ mod tests {
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
-                effective_layout: Some(LayoutRef {
-                    name: "master-stack".into(),
-                }),
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             }],
             windows: vec![],
             visible_window_ids: vec![],
@@ -397,6 +375,7 @@ mod tests {
             workspace,
             Some(SelectedLayout {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
             }),
@@ -430,9 +409,7 @@ mod tests {
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
-                effective_layout: Some(LayoutRef {
-                    name: "master-stack".into(),
-                }),
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             }],
             windows: vec![
                 WindowSnapshot {
@@ -536,9 +513,7 @@ mod tests {
                     active_workspaces: vec!["1".into()],
                     focused: true,
                     visible: true,
-                    effective_layout: Some(LayoutRef {
-                        name: "master-stack".into(),
-                    }),
+                    effective_layout: Some(LayoutRef { name: "master-stack".into() }),
                 },
                 WorkspaceSnapshot {
                     id: WorkspaceId::from("ws-2"),
@@ -548,9 +523,7 @@ mod tests {
                     active_workspaces: vec!["2".into()],
                     focused: false,
                     visible: true,
-                    effective_layout: Some(LayoutRef {
-                        name: "master-stack".into(),
-                    }),
+                    effective_layout: Some(LayoutRef { name: "master-stack".into() }),
                 },
             ],
             windows: vec![
@@ -601,10 +574,7 @@ mod tests {
             .expect("filtered state should exist for output");
 
         assert_eq!(filtered.current_output_id, Some(OutputId::from("out-2")));
-        assert_eq!(
-            filtered.current_workspace_id,
-            Some(WorkspaceId::from("ws-2"))
-        );
+        assert_eq!(filtered.current_workspace_id, Some(WorkspaceId::from("ws-2")));
         assert_eq!(filtered.visible_window_ids, vec![WindowId::from("w2")]);
         assert_eq!(filtered.windows.len(), 1);
         assert_eq!(filtered.windows[0].id, WindowId::from("w2"));
@@ -633,9 +603,7 @@ mod tests {
                 active_workspaces: vec!["1".into()],
                 focused: true,
                 visible: true,
-                effective_layout: Some(LayoutRef {
-                    name: "master-stack".into(),
-                }),
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
             }],
             windows: vec![
                 WindowSnapshot {

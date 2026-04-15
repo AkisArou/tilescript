@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "LuaJIT",
+  "diagnostics.globals": [],
+  "workspace.library": [
+    "./"
+  ],
+  "hint.enable": true,
+  "format.enable": false
+}

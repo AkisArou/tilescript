@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::types::LayoutRef;
 use hypreact_core::{LayoutSpace, OutputId, ResolvedLayoutNode};
@@ -13,12 +14,18 @@ use tracing::debug;
 #[serde(deny_unknown_fields)]
 pub struct LayoutDefinition {
     pub name: String,
+    #[serde(default = "default_layout_runtime")]
+    pub runtime: RuntimeKind,
     pub directory: String,
     pub module: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stylesheet_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_cache_payload: Option<serde_json::Value>,
+}
+
+const fn default_layout_runtime() -> RuntimeKind {
+    RuntimeKind::Js
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,7 +151,7 @@ impl ConfigPaths {
         };
 
         let authored_config = authored_config_override.unwrap_or_else(|| {
-            ["config.tsx", "config.ts", "config.jsx", "config.js"]
+            supported_authored_config_names()
                 .into_iter()
                 .map(|name| config_root.join(name))
                 .find(|candidate| candidate.exists())
@@ -157,6 +164,10 @@ impl ConfigPaths {
             prepared_config,
         })
     }
+}
+
+pub const fn supported_authored_config_names() -> [&'static str; 5] {
+    ["config.tsx", "config.ts", "config.jsx", "config.js", "config.lua"]
 }
 
 impl Config {
@@ -213,6 +224,7 @@ impl Config {
             .map(|layout| {
                 Ok(SelectedLayout {
                     name: layout.name.clone(),
+                    runtime: layout.runtime,
                     directory: layout.directory.clone(),
                     module: layout.module.clone(),
                 })
@@ -377,6 +389,7 @@ impl From<&LayoutDefinition> for LayoutRef {
 mod tests {
     use super::*;
     use hypreact_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets};
+    use hypreact_core::runtime::runtime_kind::RuntimeKind;
     use hypreact_core::snapshot::OutputSnapshot;
     use hypreact_core::types::LayoutRef;
     use hypreact_core::{OutputId, WorkspaceId};
@@ -427,6 +440,7 @@ mod tests {
         PreparedLayout {
             selected: SelectedLayout {
                 name: layout_name.into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: module.into(),
             },
@@ -443,6 +457,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -462,6 +477,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -493,6 +509,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -529,6 +546,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -545,6 +563,7 @@ mod tests {
             selected,
             Some(SelectedLayout {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
             })
@@ -556,6 +575,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -597,6 +617,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -641,6 +662,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -733,6 +755,7 @@ mod tests {
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),

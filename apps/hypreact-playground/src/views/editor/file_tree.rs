@@ -3,7 +3,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::app_state::AppState;
 use crate::components::tooltip::Tooltip;
-use crate::editor_files::{file_by_key, make_dynamic_layout};
+use crate::editor_files::{file_by_key, file_color_class, file_icon, make_dynamic_layout};
 use crate::editor_host::download_directory;
 use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
 
@@ -109,7 +109,10 @@ pub fn FileTreeDirectoryView(
                                         let Some(name) = result else {
                                             return;
                                         };
-                                        let layout = make_dynamic_layout(&name);
+                                        let layout = make_dynamic_layout(
+                                            app_state.authoring_language.get_untracked(),
+                                            &name,
+                                        );
                                         app_state.create_layout(layout);
                                     }
                                 >
@@ -123,7 +126,7 @@ pub fn FileTreeDirectoryView(
                                     class="ml-auto"
                                 >
                                     <button
-                                        class="py-0 px-1 text-terminal-faint text-[9px] uppercase tracking-[0.16em] hover:text-terminal-fg"
+                                        class="px-1 py-0 text-terminal-faint hover:text-terminal-fg"
                                         aria-label=move || download_directory_title(&directory.get())
                                         on:click=move |event| {
                                             event.stop_propagation();
@@ -131,6 +134,7 @@ pub fn FileTreeDirectoryView(
                                             let directory_label = directory_for_download.name;
                                             let items = collect_directory_download_items(
                                                 &directory_for_download,
+                                                app_state.authoring_language.get_untracked(),
                                                 &app_state.editor_buffers.get_untracked(),
                                                 &app_state.dynamic_layouts.get_untracked(),
                                             );
@@ -142,7 +146,7 @@ pub fn FileTreeDirectoryView(
                                             });
                                         }
                                     >
-                                        "dl"
+                                        "󰇚"
                                     </button>
                                 </Tooltip>
                             </Show>
@@ -185,7 +189,7 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                     .into_any()
             }
             EditorFileTreeNode::File(file_id) => {
-                let file = file_by_key(&file_id, &app_state.dynamic_layouts.get());
+                let file = file_by_key(&file_id, &app_state.dynamic_layouts.get_untracked());
                 let label = file.label.clone();
                 let file_key_active = file_id.clone();
                 let file_key_open = file_id.clone();
@@ -204,19 +208,32 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                     >
                         <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                         <span
-                            class=move || match file.language.as_str() {
-                                "css" => "shrink-0 text-[#7b4fc9]",
-                                "typescript" | "typescriptreact" => "shrink-0 text-[#519aba]",
-                                _ => "shrink-0 text-terminal-info",
+                            class=move || {
+                                if file.is_reference_only {
+                                    "shrink-0 text-terminal-faint".to_string()
+                                } else {
+                                    format!("shrink-0 {}", file_color_class(&file.language))
+                                }
                             }
                         >
-                            {match file.language.as_str() {
-                                "css" => "",
-                                "typescript" | "typescriptreact" => "󰛦",
-                                _ => "󰈔",
-                            }}
+                            {if file.is_reference_only { "󰘦" } else { file_icon(&file.language) }}
                         </span>
-                        <span class="min-w-0 flex-1 truncate">{label}</span>
+                        <span
+                            class=move || {
+                                if file.is_reference_only {
+                                    "min-w-0 flex-1 truncate text-terminal-faint"
+                                } else {
+                                    "min-w-0 flex-1 truncate"
+                                }
+                            }
+                        >
+                            {label}
+                        </span>
+                        <Show when=move || file.is_reference_only>
+                            <span class="shrink-0 rounded border border-terminal-border px-1 text-[9px] uppercase tracking-[0.14em] text-terminal-faint">
+                                "sdk"
+                            </span>
+                        </Show>
 
                     </button>
                 }

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::editor_files::{DynamicLayoutFileSet, EditorFileKey, WORKSPACE_ROOT, static_files};
+use crate::editor_files::{
+    AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, WORKSPACE_ROOT, static_files,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditorFileTreeDirectory {
@@ -34,7 +36,7 @@ impl DirectoryBuilder {
         Self {
             name,
             path,
-            download_root_path: Some(path),
+            download_root_path: None,
             default_open,
             can_create_layout: name == "layouts",
             directories: BTreeMap::new(),
@@ -62,7 +64,7 @@ impl DirectoryBuilder {
 
         let dir_name = segments[0];
         let dir_name_static = leak_string(dir_name.to_string());
-        let dir_path = path_for_segments(&segments[..segments.len() - 1]);
+        let dir_path = leak_string(format!("{}/{}", self.path, dir_name));
         let child = self
             .directories
             .entry(dir_name.to_string())
@@ -71,6 +73,8 @@ impl DirectoryBuilder {
         if child.name == "layouts" {
             child.can_create_layout = true;
         }
+
+        child.download_root_path = is_layout_directory_path(child.path).then_some(child.path);
 
         child.insert_segments(&segments[1..], file_key);
     }
@@ -97,16 +101,22 @@ impl DirectoryBuilder {
 
 pub fn initial_open_directories() -> BTreeMap<String, bool> {
     let mut directories = BTreeMap::new();
-    collect_default_open_directories(&workspace_file_tree(&[]), &mut directories);
+    collect_default_open_directories(
+        &workspace_file_tree(AuthoringLanguage::JavaScript, &[]),
+        &mut directories,
+    );
     directories
 }
 
-pub fn workspace_file_tree(dynamic_layouts: &[DynamicLayoutFileSet]) -> EditorFileTreeDirectory {
+pub fn workspace_file_tree(
+    language: AuthoringLanguage,
+    dynamic_layouts: &[DynamicLayoutFileSet],
+) -> EditorFileTreeDirectory {
     let mut root = DirectoryBuilder::new(WORKSPACE_ROOT, WORKSPACE_ROOT, true);
-    for file in static_files() {
-        root.insert_file(file.path, EditorFileKey::Static(file.id));
+    for file in static_files(language) {
+        root.insert_file(file.path(), file.key());
     }
-    for layout in dynamic_layouts {
+    for layout in dynamic_layouts.iter().filter(|layout| layout.language == language) {
         for file in &layout.files {
             root.insert_file(&file.path, file.key.clone());
         }
@@ -126,10 +136,10 @@ fn collect_default_open_directories(
     }
 }
 
-fn path_for_segments(segments: &[&str]) -> &'static str {
-    leak_string(format!("~/.config/hypreact/{}", segments.join("/")))
-}
-
 fn leak_string(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
+}
+
+fn is_layout_directory_path(path: &str) -> bool {
+    path.starts_with("~/.config/hypreact/layouts/") && path.split('/').count() == 5
 }

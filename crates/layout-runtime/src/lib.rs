@@ -24,12 +24,13 @@ use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
 use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
-use hypreact_runtime_js_native::build_runtime_bundle;
 use hypreact_scene::Display;
 use hypreact_scene::FlexDirectionValue;
 use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
+
+mod runtime_factory;
 
 const DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX: f32 = 120.0;
 const FALLBACK_LAYOUT_STYLESHEET: &str =
@@ -159,7 +160,7 @@ impl LayoutRuntimeService {
     pub fn new(paths: LayoutRuntimePaths) -> Result<Self, LayoutRuntimeError> {
         let service = build_authoring_layout_service(
             &paths.config_paths,
-            build_runtime_bundle(&paths.config_paths)?,
+            runtime_factory::build_runtime_bundle(&paths.config_paths)?,
         )?;
         Ok(Self { service, paths })
     }
@@ -512,6 +513,7 @@ fn selected_layout_for_workspace(
         .unwrap_or_else(|| "layouts/fallback".to_string());
 
     SelectedLayout {
+        runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
         module: fallback_module
             .map(str::to_string)
             .unwrap_or_else(|| format!("{directory}/index.tsx")),
@@ -1478,6 +1480,7 @@ mod tests {
             &PreparedLayout {
                 selected: SelectedLayout {
                     name: "test".into(),
+                    runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
                     directory: "layouts/test".into(),
                     module: "layouts/test/index.tsx".into(),
                 },

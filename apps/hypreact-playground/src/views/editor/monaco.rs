@@ -9,8 +9,8 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::app_state::AppState;
 use crate::editor_files::{
-    EditorFileKey, WORKSPACE_FS_ROOT, file_key_by_model_path, file_by_key, iter_dynamic_files,
-    model_path, static_files,
+    AuthoringLanguage, EditorFileKey, WORKSPACE_FS_ROOT, file_by_key, file_key_by_model_path,
+    file_layout_language, iter_dynamic_files, model_path, static_files,
 };
 
 use super::buffers::active_buffer_text;
@@ -31,30 +31,41 @@ struct MonacoExtraLib {
 }
 
 fn monaco_models(
+    language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[crate::editor_files::DynamicLayoutFileSet],
 ) -> Vec<MonacoModel> {
-    static_files()
+    static_files(language)
         .iter()
         .map(|file| MonacoModel {
-            path: model_path(&EditorFileKey::Static(file.id), dynamic_layouts).to_string(),
-            language: monaco_language(file.language).to_string(),
+            path: model_path(&file.key(), dynamic_layouts).to_string(),
+            language: monaco_language(file.language()).to_string(),
             value: buffers
-                .get(&EditorFileKey::Static(file.id))
+                .get(&file.key())
                 .cloned()
-                .unwrap_or_else(|| file_by_key(&EditorFileKey::Static(file.id), dynamic_layouts).initial_content),
+                .unwrap_or_else(|| file_by_key(&file.key(), dynamic_layouts).initial_content),
         })
-        .chain(iter_dynamic_files(dynamic_layouts).map(|file| MonacoModel {
-            path: model_path(&file.key, dynamic_layouts).to_string(),
-            language: monaco_language(&file.language).to_string(),
-            value: buffers.get(&file.key).cloned().unwrap_or_else(|| file.initial_content.clone()),
-        }))
+        .chain(
+            iter_dynamic_files(dynamic_layouts)
+                .filter(move |file| {
+                    file_layout_language(&file.key, dynamic_layouts) == Some(language)
+                })
+                .map(|file| MonacoModel {
+                    path: model_path(&file.key, dynamic_layouts).to_string(),
+                    language: monaco_language(&file.language).to_string(),
+                    value: buffers
+                        .get(&file.key)
+                        .cloned()
+                        .unwrap_or_else(|| file.initial_content.clone()),
+                }),
+        )
         .collect()
 }
 
 fn monaco_language(language: &str) -> &'static str {
     match language {
         "css" => "css",
+        "lua" => "lua",
         _ => "typescript",
     }
 }
@@ -132,7 +143,6 @@ mod wasm {
             handle: &JsValue,
             active_path: &str,
             models: JsValue,
-            font_size: u32,
         ) -> Result<(), JsValue>;
 
         #[wasm_bindgen(catch, js_name = revealMonacoPosition)]
@@ -160,10 +170,9 @@ mod wasm {
             &self,
             active_path: Option<&str>,
             models: &[MonacoModel],
-            font_size: u32,
         ) -> Result<(), String> {
             let models = serde_wasm_bindgen::to_value(models).map_err(|error| error.to_string())?;
-            update_monaco_editor_js(&self.handle, active_path.unwrap_or_default(), models, font_size)
+            update_monaco_editor_js(&self.handle, active_path.unwrap_or_default(), models)
                 .map_err(js_error_message)
         }
 
@@ -250,14 +259,11 @@ pub fn MonacoEditorPane() -> impl IntoView {
     let monaco_loading = RwSignal::new(false);
     let _monaco_handle = Rc::new(RefCell::new(None::<MonacoEditorHandle>));
     let pending_navigation = RwSignal::new(None::<PendingNavigation>);
-    let mounted_file = RwSignal::new(None::<EditorFileKey>);
-    let editor_font_size = 14u32;
 
     {
         let editor_mount = editor_mount.clone();
         let monaco_handle = Rc::clone(&_monaco_handle);
         let app_state_for_mount = app_state;
-        let mounted_file = mounted_file;
         Effect::new(move |_| {
             let Some(host) = editor_mount.get() else {
                 return;
@@ -265,19 +271,20 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
             let active_file_id = app_state_for_mount.active_file_id.get();
 
-            if mounted_file.get() != active_file_id {
-                monaco_handle.borrow_mut().take();
-                mounted_file.set(active_file_id.clone());
-            }
-
             if monaco_handle.borrow().is_some() || monaco_loading.get() {
                 return;
             }
 
             let dynamic_layouts = app_state_for_mount.dynamic_layouts.get_untracked();
-            let models = monaco_models(&app_state_for_mount.editor_buffers.get_untracked(), &dynamic_layouts);
-            let active_path =
-                active_file_id.as_ref().map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
+            let authoring_language = app_state_for_mount.authoring_language.get_untracked();
+            let models = monaco_models(
+                authoring_language,
+                &app_state_for_mount.editor_buffers.get_untracked(),
+                &dynamic_layouts,
+            );
+            let active_path = active_file_id
+                .as_ref()
+                .map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
             let monaco_handle = Rc::clone(&monaco_handle);
             let callback_state = app_state_for_mount;
             let pending_navigation = pending_navigation;
@@ -292,7 +299,11 @@ pub fn MonacoEditorPane() -> impl IntoView {
                     &models,
                     move |path, value| {
                         let dynamic_layouts = callback_state.dynamic_layouts.get_untracked();
-                        let Some(file_id) = file_key_by_model_path(&path, &dynamic_layouts) else {
+                        let Some(file_id) = file_key_by_model_path(
+                            &path,
+                            callback_state.authoring_language.get_untracked(),
+                            &dynamic_layouts,
+                        ) else {
                             return;
                         };
 
@@ -315,7 +326,11 @@ pub fn MonacoEditorPane() -> impl IntoView {
                         let selection = payload.and_then(|payload| payload.selection_or_position);
 
                         let dynamic_layouts = callback_state.dynamic_layouts.get_untracked();
-                        if let Some(file_id) = file_key_by_model_path(&target_path, &dynamic_layouts) {
+                        if let Some(file_id) = file_key_by_model_path(
+                            &target_path,
+                            callback_state.authoring_language.get_untracked(),
+                            &dynamic_layouts,
+                        ) {
                             if let Some(selection) = selection {
                                 pending_navigation.set(Some(PendingNavigation {
                                     path: target_path.clone(),
@@ -344,13 +359,21 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
         let monaco_handle = Rc::clone(&_monaco_handle);
         Effect::new(move |_| {
+            let authoring_language = app_state.authoring_language.get();
             let dynamic_layouts = app_state.dynamic_layouts.get();
-            let active_path =
-                app_state.active_file_id.get().as_ref().map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
-            let models = monaco_models(&app_state.editor_buffers.get(), &dynamic_layouts);
+            let active_path = app_state
+                .active_file_id
+                .get()
+                .as_ref()
+                .map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
+            let models = monaco_models(
+                authoring_language,
+                &app_state.editor_buffers.get(),
+                &dynamic_layouts,
+            );
 
             if let Some(handle) = monaco_handle.borrow().as_ref() {
-                if let Err(error) = handle.sync(active_path.as_deref(), &models, editor_font_size) {
+                if let Err(error) = handle.sync(active_path.as_deref(), &models) {
                     monaco_error.set(Some(error));
                 }
             }

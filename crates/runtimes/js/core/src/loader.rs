@@ -2,6 +2,7 @@ use hypreact_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets, SelectedLayout,
 };
 use hypreact_core::runtime::runtime_error::RuntimeError;
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use tracing::{debug, warn};
 
 use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
@@ -199,6 +200,7 @@ pub fn loaded_layout_definition(
     PreparedLayout {
         selected: SelectedLayout {
             name: layout.name.clone(),
+            runtime: RuntimeKind::Js,
             directory: layout.directory.clone(),
             module: module.clone(),
         },

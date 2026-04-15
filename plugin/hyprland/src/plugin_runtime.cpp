@@ -204,11 +204,12 @@ std::optional<std::filesystem::path> defaultConfigRoot() {
 }
 
 std::optional<std::filesystem::path> discoverConfigEntryInDirectory(const std::filesystem::path& root) {
-    static const std::array<const char*, 4> candidates = {
+    static const std::array<const char*, 5> candidates = {
         "config.ts",
         "config.tsx",
         "config.js",
         "config.jsx",
+        "config.lua",
     };
 
     for (const auto* candidate : candidates) {
@@ -223,7 +224,8 @@ std::optional<std::filesystem::path> discoverConfigEntryInDirectory(const std::f
 
 bool looksLikeConfigEntryPath(const std::filesystem::path& path) {
     const auto name = path.filename().string();
-    return name == "config.ts" || name == "config.tsx" || name == "config.js" || name == "config.jsx";
+    return name == "config.ts" || name == "config.tsx" || name == "config.js" || name == "config.jsx"
+        || name == "config.lua";
 }
 
 std::optional<std::filesystem::path> resolveConfiguredConfigRoot() {

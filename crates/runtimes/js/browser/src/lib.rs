@@ -10,6 +10,7 @@ use hypreact_config::runtime::{
     EvaluatedSourceLayout, SourceBundle, SourceBundleConfigRuntime,
     SourceBundlePreparedLayoutRuntime, SourceBundleRuntimeBundle,
 };
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
@@ -511,6 +512,7 @@ fn discover_layout_definitions(
                 compile_source_bundle_to_module_graph(root_dir, &layout.entry_path, sources)?;
             Ok(hypreact_config::model::LayoutDefinition {
                 name: layout.name,
+                runtime: RuntimeKind::Js,
                 directory: layout
                     .entry_path
                     .parent()

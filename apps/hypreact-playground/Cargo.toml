@@ -14,6 +14,7 @@ hypreact-config = { path = "../../crates/config" }
 hypreact-core = { path = "../../crates/core" }
 hypreact-css = { path = "../../crates/css" }
 hypreact-runtime-js-browser = { path = "../../crates/runtimes/js/browser" }
+hypreact-runtime-lua-browser = { path = "../../crates/runtimes/lua/browser" }
 hypreact-scene = { path = "../../crates/scene" }
 js-sys.workspace = true
 leptos = { workspace = true, features = ["csr"] }

@@ -8,6 +8,7 @@ use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
 use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
 use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
 use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::types::LayoutRef;
 use hypreact_core::{OutputId, SourceLayoutNode, WorkspaceId};
@@ -72,6 +73,7 @@ impl AuthoringConfigRuntime for StubRuntime {
         Ok(Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -267,6 +269,7 @@ fn prepared_layout(name: &str, module: &str) -> PreparedLayout {
     PreparedLayout {
         selected: SelectedLayout {
             name: name.into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/master-stack".into(),
             module: module.into(),
         },
@@ -331,6 +334,7 @@ fn authoring_layout_service_loads_and_caches_prepared_layout() {
     let config = Config {
         layouts: vec![LayoutDefinition {
             name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/master-stack".into(),
             module: "layouts/master-stack.js".into(),
             stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -355,6 +359,7 @@ fn authoring_layout_service_evaluates_prepared_layout_for_workspace() {
     let config = Config {
         layouts: vec![LayoutDefinition {
             name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/master-stack".into(),
             module: "layouts/master-stack.js".into(),
             stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -416,6 +421,7 @@ fn authoring_layout_service_reports_missing_layout_module_sources() {
     let config = Config {
         layouts: vec![LayoutDefinition {
             name: "missing".into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/missing".into(),
             module: "layouts/missing.js".into(),
             stylesheet_path: Some("layouts/missing/index.css".into()),
@@ -436,6 +442,7 @@ fn authoring_layout_service_loads_authored_config_when_runtime_js_is_missing() {
     let authored_config = Config {
         layouts: vec![LayoutDefinition {
             name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/master-stack".into(),
             module: "layouts/master-stack/index.js".into(),
             stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -478,6 +485,7 @@ fn authoring_layout_service_rebuilds_prepared_config_after_load_failure() {
         config: Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.js".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -496,12 +504,13 @@ fn authoring_layout_service_rebuilds_prepared_config_after_load_failure() {
 }
 
 #[test]
-    fn source_bundle_authoring_layout_service_loads_config() {
-        let runtime = StubSourceBundleRuntime {
-            config: Config {
-                layouts: vec![LayoutDefinition {
-                    name: "master-stack".into(),
-                    directory: "layouts/master-stack".into(),
+fn source_bundle_authoring_layout_service_loads_config() {
+    let runtime = StubSourceBundleRuntime {
+        config: Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.tsx".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
                 runtime_cache_payload: Some(runtime_cache_payload(
@@ -533,6 +542,7 @@ fn source_bundle_authoring_layout_service_evaluates_prepared_layout() {
         config: Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.tsx".into(),
                 stylesheet_path: Some("layouts/master-stack/index.css".into()),
@@ -551,6 +561,7 @@ fn source_bundle_authoring_layout_service_evaluates_prepared_layout() {
     let config = Config {
         layouts: vec![LayoutDefinition {
             name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
             directory: "layouts/master-stack".into(),
             module: "layouts/master-stack/index.tsx".into(),
             stylesheet_path: Some("layouts/master-stack/index.css".into()),

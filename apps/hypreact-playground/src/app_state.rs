@@ -4,16 +4,18 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::editor_files::{
-    DynamicLayoutFileSet, EditorFileKey, initial_editor_buffers, initial_open_editor_files,
+    AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, default_authoring_language,
+    initial_editor_buffers, initial_open_editor_files,
 };
 use crate::layout_runtime::EvaluatedPreview;
 use crate::session::PreviewSessionState;
 use crate::workspace::initial_open_directories;
 
-const STORAGE_KEY: &str = "hypreact.playground.ui-state.v2";
+const STORAGE_KEY: &str = "hypreact.playground.ui-state.v3";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedAppState {
+    authoring_language: AuthoringLanguage,
     editor_buffers: BTreeMap<EditorFileKey, String>,
     active_file_id: Option<EditorFileKey>,
     open_file_ids: Vec<EditorFileKey>,
@@ -24,6 +26,7 @@ struct PersistedAppState {
 
 #[derive(Clone, Copy)]
 pub struct AppState {
+    pub authoring_language: RwSignal<AuthoringLanguage>,
     pub session: RwSignal<PreviewSessionState>,
     pub editor_buffers: RwSignal<BTreeMap<EditorFileKey, String>>,
     pub active_file_id: RwSignal<Option<EditorFileKey>>,
@@ -38,21 +41,25 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         let persisted = load_persisted_state();
+        let authoring_language = persisted
+            .as_ref()
+            .map(|state| state.authoring_language)
+            .unwrap_or_else(default_authoring_language);
         let buffers = persisted
             .as_ref()
             .map(|state| state.editor_buffers.clone())
-            .unwrap_or_else(initial_editor_buffers);
+            .unwrap_or_else(|| initial_editor_buffers(authoring_language));
         let dynamic_layouts =
             persisted.as_ref().map(|state| state.dynamic_layouts.clone()).unwrap_or_default();
         let active_file_id = persisted
             .as_ref()
             .and_then(|state| state.active_file_id.clone())
-            .or_else(|| initial_open_editor_files().first().cloned());
+            .or_else(|| initial_open_editor_files(authoring_language).first().cloned());
         let open_file_ids = persisted
             .as_ref()
             .map(|state| state.open_file_ids.clone())
             .filter(|open_files| !open_files.is_empty())
-            .unwrap_or_else(initial_open_editor_files);
+            .unwrap_or_else(|| initial_open_editor_files(authoring_language));
         let directory_open_state = persisted
             .as_ref()
             .map(|state| state.directory_open_state.clone())
@@ -65,6 +72,7 @@ impl AppState {
         }
 
         Self {
+            authoring_language: RwSignal::new(authoring_language),
             session: RwSignal::new(session),
             editor_buffers: RwSignal::new(buffers),
             active_file_id: RwSignal::new(active_file_id),
@@ -81,6 +89,18 @@ impl AppState {
         self.editor_buffers.update(|buffers| {
             buffers.insert(file_id, next_value);
         });
+        self.persist_ui_state();
+        self.request_preview_reevaluation();
+    }
+
+    pub fn set_authoring_language(&self, next_language: AuthoringLanguage) {
+        if self.authoring_language.get_untracked() == next_language {
+            return;
+        }
+
+        self.authoring_language.set(next_language);
+        self.open_file_ids.set(initial_open_editor_files(next_language));
+        self.active_file_id.set(initial_open_editor_files(next_language).first().cloned());
         self.persist_ui_state();
         self.request_preview_reevaluation();
     }
@@ -183,6 +203,7 @@ impl AppState {
 
     pub fn persist_ui_state(&self) {
         let state = PersistedAppState {
+            authoring_language: self.authoring_language.get_untracked(),
             editor_buffers: self.editor_buffers.get_untracked(),
             active_file_id: self.active_file_id.get_untracked(),
             open_file_ids: self.open_file_ids.get_untracked(),

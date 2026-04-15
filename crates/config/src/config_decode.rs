@@ -1,9 +1,8 @@
 use std::path::Path;
 
-use hypreact_config::model::{
-    Config, LayoutConfigError, LayoutDefinition, LayoutRule, ResizeConfig,
-};
 use serde_json::Value;
+
+use crate::model::{Config, LayoutConfigError, LayoutRule, ResizeConfig};
 
 pub fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutConfigError> {
     let root = expect_object(path, value, "root")?;
@@ -19,41 +18,6 @@ pub fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutC
         layout_rules: decode_layout_rules(root.get("layoutRules"), path)?,
         resize: decode_resize_config(root.get("resize"), path)?,
     })
-}
-
-pub fn validate_layout_selection(
-    path: &Path,
-    default_layout: Option<&str>,
-    layout_rules: &[LayoutRule],
-    layouts: &[LayoutDefinition],
-) -> Result<(), LayoutConfigError> {
-    let known = layouts.iter().map(|layout| layout.name.as_str()).collect::<Vec<_>>();
-    let is_known = |name: &str| known.iter().any(|known_name| *known_name == name);
-
-    if let Some(default) = default_layout {
-        if !is_known(default) {
-            return Err(LayoutConfigError::DecodeAuthoredConfig {
-                path: path.to_path_buf(),
-                message: format!(
-                    "selected layout `{default}` is not defined by discovered layout modules"
-                ),
-            });
-        }
-    }
-
-    for rule in layout_rules {
-        if !is_known(&rule.layout) {
-            return Err(LayoutConfigError::DecodeAuthoredConfig {
-                path: path.to_path_buf(),
-                message: format!(
-                    "selected layout `{}` is not defined by discovered layout modules",
-                    rule.layout
-                ),
-            });
-        }
-    }
-
-    Ok(())
 }
 
 fn decode_layout_rules(

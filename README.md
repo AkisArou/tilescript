@@ -84,7 +84,7 @@ export default function layout(ctx: LayoutContext) {
 5. Point the Hyprland plugin at your config directory.
 6. Reload layouts or reload the plugin after changes.
 
-When the plugin resolves your config root, it bootstraps missing files from `examples/template/` and syncs editor support files into `.sdk/` under that root.
+When the plugin resolves your config root, it bootstraps missing files from `examples/js/` and syncs editor support files into `.sdk/` under that root.
 
 Example Hyprland config:
 
@@ -100,15 +100,15 @@ plugin {
 
 `config_path` should point to a config directory.
 
-The plugin looks for `config.ts`, `config.tsx`, `config.js`, or `config.jsx` inside that directory.
+The plugin looks for `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` inside that directory.
 
 If `config_path` is omitted, the plugin uses `~/.config/hypreact`.
 
-If that config root does not exist yet, the plugin bootstraps it from `examples/template/`.
+If that config root does not exist yet, the plugin bootstraps it from `examples/js/`.
 
 For editor support, your config `tsconfig.json` should extend `./.sdk/tsconfig.json`.
 
-For a starter project, see `examples/template/`.
+For starter projects, see `examples/js/` and `examples/lua/`.
 
 ## Runtime Status
 
@@ -139,3 +139,4 @@ hyprctl hypreact debug-layout-workspace 1
 - `docs/development.md`
 - `docs/plan/resizing.md`
 - `docs/plan/animations.md`
+- `docs/plan/lua.md`

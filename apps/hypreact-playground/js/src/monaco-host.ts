@@ -40,6 +40,9 @@ interface MonacoHostHandle {
   openerDisposable?: monaco.IDisposable;
 }
 
+const FONT_SIZE = 12;
+const LINE_HEIGHT = 20;
+
 const monacoTheme = "hypreact-terminal";
 const workspaceRootUri = "file:///home/demo/.config/hypreact";
 
@@ -59,6 +62,7 @@ self.MonacoEnvironment = {
 
 let configured = false;
 let cssLspRegistered = false;
+let luaConfigured = false;
 
 function ensureMonacoStyles() {
   const styleId = "hypreact-monaco-host-css";
@@ -67,7 +71,7 @@ function ensureMonacoStyles() {
   const link = document.createElement("link");
   link.id = styleId;
   link.rel = "stylesheet";
-  link.href = "/monaco/hypreact-playground-monaco-host.css";
+  link.href = "/hypreact-playground-monaco-host.css";
   document.head.appendChild(link);
 }
 
@@ -148,6 +152,12 @@ function ensureConfigured(extraLibs: MonacoExtraLib[]) {
     registerCssLspProviders();
     cssLspRegistered = true;
   }
+}
+
+async function ensureLuaConfigured() {
+  if (luaConfigured) return;
+  await import("monaco-editor/esm/vs/basic-languages/lua/lua.contribution.js");
+  luaConfigured = true;
 }
 
 function registerCssLspProviders() {
@@ -284,9 +294,13 @@ function toMonacoLocations(result: unknown) {
     }));
 }
 
-function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
+async function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
   handle.modelPaths = models.map((model) => model.path);
   const nextTypeScriptPaths = new Set<string>();
+
+  if (models.some((model) => model.language === "lua")) {
+    await ensureLuaConfigured();
+  }
 
   for (const model of models) {
     if (model.language === "typescript") {
@@ -306,14 +320,22 @@ function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
 
     const uri = monaco.Uri.parse(model.path);
     const existingModel = monaco.editor.getModel(uri);
-    if (existingModel && existingModel.getValue() !== model.value) {
-      existingModel.setValue(model.value);
+    const fileModel =
+      existingModel ??
+      monaco.editor.createModel(model.value, model.language, uri);
+
+    if (fileModel.getLanguageId() !== model.language) {
+      monaco.editor.setModelLanguage(fileModel, model.language);
+    }
+
+    if (fileModel.getValue() !== model.value) {
+      fileModel.setValue(model.value);
       if (model.language === "css") {
-        void updateCssDocument(existingModel);
+        void updateCssDocument(fileModel);
       }
     }
-    if (existingModel && model.language === "css") {
-      void syncCssDocument(existingModel);
+    if (model.language === "css") {
+      void syncCssDocument(fileModel);
     }
   }
 
@@ -331,6 +353,8 @@ function setActiveModel(handle: MonacoHostHandle, activePath: string | null) {
   const model = monaco.editor.getModel(uri);
   if (model && handle.editor.getModel() !== model) {
     handle.editor.setModel(model);
+    handle.editor.layout();
+    handle.editor.focus();
   }
 }
 
@@ -343,6 +367,10 @@ export async function createMonacoEditor(
   onOpen: (payload: string) => void,
 ) {
   ensureConfigured(extraLibs);
+
+  if (models.some((model) => model.language === "lua")) {
+    await ensureLuaConfigured();
+  }
 
   const activeModel = models.find((model) => model.path === activePath) ?? null;
   const initialValue = activeModel?.value ?? "";
@@ -364,7 +392,7 @@ export async function createMonacoEditor(
     fontFamily:
       '"JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", "IBM Plex Mono", monospace',
     fontLigatures: false,
-    fontSize: 14,
+    fontSize: FONT_SIZE,
     glyphMargin: false,
     gotoLocation: {
       multipleDeclarations: "peek",
@@ -373,7 +401,7 @@ export async function createMonacoEditor(
       multipleReferences: "peek",
       multipleTypeDefinitions: "peek",
     },
-    lineHeight: 20,
+    lineHeight: LINE_HEIGHT,
     suggest: {
       insertMode: "replace",
       localityBonus: true,
@@ -419,7 +447,7 @@ export async function createMonacoEditor(
     sourceLibs: new Map(),
   };
 
-  syncModels(handle, models);
+  await syncModels(handle, models);
   setActiveModel(handle, activePath || null);
 
   handle.changeDisposable = editor.onDidChangeModelContent(() => {
@@ -450,14 +478,15 @@ export function updateMonacoEditor(
   handle: MonacoHostHandle,
   activePath: string,
   models: MonacoModel[],
-  fontSize: number,
 ) {
   handle.activePath = activePath || null;
-  syncModels(handle, models);
-  setActiveModel(handle, activePath || null);
-  handle.editor.updateOptions({
-    fontSize,
-    lineHeight: Math.round(fontSize * 1.45),
+  void syncModels(handle, models).then(() => {
+    setActiveModel(handle, activePath || null);
+    handle.editor.updateOptions({
+      fontSize: FONT_SIZE,
+      lineHeight: LINE_HEIGHT,
+    });
+    handle.editor.layout();
   });
 }
 

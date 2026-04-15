@@ -1,1 +1,1 @@
-export * from "/monaco/monaco-host.js";
+export * from "/playground-assets/monaco-host.js";

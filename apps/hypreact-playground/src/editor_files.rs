@@ -2,17 +2,18 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EditorFile {
-    pub id: StaticEditorFileId,
-    pub label: &'static str,
-    pub path: &'static str,
-    pub language: &'static str,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AuthoringLanguage {
+    JavaScript,
+    Lua,
 }
+
+impl AuthoringLanguage {}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum EditorFileKey {
-    Static(StaticEditorFileId),
+    StaticJavaScript(JavaScriptStaticEditorFileId),
+    StaticLua(LuaStaticEditorFileId),
     Dynamic(String),
 }
 
@@ -23,10 +24,12 @@ pub struct DynamicEditorFile {
     pub path: String,
     pub language: String,
     pub initial_content: String,
+    pub is_reference_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DynamicLayoutFileSet {
+    pub language: AuthoringLanguage,
     pub name: String,
     pub directory_path: String,
     pub files: Vec<DynamicEditorFile>,
@@ -36,41 +39,52 @@ pub const WORKSPACE_ROOT: &str = "~/.config/hypreact";
 pub const WORKSPACE_FS_ROOT: &str = "/home/demo/.config/hypreact";
 
 mod generated {
-    use super::EditorFile;
-    use serde::{Deserialize, Serialize};
-
     include!(concat!(env!("OUT_DIR"), "/editor_files_manifest.rs"));
 }
 
-pub use generated::{
-    DEFAULT_OPEN_FILE_ID as DEFAULT_STATIC_OPEN_FILE_ID, EDITOR_FILES, ENTRY_RUNTIME_PATH,
-    EditorFileId as StaticEditorFileId,
-};
+pub use generated::javascript::EditorFileId as JavaScriptStaticEditorFileId;
+pub use generated::lua::EditorFileId as LuaStaticEditorFileId;
+
+pub fn default_authoring_language() -> AuthoringLanguage {
+    AuthoringLanguage::JavaScript
+}
 
 pub fn model_path(file_key: &EditorFileKey, dynamic_layouts: &[DynamicLayoutFileSet]) -> String {
     format!("file://{}", runtime_path(file_key, dynamic_layouts))
 }
 
+pub fn entry_runtime_path(language: AuthoringLanguage) -> &'static str {
+    match language {
+        AuthoringLanguage::JavaScript => generated::javascript::ENTRY_RUNTIME_PATH,
+        AuthoringLanguage::Lua => generated::lua::ENTRY_RUNTIME_PATH,
+    }
+}
+
 pub fn runtime_path(file_key: &EditorFileKey, dynamic_layouts: &[DynamicLayoutFileSet]) -> String {
     match file_key {
-        EditorFileKey::Static(file_id) => generated::runtime_path(*file_id).to_string(),
+        EditorFileKey::StaticJavaScript(file_id) => {
+            generated::javascript::runtime_path(*file_id).to_string()
+        }
+        EditorFileKey::StaticLua(file_id) => generated::lua::runtime_path(*file_id).to_string(),
         EditorFileKey::Dynamic(key) => iter_dynamic_files(dynamic_layouts)
             .find(|file| matches!(&file.key, EditorFileKey::Dynamic(candidate) if candidate == key))
             .map(|file| workspace_path_to_runtime_path(&file.path))
-            .unwrap_or_else(|| format!("/playground/layouts/{key}/index.tsx")),
+            .unwrap_or_else(|| panic!("unknown dynamic editor file key `{key}`")),
     }
 }
 
 pub fn file_key_by_model_path(
     path: &str,
+    language: AuthoringLanguage,
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Option<EditorFileKey> {
-    EDITOR_FILES
+    static_files(language)
         .iter()
-        .find(|file| model_path(&EditorFileKey::Static(file.id), dynamic_layouts) == path)
-        .map(|file| EditorFileKey::Static(file.id))
+        .find(|file| model_path(&static_key(language, file.id()), dynamic_layouts) == path)
+        .map(|file| static_key(language, file.id()))
         .or_else(|| {
             iter_dynamic_files(dynamic_layouts)
+                .filter(|file| file_layout_language(&file.key, dynamic_layouts) == Some(language))
                 .find(|file| model_path(&file.key, dynamic_layouts) == path)
                 .map(|file| file.key.clone())
         })
@@ -81,15 +95,37 @@ pub fn file_badge(language: &str) -> &'static str {
         "css" => "css",
         "typescriptreact" => "tsx",
         "typescript" => "ts",
+        "lua" => "lua",
         _ => "txt",
     }
 }
 
-pub fn initial_editor_buffers() -> BTreeMap<EditorFileKey, String> {
-    EDITOR_FILES
+pub fn file_icon(language: &str) -> &'static str {
+    match language {
+        "css" => "",
+        "typescript" | "typescriptreact" => "󰛦",
+        "lua" => "",
+        _ => "󰈔",
+    }
+}
+
+pub fn file_color_class(language: &str) -> &'static str {
+    match language {
+        "css" => "text-[#7b4fc9]",
+        "typescript" | "typescriptreact" => "text-[#519aba]",
+        "lua" => "text-[#51a0cf]",
+        _ => "text-terminal-info",
+    }
+}
+
+pub fn initial_editor_buffers(language: AuthoringLanguage) -> BTreeMap<EditorFileKey, String> {
+    static_files(language)
         .iter()
         .map(|file| {
-            (EditorFileKey::Static(file.id), generated::initial_content(file.id).to_string())
+            (
+                static_key(language, file.id()),
+                initial_static_content(language, file.id()).to_string(),
+            )
         })
         .collect()
 }
@@ -99,18 +135,34 @@ pub fn file_by_key(
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> EditorFileMeta {
     match file_key {
-        EditorFileKey::Static(file_id) => {
-            let file = EDITOR_FILES
+        EditorFileKey::StaticJavaScript(file_id) => {
+            let file = generated::javascript::EDITOR_FILES
                 .iter()
                 .find(|file| file.id == *file_id)
                 .expect("static editor file should exist");
             EditorFileMeta {
-                key: EditorFileKey::Static(*file_id),
+                key: EditorFileKey::StaticJavaScript(*file_id),
                 label: file.label.to_string(),
                 path: file.path.to_string(),
                 language: file.language.to_string(),
-                initial_content: generated::initial_content(*file_id).to_string(),
+                initial_content: generated::javascript::initial_content(*file_id).to_string(),
                 is_dynamic: false,
+                is_reference_only: generated::javascript::is_reference_only(*file_id),
+            }
+        }
+        EditorFileKey::StaticLua(file_id) => {
+            let file = generated::lua::EDITOR_FILES
+                .iter()
+                .find(|file| file.id == *file_id)
+                .expect("static editor file should exist");
+            EditorFileMeta {
+                key: EditorFileKey::StaticLua(*file_id),
+                label: file.label.to_string(),
+                path: file.path.to_string(),
+                language: file.language.to_string(),
+                initial_content: generated::lua::initial_content(*file_id).to_string(),
+                is_dynamic: false,
+                is_reference_only: generated::lua::is_reference_only(*file_id),
             }
         }
         EditorFileKey::Dynamic(key) => {
@@ -124,6 +176,7 @@ pub fn file_by_key(
                 language: file.language.clone(),
                 initial_content: file.initial_content.clone(),
                 is_dynamic: true,
+                is_reference_only: file.is_reference_only,
             }
         }
     }
@@ -136,60 +189,94 @@ pub fn initial_content_for_key(
     file_by_key(file_key, dynamic_layouts).initial_content
 }
 
-pub fn initial_open_editor_files() -> Vec<EditorFileKey> {
-    vec![EditorFileKey::Static(DEFAULT_STATIC_OPEN_FILE_ID)]
+pub fn initial_open_editor_files(language: AuthoringLanguage) -> Vec<EditorFileKey> {
+    match language {
+        AuthoringLanguage::JavaScript => generated::javascript::initial_open_editor_files()
+            .into_iter()
+            .map(EditorFileKey::StaticJavaScript)
+            .collect(),
+        AuthoringLanguage::Lua => generated::lua::initial_open_editor_files()
+            .into_iter()
+            .map(EditorFileKey::StaticLua)
+            .collect(),
+    }
 }
 
-pub fn make_dynamic_layout(layout_name: &str) -> DynamicLayoutFileSet {
+pub fn make_dynamic_layout(language: AuthoringLanguage, layout_name: &str) -> DynamicLayoutFileSet {
     let normalized = normalize_layout_name(layout_name);
     let directory_path = format!("{WORKSPACE_ROOT}/layouts/{normalized}");
-    let base_key = format!("layout:{normalized}");
-    let tsx_path = format!("{directory_path}/index.tsx");
-    let css_path = format!("{directory_path}/index.css");
+    let base_key = format!(
+        "layout:{}:{normalized}",
+        match language {
+            AuthoringLanguage::JavaScript => "javascript",
+            AuthoringLanguage::Lua => "lua",
+        }
+    );
+    let source_file = match language {
+        AuthoringLanguage::JavaScript => DynamicEditorFile {
+            key: EditorFileKey::Dynamic(format!("{base_key}:tsx")),
+            label: "index.tsx".to_string(),
+            path: format!("{directory_path}/index.tsx"),
+            language: "typescriptreact".to_string(),
+            initial_content: concat!(
+                "import type { LayoutContext } from \"@hypreact/sdk/layout\";\n\n",
+                "import \"./index.css\";\n\n",
+                "export default function layout(ctx: LayoutContext) {\n",
+                "  return (\n",
+                "    <workspace>\n",
+                "      <slot />\n",
+                "    </workspace>\n",
+                "  );\n",
+                "}\n",
+            )
+            .to_string(),
+            is_reference_only: false,
+        },
+        AuthoringLanguage::Lua => DynamicEditorFile {
+            key: EditorFileKey::Dynamic(format!("{base_key}:lua")),
+            label: "index.lua".to_string(),
+            path: format!("{directory_path}/index.lua"),
+            language: "lua".to_string(),
+            initial_content: concat!(
+                "local h = require(\"hypreact\")\n\n",
+                "---@param ctx Hypreact.LayoutContext\n",
+                "return function(ctx)\n",
+                "  return h.workspace() {\n",
+                "    h.slot(),\n",
+                "  }\n",
+                "end\n",
+            )
+            .to_string(),
+            is_reference_only: false,
+        },
+    };
+    let css_file = DynamicEditorFile {
+        key: EditorFileKey::Dynamic(format!("{base_key}:css")),
+        label: "index.css".to_string(),
+        path: format!("{directory_path}/index.css"),
+        language: "css".to_string(),
+        initial_content: concat!(
+            "workspace {\n",
+            "  display: flex;\n",
+            "  flex-direction: row;\n",
+            "  gap: 6px;\n",
+            "  padding: 6px;\n",
+            "  width: 100%;\n",
+            "  height: 100%;\n",
+            "}\n\n",
+            "window {\n",
+            "  flex: 1;\n",
+            "}\n",
+        )
+        .to_string(),
+        is_reference_only: false,
+    };
 
     DynamicLayoutFileSet {
+        language,
         name: normalized.clone(),
         directory_path,
-        files: vec![
-            DynamicEditorFile {
-                key: EditorFileKey::Dynamic(format!("{base_key}:tsx")),
-                label: "index.tsx".to_string(),
-                path: tsx_path,
-                language: "typescriptreact".to_string(),
-                initial_content: concat!(
-                    "import type { LayoutContext } from \"@hypreact/sdk/layout\";\n\n",
-                    "import \"./index.css\";\n\n",
-                    "export default function layout(ctx: LayoutContext) {\n",
-                    "  return (\n",
-                    "    <workspace>\n",
-                    "      <slot />\n",
-                    "    </workspace>\n",
-                    "  );\n",
-                    "}\n",
-                )
-                .to_string(),
-            },
-            DynamicEditorFile {
-                key: EditorFileKey::Dynamic(format!("{base_key}:css")),
-                label: "index.css".to_string(),
-                path: css_path,
-                language: "css".to_string(),
-                initial_content: concat!(
-                    "workspace {\n",
-                    "  display: flex;\n",
-                    "  flex-direction: row;\n",
-                    "  gap: 6px;\n",
-                    "  padding: 6px;\n",
-                    "  width: 100%;\n",
-                    "  height: 100%;\n",
-                    "}\n\n",
-                    "window {\n",
-                    "  flex: 1;\n",
-                    "}\n",
-                )
-                .to_string(),
-            },
-        ],
+        files: vec![source_file, css_file],
     }
 }
 
@@ -224,14 +311,117 @@ pub struct EditorFileMeta {
     pub language: String,
     pub initial_content: String,
     pub is_dynamic: bool,
+    pub is_reference_only: bool,
 }
 
-pub fn static_files() -> &'static [EditorFile] {
-    &EDITOR_FILES
+pub enum StaticEditorFileRef {
+    JavaScript(&'static generated::EditorFile<JavaScriptStaticEditorFileId>),
+    Lua(&'static generated::EditorFile<LuaStaticEditorFileId>),
+}
+
+impl StaticEditorFileRef {
+    pub const fn id(&self) -> StaticFileId {
+        match self {
+            Self::JavaScript(file) => StaticFileId::JavaScript(file.id),
+            Self::Lua(file) => StaticFileId::Lua(file.id),
+        }
+    }
+
+    pub const fn key(&self) -> EditorFileKey {
+        static_file_key(self.id())
+    }
+
+    pub const fn path(&self) -> &'static str {
+        match self {
+            Self::JavaScript(file) => file.path,
+            Self::Lua(file) => file.path,
+        }
+    }
+
+    pub const fn language(&self) -> &'static str {
+        match self {
+            Self::JavaScript(file) => file.language,
+            Self::Lua(file) => file.language,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticFileId {
+    JavaScript(JavaScriptStaticEditorFileId),
+    Lua(LuaStaticEditorFileId),
+}
+
+pub const fn static_file_key(file_id: StaticFileId) -> EditorFileKey {
+    match file_id {
+        StaticFileId::JavaScript(id) => EditorFileKey::StaticJavaScript(id),
+        StaticFileId::Lua(id) => EditorFileKey::StaticLua(id),
+    }
+}
+
+pub fn static_files(language: AuthoringLanguage) -> Vec<StaticEditorFileRef> {
+    match language {
+        AuthoringLanguage::JavaScript => generated::javascript::EDITOR_FILES
+            .iter()
+            .map(|file| StaticEditorFileRef::JavaScript(file))
+            .collect(),
+        AuthoringLanguage::Lua => {
+            generated::lua::EDITOR_FILES.iter().map(|file| StaticEditorFileRef::Lua(file)).collect()
+        }
+    }
 }
 
 pub fn iter_dynamic_files(
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> impl Iterator<Item = &DynamicEditorFile> {
     dynamic_layouts.iter().flat_map(|layout| layout.files.iter())
+}
+
+pub fn file_layout_language(
+    file_key: &EditorFileKey,
+    dynamic_layouts: &[DynamicLayoutFileSet],
+) -> Option<AuthoringLanguage> {
+    match file_key {
+        EditorFileKey::StaticJavaScript(_) => Some(AuthoringLanguage::JavaScript),
+        EditorFileKey::StaticLua(_) => Some(AuthoringLanguage::Lua),
+        EditorFileKey::Dynamic(_) => dynamic_layouts.iter().find_map(|layout| {
+            layout.files.iter().any(|file| &file.key == file_key).then_some(layout.language)
+        }),
+    }
+}
+
+fn initial_static_content(language: AuthoringLanguage, file_id: StaticFileId) -> &'static str {
+    match (language, file_id) {
+        (AuthoringLanguage::JavaScript, StaticFileId::JavaScript(file_id)) => {
+            generated::javascript::initial_content(file_id)
+        }
+        (AuthoringLanguage::Lua, StaticFileId::Lua(file_id)) => {
+            generated::lua::initial_content(file_id)
+        }
+        _ => unreachable!("static file id must match authoring language"),
+    }
+}
+
+fn static_key(language: AuthoringLanguage, file_id: impl Into<StaticFileId>) -> EditorFileKey {
+    match (language, file_id.into()) {
+        (AuthoringLanguage::JavaScript, StaticFileId::JavaScript(file_id)) => {
+            static_file_key(StaticFileId::JavaScript(file_id))
+        }
+        (AuthoringLanguage::Lua, StaticFileId::Lua(file_id)) => {
+            static_file_key(StaticFileId::Lua(file_id))
+        }
+        _ => unreachable!("static file id must match authoring language"),
+    }
+}
+
+impl From<JavaScriptStaticEditorFileId> for StaticFileId {
+    fn from(value: JavaScriptStaticEditorFileId) -> Self {
+        Self::JavaScript(value)
+    }
+}
+
+impl From<LuaStaticEditorFileId> for StaticFileId {
+    fn from(value: LuaStaticEditorFileId) -> Self {
+        Self::Lua(value)
+    }
 }

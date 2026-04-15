@@ -1,12 +1,12 @@
 # Config
 
-`hypreact` is configured from a config root directory that contains a `config.ts`, `config.tsx`, `config.js`, or `config.jsx` file.
+`hypreact` is configured from a config root directory that contains a `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` file.
 
-In the Hyprland plugin, `config_path` should point to the config directory. The plugin looks for `config.ts`, `config.tsx`, `config.js`, or `config.jsx` inside it.
+In the Hyprland plugin, `config_path` should point to the config directory. The plugin looks for `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` inside it.
 
 If `config_path` is omitted, the plugin falls back to `~/.config/hypreact` and probes those same entry names there.
 
-If that config root does not exist yet, the plugin bootstraps it from the repo `examples/template/`.
+If that config root does not exist yet, the plugin bootstraps it from the repo `examples/js/`.
 
 The current recommended shape is:
 

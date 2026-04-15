@@ -1,0 +1,17 @@
+[package]
+name = "hypreact-runtime-lua-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hypreact-config = { path = "../../../config" }
+hypreact-core = { path = "../../../core" }
+hypreact-runtime-lua-core = { path = "../core" }
+js-sys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde-wasm-bindgen.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true

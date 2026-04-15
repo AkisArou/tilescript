@@ -40,5 +40,7 @@ packages/lsp/vscode/server/
 
 dev/test-config/.hypreact/
 dev/test-config/.hypreact-build/
-examples/template/.hypreact/
-examples/template/.hypreact-build/
+examples/js/.hypreact/
+examples/js/.hypreact-build/
+examples/lua/.hypreact/
+examples/lua/.hypreact-build/

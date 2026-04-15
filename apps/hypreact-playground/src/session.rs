@@ -63,7 +63,7 @@ impl PreviewSessionState {
             partition_tree: None,
             manual_layout_by_workspace: BTreeMap::new(),
             diagnostics: Vec::new(),
-            event_log: vec!["preview booted from template source bundle".to_string()],
+            event_log: vec!["preview booted from starter source bundle".to_string()],
             last_action: "boot preview".to_string(),
             actions: Vec::new(),
             error: None,

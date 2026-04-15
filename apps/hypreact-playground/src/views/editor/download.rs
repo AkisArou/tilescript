@@ -1,4 +1,4 @@
-use crate::editor_files::{DynamicLayoutFileSet, EditorFileKey, file_by_key};
+use crate::editor_files::{AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, file_by_key};
 use crate::editor_host::DirectoryDownloadItem;
 use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
 
@@ -24,6 +24,7 @@ pub fn download_directory_title(directory: &EditorFileTreeDirectory) -> String {
 
 pub fn collect_directory_download_items(
     directory: &EditorFileTreeDirectory,
+    language: AuthoringLanguage,
     buffers: &std::collections::BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Vec<DirectoryDownloadItem> {
@@ -35,6 +36,7 @@ pub fn collect_directory_download_items(
     collect_directory_download_items_recursive(
         directory,
         root_path,
+        language,
         buffers,
         dynamic_layouts,
         &mut items,
@@ -45,6 +47,7 @@ pub fn collect_directory_download_items(
 fn collect_directory_download_items_recursive(
     directory: &EditorFileTreeDirectory,
     root_path: &str,
+    language: AuthoringLanguage,
     buffers: &std::collections::BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
     items: &mut Vec<DirectoryDownloadItem>,
@@ -55,6 +58,7 @@ fn collect_directory_download_items_recursive(
                 collect_directory_download_items_recursive(
                     child_directory,
                     root_path,
+                    language,
                     buffers,
                     dynamic_layouts,
                     items,

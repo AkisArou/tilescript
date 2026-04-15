@@ -8,7 +8,8 @@ const SDK_EXCLUDED_DIRS: &[&str] = &["node_modules"];
 pub fn sync_sdk_support(config_root: &Path) -> Result<bool, FfiError> {
     let managed_root = config_root.join(".sdk");
     let mut expected_paths = BTreeSet::new();
-    let mut changed = sync_directory(&sdk_source_root(), &managed_root, &mut expected_paths)?;
+    let mut changed = sync_directory(&js_sdk_source_root(), &managed_root, &mut expected_paths)?;
+    changed |= sync_directory(&lua_sdk_source_root(), &managed_root.join("lua"), &mut expected_paths)?;
 
     prune_stale_files(&managed_root, &expected_paths, &mut changed)?;
     changed |= remove_legacy_node_modules_link(config_root)?;
@@ -16,11 +17,18 @@ pub fn sync_sdk_support(config_root: &Path) -> Result<bool, FfiError> {
     Ok(changed)
 }
 
-fn sdk_source_root() -> PathBuf {
+fn js_sdk_source_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../packages/sdk/js")
         .canonicalize()
         .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/sdk/js"))
+}
+
+fn lua_sdk_source_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/sdk/lua")
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/sdk/lua"))
 }
 
 fn sync_directory(
@@ -195,6 +203,7 @@ mod tests {
         assert!(changed);
         assert!(root.join(".sdk/tsconfig.json").exists());
         assert!(root.join(".sdk/src/config.d.ts").exists());
+        assert!(root.join(".sdk/lua/hypreact.lua").exists());
 
         let changed_again = sync_sdk_support(&root).expect("resync sdk support");
         assert!(!changed_again);

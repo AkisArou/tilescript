@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+use super::runtime_kind::RuntimeKind;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectedLayout {
     pub name: String,
+    pub runtime: RuntimeKind,
     pub directory: String,
     pub module: String,
 }

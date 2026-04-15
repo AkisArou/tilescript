@@ -9,6 +9,7 @@ use hypreact_core::focus::{FocusTree, FocusTreeWindowGeometry};
 use hypreact_core::navigation::WindowGeometryCandidate;
 use hypreact_core::query::state_snapshot_for_model;
 use hypreact_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets, SelectedLayout};
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
     PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
@@ -18,14 +19,15 @@ use hypreact_core::snapshot::WindowSnapshot;
 use hypreact_core::wm::{WindowGeometry, WmModel};
 use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
 use hypreact_runtime_js_browser::JavaScriptBrowserRuntimeProvider;
+use hypreact_runtime_lua_browser::LuaBrowserRuntimeProvider;
 use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{Display, FlexDirectionValue, LayoutSnapshotNode, SceneResponse, SizeValue};
 use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 
 use crate::editor_files::{
-    DynamicLayoutFileSet, EDITOR_FILES, ENTRY_RUNTIME_PATH, EditorFileKey,
-    initial_content_for_key, iter_dynamic_files, runtime_path,
+    AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, entry_runtime_path,
+    file_layout_language, initial_content_for_key, iter_dynamic_files, runtime_path, static_files,
 };
 use crate::session::PreviewDiagnostic;
 
@@ -59,16 +61,17 @@ impl ResizeBehaviorConfig {
 }
 
 pub async fn load_config_from_buffers(
+    language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Result<Config, String> {
     let root_dir = PathBuf::from(ROOT_DIR);
-    let entry_path = PathBuf::from(ENTRY_RUNTIME_PATH);
-    let sources = source_bundle_sources(buffers, dynamic_layouts);
-    let maybe_service = LAYOUT_SERVICE.with_borrow_mut(|slot| slot.take());
+    let entry_path = PathBuf::from(entry_runtime_path(language));
+    let sources = source_bundle_sources(language, buffers, dynamic_layouts);
+    let maybe_service = LAYOUT_SERVICES.with_borrow_mut(|slot| slot.remove(&language));
     let service = match maybe_service {
         Some(service) => service,
-        None => build_layout_service(&entry_path).map_err(|error| error.to_string())?,
+        None => build_layout_service(language, &entry_path).map_err(|error| error.to_string())?,
     };
 
     let result = service
@@ -76,26 +79,27 @@ pub async fn load_config_from_buffers(
         .await
         .map_err(|error| error.to_string());
 
-    LAYOUT_SERVICE.with_borrow_mut(|slot| {
-        *slot = Some(service);
+    LAYOUT_SERVICES.with_borrow_mut(|slot| {
+        slot.insert(language, service);
     });
 
     result
 }
 
 pub async fn evaluate_preview_from_buffers(
+    language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
     model: &WmModel,
     manual_layouts: &BTreeMap<hypreact_core::WorkspaceId, hypreact_core::types::LayoutRef>,
 ) -> Result<EvaluatedPreview, String> {
     let root_dir = PathBuf::from(ROOT_DIR);
-    let entry_path = PathBuf::from(ENTRY_RUNTIME_PATH);
-    let sources = source_bundle_sources(buffers, dynamic_layouts);
-    let maybe_service = LAYOUT_SERVICE.with_borrow_mut(|slot| slot.take());
+    let entry_path = PathBuf::from(entry_runtime_path(language));
+    let sources = source_bundle_sources(language, buffers, dynamic_layouts);
+    let maybe_service = LAYOUT_SERVICES.with_borrow_mut(|slot| slot.remove(&language));
     let mut service = match maybe_service {
         Some(service) => service,
-        None => build_layout_service(&entry_path).map_err(|error| error.to_string())?,
+        None => build_layout_service(language, &entry_path).map_err(|error| error.to_string())?,
     };
 
     let result = async {
@@ -121,7 +125,7 @@ pub async fn evaluate_preview_from_buffers(
             .evaluate_prepared_for_workspace(&root_dir, &sources, &config, &state_snapshot, &workspace)
             .await;
 
-        let mut diagnostics = collect_diagnostics_from_buffers(buffers, dynamic_layouts);
+        let mut diagnostics = collect_diagnostics_from_buffers(language, buffers, dynamic_layouts);
 
         match evaluation {
             Ok(Some(evaluation)) => {
@@ -140,6 +144,7 @@ pub async fn evaluate_preview_from_buffers(
                             error.to_string(),
                         ));
                         build_fallback_scene(
+                            language,
                             &config,
                             &state_snapshot,
                             &workspace,
@@ -166,13 +171,14 @@ pub async fn evaluate_preview_from_buffers(
             }),
             Err(error) => {
                 diagnostics.push(layout_error_diagnostic(
-                    Some(ENTRY_RUNTIME_PATH),
+                    Some(entry_runtime_path(language)),
                     error.to_string(),
                 ));
 
                 let workspace_windows = workspace_windows(&state_snapshot, &workspace);
-                let selected_layout = selected_layout_for_workspace(&workspace, None);
+                let selected_layout = selected_layout_for_workspace(language, &workspace, None);
                 let scene = build_fallback_scene(
+                    language,
                     &config,
                     &state_snapshot,
                     &workspace,
@@ -186,20 +192,21 @@ pub async fn evaluate_preview_from_buffers(
     }
     .await;
 
-    LAYOUT_SERVICE.with_borrow_mut(|slot| {
-        *slot = Some(service);
+    LAYOUT_SERVICES.with_borrow_mut(|slot| {
+        slot.insert(language, service);
     });
 
     result
 }
 
 pub fn source_bundle_sources(
+    language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> BTreeMap<PathBuf, String> {
     let mut sources = BTreeMap::new();
-    for file in EDITOR_FILES {
-        let file_key = EditorFileKey::Static(file.id);
+    for file in static_files(language) {
+        let file_key = file.key();
         let source = buffers
             .get(&file_key)
             .cloned()
@@ -207,7 +214,9 @@ pub fn source_bundle_sources(
         sources.insert(PathBuf::from(runtime_path(&file_key, dynamic_layouts)), source);
     }
 
-    for file in iter_dynamic_files(dynamic_layouts) {
+    for file in iter_dynamic_files(dynamic_layouts)
+        .filter(|file| file_layout_language(&file.key, dynamic_layouts) == Some(language))
+    {
         let source = buffers
             .get(&file.key)
             .cloned()
@@ -228,15 +237,21 @@ pub fn apply_layout_selection(model: &mut WmModel, config: &Config) {
 }
 
 fn build_layout_service(
+    language: AuthoringLanguage,
     entry_path: &Path,
 ) -> Result<SourceBundleAuthoringLayoutService, LayoutConfigError> {
-    let provider = JavaScriptBrowserRuntimeProvider::new();
-    let bundle = provider.build_source_bundle_runtime_bundle()?;
+    let bundle = match language {
+        AuthoringLanguage::JavaScript => JavaScriptBrowserRuntimeProvider::new()
+            .build_source_bundle_runtime_bundle()?,
+        AuthoringLanguage::Lua => {
+            LuaBrowserRuntimeProvider::new().build_source_bundle_runtime_bundle()?
+        }
+    };
     build_source_bundle_authoring_layout_service(entry_path, bundle)
 }
 
 thread_local! {
-    static LAYOUT_SERVICE: RefCell<Option<SourceBundleAuthoringLayoutService>> = const { RefCell::new(None) };
+    static LAYOUT_SERVICES: RefCell<BTreeMap<AuthoringLanguage, SourceBundleAuthoringLayoutService>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 fn build_scene(
@@ -294,6 +309,7 @@ fn workspace_windows(
 }
 
 fn build_fallback_scene(
+    language: AuthoringLanguage,
     config: &Config,
     state_snapshot: &hypreact_core::snapshot::StateSnapshot,
     workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
@@ -303,7 +319,7 @@ fn build_fallback_scene(
     let artifact = PreparedLayout {
         selected: selected_layout
             .cloned()
-            .unwrap_or_else(|| selected_layout_for_workspace(workspace, None)),
+            .unwrap_or_else(|| selected_layout_for_workspace(language, workspace, None)),
         runtime_payload: serde_json::Value::Null,
         stylesheets: PreparedStylesheets {
             global: None,
@@ -337,6 +353,7 @@ fn build_fallback_scene(
 }
 
 fn selected_layout_for_workspace(
+    language: AuthoringLanguage,
     workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
     fallback_module: Option<&str>,
 ) -> SelectedLayout {
@@ -352,9 +369,16 @@ fn selected_layout_for_workspace(
         .unwrap_or_else(|| "layouts/fallback".to_string());
 
     SelectedLayout {
+        runtime: match language {
+            AuthoringLanguage::JavaScript => RuntimeKind::Js,
+            AuthoringLanguage::Lua => RuntimeKind::Lua,
+        },
         module: fallback_module
             .map(str::to_string)
-            .unwrap_or_else(|| format!("{directory}/index.tsx")),
+            .unwrap_or_else(|| match language {
+                AuthoringLanguage::JavaScript => format!("{directory}/index.tsx"),
+                AuthoringLanguage::Lua => format!("{directory}/index.lua"),
+            }),
         name,
         directory,
     }
@@ -381,7 +405,7 @@ fn artifact_style_directory(workspace: &hypreact_core::snapshot::WorkspaceSnapsh
 
 fn layout_error_diagnostic(path: Option<&str>, message: String) -> PreviewDiagnostic {
     PreviewDiagnostic {
-        path: path.unwrap_or(ENTRY_RUNTIME_PATH).to_string(),
+        path: path.unwrap_or(ROOT_DIR).to_string(),
         severity: "error",
         code: "layoutFallback",
         message: format!("{message}; using fallback layout"),
@@ -416,14 +440,15 @@ fn preview_from_scene(
 }
 
 fn collect_diagnostics_from_buffers(
+    language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Vec<PreviewDiagnostic> {
-    EDITOR_FILES
+    static_files(language)
         .iter()
-        .filter(|file| file.language == "css")
+        .filter(|file| file.language() == "css")
         .flat_map(|file| {
-            let file_key = EditorFileKey::Static(file.id);
+            let file_key = file.key();
             let source = buffers
                 .get(&file_key)
                 .cloned()
@@ -432,7 +457,7 @@ fn collect_diagnostics_from_buffers(
                 .diagnostics
                 .into_iter()
                 .map(move |diagnostic| PreviewDiagnostic {
-                    path: file.path.to_string(),
+                    path: file.path().to_string(),
                     severity: match diagnostic.severity {
                         CssDiagnosticSeverity::Error => "error",
                         CssDiagnosticSeverity::Warning => "warning",
@@ -460,6 +485,7 @@ fn collect_diagnostics_from_buffers(
         })
         .chain(
             iter_dynamic_files(dynamic_layouts)
+                .filter(|file| file_layout_language(&file.key, dynamic_layouts) == Some(language))
                 .filter(|file| file.language == "css")
                 .flat_map(|file| {
                     let source = buffers

@@ -8,6 +8,7 @@ use crate::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use super::layout_context::LayoutEvaluationContext;
 use super::prepared_layout::PreparedLayout;
 use super::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use super::runtime_kind::RuntimeKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutModuleContract {
@@ -63,4 +64,5 @@ pub trait AuthoringLayoutRuntime: PreparedLayoutRuntime {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeInfo {
     pub name: String,
+    pub kind: RuntimeKind,
 }

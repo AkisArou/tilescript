@@ -7,6 +7,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_runtime_js_core::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
 use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
 use hypreact_runtime_js_core::graph::{
@@ -80,6 +81,7 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
 
         layout_defs.push(LayoutDefinition {
             name: app.name.clone(),
+            runtime: RuntimeKind::Js,
             directory: app
                 .entry_path
                 .parent()

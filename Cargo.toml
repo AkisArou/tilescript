@@ -12,6 +12,9 @@ members = [
   "crates/runtimes/js/core",
   "crates/runtimes/js/native",
   "crates/runtimes/js/browser",
+  "crates/runtimes/lua/core",
+  "crates/runtimes/lua/native",
+  "crates/runtimes/lua/browser",
   "crates/layout-runtime",
   "crates/hypr-ffi",
 ]
@@ -30,6 +33,7 @@ leptos = "0.8.17"
 leptos_router = "0.8.8"
 lsp-server = "0.7"
 lsp-types = "0.94"
+mlua = "0.10.5"
 oxc = "0.119.0"
 oxc_resolver = "11.19.1"
 regex = "1"

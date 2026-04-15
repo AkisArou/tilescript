@@ -53,7 +53,13 @@ fn install_config_loader(app_state: AppState) {
         app_state.latest_config_request_key.set(request_key.clone());
 
         wasm_bindgen_futures::spawn_local(async move {
-            match layout_runtime::load_config_from_buffers(&buffers, &dynamic_layouts).await {
+            match layout_runtime::load_config_from_buffers(
+                app_state.authoring_language.get_untracked(),
+                &buffers,
+                &dynamic_layouts,
+            )
+            .await
+            {
                 Ok(config) => {
                     if app_state.latest_config_request_key.get_untracked() != request_key {
                         return;
@@ -82,6 +88,7 @@ fn install_preview_renderer(app_state: AppState) {
 
         wasm_bindgen_futures::spawn_local(async move {
             match layout_runtime::evaluate_preview_from_buffers(
+                app_state.authoring_language.get_untracked(),
                 &buffers,
                 &dynamic_layouts,
                 &model,

@@ -14,7 +14,8 @@
 - `packages/sdk/js` - authored config/layout SDK surface
 - `packages/lsp/vscode` - VS Code client for `hypreact-css-lsp`
 - `dev/test-config` - local authored config fixture
-- `examples/template` - minimal starter config
+- `examples/js` - JavaScript/TypeScript starter config
+- `examples/lua` - Lua starter config
 
 ## Common Commands
 
@@ -101,7 +102,9 @@ Use it for:
 - layout-runtime tests
 - local Hyprland plugin validation
 
-`examples/template/` is the starter project skeleton.
+`examples/js/` is the default starter project skeleton used by plugin bootstrap.
+
+`examples/lua/` mirrors the same starter layout in Lua form.
 
 For external config roots, the Hyprland plugin now manages a local SDK mirror under:
 
@@ -111,7 +114,7 @@ For external config roots, the Hyprland plugin now manages a local SDK mirror un
 - `.sdk/src/*.d.ts`
 - `.sdk/src/*.js`
 
-The plugin bootstraps missing config roots from `examples/template/` and refreshes that managed SDK support when it resolves and loads the config root.
+The plugin bootstraps missing config roots from `examples/js/` and refreshes that managed SDK support when it resolves and loads the config root.
 
 ## Style And Tooling
 
@@ -129,3 +132,4 @@ The plugin bootstraps missing config roots from `examples/template/` and refresh
 - `docs/development.md`
 - `docs/plan/resizing.md`
 - `docs/plan/animations.md`
+- `docs/plan/lua.md`

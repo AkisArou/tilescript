@@ -3,7 +3,9 @@ use leptos::prelude::*;
 
 use crate::app_state::AppState;
 use crate::components::context_menu::{ContextMenu, ContextMenuItem, ContextMenuPosition};
-use crate::editor_files::{EditorFileKey, WORKSPACE_ROOT, file_by_key};
+use crate::editor_files::{
+    AuthoringLanguage, EditorFileKey, WORKSPACE_ROOT, file_by_key, file_color_class,
+};
 use crate::workspace::workspace_file_tree;
 
 use super::buffers::active_file_path;
@@ -40,10 +42,48 @@ pub fn EditorView() -> impl IntoView {
                     <div class="border-terminal-border bg-terminal-bg-bar text-terminal-dim border-b px-2 py-1 text-xs">
                         {WORKSPACE_ROOT}
                     </div>
+                    <div class="border-terminal-border border-b px-2 py-2">
+                        <label class="mb-1 block text-[11px] font-medium tracking-[0.08em] text-terminal-faint uppercase">
+                            "Authoring language"
+                        </label>
+                        <div class="grid grid-cols-2 gap-1">
+                            <button
+                                class=move || {
+                                    if app_state.authoring_language.get() == AuthoringLanguage::JavaScript {
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg border px-2 py-1.5 text-sm font-medium"
+                                    } else {
+                                        "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-1.5 text-sm"
+                                    }
+                                }
+                                on:click=move |_| {
+                                    app_state.set_authoring_language(AuthoringLanguage::JavaScript);
+                                }
+                            >
+                                "JS / TS"
+                            </button>
+                            <button
+                                class=move || {
+                                    if app_state.authoring_language.get() == AuthoringLanguage::Lua {
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg border px-2 py-1.5 text-sm font-medium"
+                                    } else {
+                                        "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-1.5 text-sm"
+                                    }
+                                }
+                                on:click=move |_| {
+                                    app_state.set_authoring_language(AuthoringLanguage::Lua);
+                                }
+                            >
+                                "Lua"
+                            </button>
+                        </div>
+                    </div>
                     <div class="py-1">
                         <FileTreeDirectoryView
                             directory=Signal::derive(move || {
-                                workspace_file_tree(&app_state.dynamic_layouts.get())
+                                workspace_file_tree(
+                                    app_state.authoring_language.get(),
+                                    &app_state.dynamic_layouts.get(),
+                                )
                             })
                             is_root=true
                             depth=0
@@ -71,8 +111,7 @@ pub fn EditorView() -> impl IntoView {
                                             .get()
                                             .into_iter()
                                             .map(|file_id| {
-                                                let file =
-                                                    file_by_key(&file_id, &app_state.dynamic_layouts.get());
+                                                let file = file_by_key(&file_id, &app_state.dynamic_layouts.get_untracked());
                                                 let tab_file_id_active = file_id.clone();
                                                 let tab_file_id_context = file_id.clone();
                                                 let tab_file_id_select = file_id.clone();
@@ -112,17 +151,7 @@ pub fn EditorView() -> impl IntoView {
                                                             }
                                                         >
                                                             <span
-                                                                class=move || {
-                                                                    if file.language == "css" {
-                                                                        "text-[#7b4fc9]"
-                                                                    } else if file.language == "typescript"
-                                                                        || file.language == "typescriptreact"
-                                                                    {
-                                                                        "text-[#519aba]"
-                                                                    } else {
-                                                                        "text-terminal-info"
-                                                                    }
-                                                                }
+                                                                class=move || file_color_class(&file.language)
                                                             >
                                                                 {badge.clone()}
                                                             </span>
