@@ -16,9 +16,13 @@ use hypreact_core::resize::{
     ResizeDirection, apply_resize_step, gc_resize_state, scale_authored_share_units,
     select_resize_candidate,
 };
+use hypreact_core::runtime::prepared_layout::{
+    PreparedLayout, PreparedStylesheets, SelectedLayout,
+};
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
+use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
 use hypreact_runtime_js_native::build_runtime_bundle;
 use hypreact_scene::Display;
@@ -28,6 +32,8 @@ use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
 
 const DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX: f32 = 120.0;
+const FALLBACK_LAYOUT_STYLESHEET: &str =
+    "workspace { display: flex; width: 100%; height: 100%; } window { flex: 1 1 0; }";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ResizeBehaviorConfig {
@@ -86,13 +92,15 @@ pub struct LayoutWorkspaceEvaluation {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutWorkspaceScene {
-    pub evaluation: PreparedLayoutEvaluation,
+    pub evaluation: Option<PreparedLayoutEvaluation>,
     pub scene: SceneResponse,
     pub window_geometries: std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
     pub focus_tree: FocusTree,
     pub partition_tree: PartitionTree,
     pub geometry_candidates: Vec<WindowGeometryCandidate>,
     pub ordered_window_ids: Vec<hypreact_core::WindowId>,
+    pub diagnostics: Vec<LayoutDiagnostic>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,75 +200,71 @@ impl LayoutRuntimeService {
         state: &StateSnapshot,
         workspace: &WorkspaceSnapshot,
     ) -> Result<Option<LayoutWorkspaceScene>, LayoutRuntimeError> {
+        let workspace_windows = workspace_windows(state, workspace);
+        let selected_layout = selected_layout_for_workspace(workspace, None);
+
         let Some(evaluation) =
-            self.service.evaluate_prepared_for_workspace(config, state, workspace)?
+            (match self.service.evaluate_prepared_for_workspace(config, state, workspace) {
+                Ok(evaluation) => evaluation,
+                Err(error) => {
+                    let diagnostic = layout_failure_diagnostic(
+                        authoring_layout_service_error_path(&error)
+                            .or(Some(self.paths.config_paths.authored_config.as_path())),
+                        error.to_string(),
+                    );
+                    let scene = build_fallback_scene(
+                        config,
+                        state,
+                        workspace,
+                        Some(&selected_layout),
+                        &workspace_windows,
+                    )?;
+                    return Ok(Some(layout_workspace_scene(
+                        config,
+                        None,
+                        scene,
+                        vec![diagnostic.clone()],
+                        Some(diagnostic.message),
+                    )));
+                }
+            })
         else {
             return Ok(None);
         };
 
-        let workspace_windows = state
-            .windows
-            .iter()
-            .filter(|window| {
-                window.workspace_id.as_ref() == Some(&workspace.id)
-                    && workspace
-                        .output_id
-                        .as_ref()
-                        .is_none_or(|output_id| window.output_id.as_ref() == Some(output_id))
-                    && window.mapped
-                    && !window.closing
-                    && !window.mode.is_floating()
-                    && !window.mode.is_fullscreen()
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let resolved = ValidatedLayoutTree::new(evaluation.layout.clone())
-            .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
-                path: self.paths.config_paths.authored_config.clone(),
-                message: error.to_string(),
-            })?
-            .resolve(&workspace_windows)
-            .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
-                path: self.paths.config_paths.authored_config.clone(),
-                message: error.to_string(),
-            })?;
-
-        let request = config.build_scene_request(
+        match build_scene_from_layout(
+            config,
             state,
             workspace,
-            workspace
-                .output_id
-                .as_ref()
-                .and_then(|output_id| state.output_by_id(output_id))
-                .or_else(|| state.current_output()),
-            resolved.root,
             &evaluation.artifact,
-        )?;
-        let scene = SceneCache::new().compute_layout_from_request(&request).map_err(|error| {
-            LayoutConfigError::EvaluateAuthoredConfig {
-                path: self.paths.config_paths.authored_config.clone(),
-                message: error.to_string(),
+            evaluation.layout.clone(),
+            &workspace_windows,
+            std::path::Path::new(&evaluation.artifact.selected.module),
+        ) {
+            Ok(scene) => {
+                Ok(Some(layout_workspace_scene(config, Some(evaluation), scene, Vec::new(), None)))
             }
-        })?;
-
-        let resize_behavior = ResizeBehaviorConfig::from_config(config);
-        let window_geometries = collect_window_geometries(&scene.root);
-        let focus_tree = focus_tree_from_geometries(&window_geometries);
-        let partition_tree = partition_tree_from_scene(&scene.root, resize_behavior);
-        let geometry_candidates =
-            geometry_candidates_from_focus_tree(&window_geometries, &focus_tree);
-        let ordered_window_ids = ordered_window_ids_from_scene(&scene.root);
-
-        Ok(Some(LayoutWorkspaceScene {
-            evaluation,
-            scene,
-            window_geometries,
-            focus_tree,
-            partition_tree,
-            geometry_candidates,
-            ordered_window_ids,
-        }))
+            Err(error) => {
+                let diagnostic = layout_failure_diagnostic(
+                    Some(std::path::Path::new(&evaluation.artifact.selected.module)),
+                    error.to_string(),
+                );
+                let scene = build_fallback_scene(
+                    config,
+                    state,
+                    workspace,
+                    Some(&evaluation.artifact.selected),
+                    &workspace_windows,
+                )?;
+                Ok(Some(layout_workspace_scene(
+                    config,
+                    Some(evaluation),
+                    scene,
+                    vec![diagnostic.clone()],
+                    Some(diagnostic.message),
+                )))
+            }
+        }
     }
 }
 
@@ -305,7 +309,15 @@ pub fn layout_status_for_model(
             let diagnostics = evaluation
                 .as_ref()
                 .map(|evaluation| {
-                    diagnostics_for_stylesheets(&evaluation.evaluation.artifact.stylesheets)
+                    let mut diagnostics = evaluation
+                        .evaluation
+                        .as_ref()
+                        .map(|evaluation| {
+                            diagnostics_for_stylesheets(&evaluation.artifact.stylesheets)
+                        })
+                        .unwrap_or_default();
+                    diagnostics.extend(evaluation.diagnostics.clone());
+                    diagnostics
                 })
                 .unwrap_or_default();
             if let Some(evaluation) = evaluation.as_ref() {
@@ -318,11 +330,18 @@ pub fn layout_status_for_model(
                 loaded: true,
                 selected_layout_name: evaluation
                     .as_ref()
-                    .map(|evaluation| evaluation.evaluation.artifact.selected.name.clone())
+                    .and_then(|evaluation| {
+                        evaluation
+                            .evaluation
+                            .as_ref()
+                            .map(|evaluation| evaluation.artifact.selected.name.clone())
+                    })
                     .or_else(|| {
                         workspace.effective_layout.as_ref().map(|layout| layout.name.clone())
                     }),
-                layout: evaluation.as_ref().map(|evaluation| evaluation.evaluation.layout.clone()),
+                layout: evaluation.as_ref().and_then(|evaluation| {
+                    evaluation.evaluation.as_ref().map(|evaluation| evaluation.layout.clone())
+                }),
                 window_geometries: evaluation
                     .as_ref()
                     .map(|evaluation| {
@@ -337,7 +356,7 @@ pub fn layout_status_for_model(
                     .as_ref()
                     .map(|evaluation| evaluation.ordered_window_ids.clone())
                     .unwrap_or_default(),
-                error: None,
+                error: evaluation.as_ref().and_then(|evaluation| evaluation.error.clone()),
                 diagnostics,
             })
         }
@@ -355,6 +374,201 @@ pub fn layout_status_for_model(
             error: Some(error.to_string()),
             diagnostics: Vec::new(),
         }),
+    }
+}
+
+fn layout_workspace_scene(
+    config: &Config,
+    evaluation: Option<PreparedLayoutEvaluation>,
+    scene: SceneResponse,
+    diagnostics: Vec<LayoutDiagnostic>,
+    error: Option<String>,
+) -> LayoutWorkspaceScene {
+    let resize_behavior = ResizeBehaviorConfig::from_config(config);
+    let window_geometries = collect_window_geometries(&scene.root);
+    let focus_tree = focus_tree_from_geometries(&window_geometries);
+    let partition_tree = partition_tree_from_scene(&scene.root, resize_behavior);
+    let geometry_candidates = geometry_candidates_from_focus_tree(&window_geometries, &focus_tree);
+    let ordered_window_ids = ordered_window_ids_from_scene(&scene.root);
+
+    LayoutWorkspaceScene {
+        evaluation,
+        scene,
+        window_geometries,
+        focus_tree,
+        partition_tree,
+        geometry_candidates,
+        ordered_window_ids,
+        diagnostics,
+        error,
+    }
+}
+
+fn workspace_windows(
+    state: &StateSnapshot,
+    workspace: &WorkspaceSnapshot,
+) -> Vec<hypreact_core::snapshot::WindowSnapshot> {
+    state
+        .windows
+        .iter()
+        .filter(|window| {
+            window.workspace_id.as_ref() == Some(&workspace.id)
+                && workspace
+                    .output_id
+                    .as_ref()
+                    .is_none_or(|output_id| window.output_id.as_ref() == Some(output_id))
+                && window.mapped
+                && !window.closing
+                && !window.mode.is_floating()
+                && !window.mode.is_fullscreen()
+        })
+        .cloned()
+        .collect()
+}
+
+fn build_scene_from_layout(
+    config: &Config,
+    state: &StateSnapshot,
+    workspace: &WorkspaceSnapshot,
+    artifact: &PreparedLayout,
+    layout: SourceLayoutNode,
+    workspace_windows: &[hypreact_core::snapshot::WindowSnapshot],
+    error_path: &Path,
+) -> Result<SceneResponse, LayoutConfigError> {
+    let resolved = ValidatedLayoutTree::new(layout)
+        .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
+            path: error_path.to_path_buf(),
+            message: error.to_string(),
+        })?
+        .resolve(workspace_windows)
+        .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
+            path: error_path.to_path_buf(),
+            message: error.to_string(),
+        })?;
+
+    let request = config.build_scene_request(
+        state,
+        workspace,
+        workspace
+            .output_id
+            .as_ref()
+            .and_then(|output_id| state.output_by_id(output_id))
+            .or_else(|| state.current_output()),
+        resolved.root,
+        artifact,
+    )?;
+
+    SceneCache::new().compute_layout_from_request(&request).map_err(|error| {
+        LayoutConfigError::EvaluateAuthoredConfig {
+            path: error_path.to_path_buf(),
+            message: error.to_string(),
+        }
+    })
+}
+
+fn build_fallback_scene(
+    config: &Config,
+    state: &StateSnapshot,
+    workspace: &WorkspaceSnapshot,
+    selected_layout: Option<&SelectedLayout>,
+    workspace_windows: &[hypreact_core::snapshot::WindowSnapshot],
+) -> Result<SceneResponse, LayoutRuntimeError> {
+    let artifact = PreparedLayout {
+        selected: selected_layout
+            .cloned()
+            .unwrap_or_else(|| selected_layout_for_workspace(workspace, None)),
+        runtime_payload: serde_json::Value::Null,
+        stylesheets: PreparedStylesheets {
+            global: None,
+            layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                path: format!("{}/fallback.css", artifact_style_directory(workspace)),
+                source: FALLBACK_LAYOUT_STYLESHEET.to_string(),
+            }),
+        },
+    };
+
+    build_scene_from_layout(
+        config,
+        state,
+        workspace,
+        &artifact,
+        fallback_source_layout(),
+        workspace_windows,
+        Path::new(&artifact.selected.module),
+    )
+    .map_err(LayoutRuntimeError::from)
+}
+
+fn selected_layout_for_workspace(
+    workspace: &WorkspaceSnapshot,
+    fallback_module: Option<&str>,
+) -> SelectedLayout {
+    let name = workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| layout.name.clone())
+        .unwrap_or_else(|| "fallback".to_string());
+    let directory = workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| format!("layouts/{}", layout.name))
+        .unwrap_or_else(|| "layouts/fallback".to_string());
+
+    SelectedLayout {
+        module: fallback_module
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{directory}/index.tsx")),
+        name,
+        directory,
+    }
+}
+
+fn artifact_style_directory(workspace: &WorkspaceSnapshot) -> String {
+    workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| format!("layouts/{}", layout.name))
+        .unwrap_or_else(|| "layouts/fallback".to_string())
+}
+
+fn fallback_source_layout() -> SourceLayoutNode {
+    SourceLayoutNode::Workspace {
+        meta: LayoutNodeMeta::default(),
+        children: vec![SourceLayoutNode::Slot {
+            meta: LayoutNodeMeta::default(),
+            window_match: None,
+            take: SlotTake::Remaining(RemainingTake::Remaining),
+        }],
+    }
+}
+
+fn authoring_layout_service_error_path(error: &AuthoringLayoutServiceError) -> Option<&Path> {
+    match error {
+        AuthoringLayoutServiceError::Config(config_error) => layout_config_error_path(config_error),
+        AuthoringLayoutServiceError::Runtime(_) => None,
+    }
+}
+
+fn layout_config_error_path(error: &LayoutConfigError) -> Option<&Path> {
+    match error {
+        LayoutConfigError::ReadConfig { path }
+        | LayoutConfigError::ParseConfig { path }
+        | LayoutConfigError::CompileAuthoredConfig { path, .. }
+        | LayoutConfigError::EvaluateAuthoredConfig { path, .. }
+        | LayoutConfigError::DecodeAuthoredConfig { path, .. } => Some(path.as_path()),
+        LayoutConfigError::UnknownLayout { .. }
+        | LayoutConfigError::ArtifactLayoutMismatch { .. } => None,
+    }
+}
+
+fn layout_failure_diagnostic(path: Option<&Path>, message: String) -> LayoutDiagnostic {
+    LayoutDiagnostic {
+        source: "layout".into(),
+        severity: "error".into(),
+        code: "layoutFallback".into(),
+        message: format!("{message}; using fallback layout"),
+        path: path.map(|path| path.display().to_string()),
+        range: LayoutDiagnosticRange { start_line: 1, start_column: 1, end_line: 1, end_column: 1 },
     }
 }
 
@@ -1153,6 +1367,7 @@ fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<hypreact_
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::path::Path;
 
     use hypreact_core::WindowId;
     use hypreact_core::focus::FocusScopePath;
@@ -1162,6 +1377,41 @@ mod tests {
     use hypreact_core::{OutputId, WorkspaceId};
 
     use super::*;
+
+    #[test]
+    fn fallback_source_layout_matches_default_workspace_shape() {
+        let layout = fallback_source_layout();
+
+        let SourceLayoutNode::Workspace { children, .. } = layout else {
+            panic!("expected workspace fallback root");
+        };
+
+        assert_eq!(children.len(), 1);
+        assert!(matches!(
+            &children[0],
+            SourceLayoutNode::Slot {
+                window_match: None,
+                take: SlotTake::Remaining(RemainingTake::Remaining),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn layout_failure_diagnostic_reports_fallback_usage() {
+        let diagnostic =
+            layout_failure_diagnostic(Some(Path::new("layouts/test/index.tsx")), "boom".into());
+
+        assert_eq!(diagnostic.source, "layout");
+        assert_eq!(diagnostic.severity, "error");
+        assert_eq!(diagnostic.code, "layoutFallback");
+        assert_eq!(diagnostic.message, "boom; using fallback layout");
+        assert_eq!(diagnostic.path.as_deref(), Some("layouts/test/index.tsx"));
+        assert_eq!(
+            diagnostic.range,
+            LayoutDiagnosticRange { start_line: 1, start_column: 1, end_line: 1, end_column: 1 }
+        );
+    }
 
     #[test]
     fn geometry_candidates_preserve_branch_memory_for_master_stack_focus() {

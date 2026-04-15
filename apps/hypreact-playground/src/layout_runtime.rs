@@ -8,6 +8,7 @@ use hypreact_config::runtime::build_source_bundle_authoring_layout_service;
 use hypreact_core::focus::{FocusTree, FocusTreeWindowGeometry};
 use hypreact_core::navigation::WindowGeometryCandidate;
 use hypreact_core::query::state_snapshot_for_model;
+use hypreact_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets, SelectedLayout};
 use hypreact_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
     PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
@@ -20,6 +21,7 @@ use hypreact_runtime_js_browser::JavaScriptBrowserRuntimeProvider;
 use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{Display, FlexDirectionValue, LayoutSnapshotNode, SceneResponse, SizeValue};
+use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 
 use crate::editor_files::{
     DynamicLayoutFileSet, EDITOR_FILES, ENTRY_RUNTIME_PATH, EditorFileKey,
@@ -28,6 +30,7 @@ use crate::editor_files::{
 use crate::session::PreviewDiagnostic;
 
 const ROOT_DIR: &str = "/playground";
+const FALLBACK_LAYOUT_STYLESHEET: &str = "workspace { display: flex; width: 100%; height: 100%; } window { flex: 1 1 0; }";
 
 #[derive(Debug, Clone)]
 pub struct EvaluatedPreview {
@@ -116,39 +119,43 @@ pub async fn evaluate_preview_from_buffers(
         let selected_layout_name = workspace.effective_layout.as_ref().map(|layout| layout.name.clone());
         let evaluation = service
             .evaluate_prepared_for_workspace(&root_dir, &sources, &config, &state_snapshot, &workspace)
-            .await
-            .map_err(|error| error.to_string())?;
+            .await;
 
-        let diagnostics = collect_diagnostics_from_buffers(buffers, dynamic_layouts);
+        let mut diagnostics = collect_diagnostics_from_buffers(buffers, dynamic_layouts);
 
         match evaluation {
-            Some(evaluation) => {
-                let workspace_windows = state_snapshot
-                    .windows
-                    .iter()
-                    .filter(|window| window.workspace_id.as_ref() == Some(&workspace.id))
-                    .filter(|window| window.output_id.as_ref() == workspace.output_id.as_ref())
-                    .filter(|window| window.mapped && !window.closing && !window.mode.is_floating() && !window.mode.is_fullscreen())
-                    .cloned()
-                    .collect::<Vec<WindowSnapshot>>();
-                let scene = build_scene(&config, &state_snapshot, &workspace, &workspace_windows, &evaluation)
-                    .map_err(|error| error.to_string())?;
-                let window_geometries = collect_window_geometries(&scene.root);
-                let focus_tree = focus_tree_from_geometries(&window_geometries);
-                let partition_tree =
-                    partition_tree_from_scene(&scene.root, ResizeBehaviorConfig::from_config(&config));
-
-                Ok(EvaluatedPreview {
+            Ok(Some(evaluation)) => {
+                let workspace_windows = workspace_windows(&state_snapshot, &workspace);
+                let scene = match build_scene(
+                    &config,
+                    &state_snapshot,
+                    &workspace,
+                    &workspace_windows,
+                    &evaluation,
+                ) {
+                    Ok(scene) => scene,
+                    Err(error) => {
+                        diagnostics.push(layout_error_diagnostic(
+                            Some(&evaluation.artifact.selected.module),
+                            error.to_string(),
+                        ));
+                        build_fallback_scene(
+                            &config,
+                            &state_snapshot,
+                            &workspace,
+                            Some(&evaluation.artifact.selected),
+                            &workspace_windows,
+                        )?
+                    }
+                };
+                Ok(preview_from_scene(
                     config,
-                    scene: Some(scene),
-                    focus_tree: Some(focus_tree),
-                    partition_tree: Some(partition_tree),
+                    scene,
                     diagnostics,
-                    selected_layout_name: Some(evaluation.artifact.selected.name.clone()),
-                    error: None,
-                })
+                    Some(evaluation.artifact.selected.name.clone()),
+                ))
             }
-            None => Ok(EvaluatedPreview {
+            Ok(None) => Ok(EvaluatedPreview {
                 config,
                 scene: None,
                 focus_tree: None,
@@ -157,6 +164,24 @@ pub async fn evaluate_preview_from_buffers(
                 selected_layout_name,
                 error: None,
             }),
+            Err(error) => {
+                diagnostics.push(layout_error_diagnostic(
+                    Some(ENTRY_RUNTIME_PATH),
+                    error.to_string(),
+                ));
+
+                let workspace_windows = workspace_windows(&state_snapshot, &workspace);
+                let selected_layout = selected_layout_for_workspace(&workspace, None);
+                let scene = build_fallback_scene(
+                    &config,
+                    &state_snapshot,
+                    &workspace,
+                    Some(&selected_layout),
+                    &workspace_windows,
+                )?;
+
+                Ok(preview_from_scene(config, scene, diagnostics, selected_layout_name))
+            }
         }
     }
     .await;
@@ -250,6 +275,144 @@ fn build_scene(
             message: error.to_string(),
         }
     })
+}
+
+fn workspace_windows(
+    state_snapshot: &hypreact_core::snapshot::StateSnapshot,
+    workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+) -> Vec<WindowSnapshot> {
+    state_snapshot
+        .windows
+        .iter()
+        .filter(|window| window.workspace_id.as_ref() == Some(&workspace.id))
+        .filter(|window| window.output_id.as_ref() == workspace.output_id.as_ref())
+        .filter(|window| {
+            window.mapped && !window.closing && !window.mode.is_floating() && !window.mode.is_fullscreen()
+        })
+        .cloned()
+        .collect()
+}
+
+fn build_fallback_scene(
+    config: &Config,
+    state_snapshot: &hypreact_core::snapshot::StateSnapshot,
+    workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+    selected_layout: Option<&SelectedLayout>,
+    workspace_windows: &[WindowSnapshot],
+) -> Result<SceneResponse, String> {
+    let artifact = PreparedLayout {
+        selected: selected_layout
+            .cloned()
+            .unwrap_or_else(|| selected_layout_for_workspace(workspace, None)),
+        runtime_payload: serde_json::Value::Null,
+        stylesheets: PreparedStylesheets {
+            global: None,
+            layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                path: format!("{}/fallback.css", artifact_style_directory(workspace)),
+                source: FALLBACK_LAYOUT_STYLESHEET.to_string(),
+            }),
+        },
+    };
+
+    let resolved = ValidatedLayoutTree::new(fallback_source_layout())
+        .map_err(|error| error.to_string())?
+        .resolve(workspace_windows)
+        .map_err(|error| error.to_string())?;
+
+    let request = config
+        .build_scene_request(
+            state_snapshot,
+            workspace,
+            workspace
+                .output_id
+                .as_ref()
+                .and_then(|output_id| state_snapshot.output_by_id(output_id))
+                .or_else(|| state_snapshot.current_output()),
+            resolved.root,
+            &artifact,
+        )
+        .map_err(|error| error.to_string())?;
+
+    SceneCache::new().compute_layout_from_request(&request).map_err(|error| error.to_string())
+}
+
+fn selected_layout_for_workspace(
+    workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+    fallback_module: Option<&str>,
+) -> SelectedLayout {
+    let name = workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| layout.name.clone())
+        .unwrap_or_else(|| "fallback".to_string());
+    let directory = workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| format!("layouts/{}", layout.name))
+        .unwrap_or_else(|| "layouts/fallback".to_string());
+
+    SelectedLayout {
+        module: fallback_module
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{directory}/index.tsx")),
+        name,
+        directory,
+    }
+}
+
+fn fallback_source_layout() -> SourceLayoutNode {
+    SourceLayoutNode::Workspace {
+        meta: LayoutNodeMeta::default(),
+        children: vec![SourceLayoutNode::Slot {
+            meta: LayoutNodeMeta::default(),
+            window_match: None,
+            take: SlotTake::Remaining(RemainingTake::Remaining),
+        }],
+    }
+}
+
+fn artifact_style_directory(workspace: &hypreact_core::snapshot::WorkspaceSnapshot) -> String {
+    workspace
+        .effective_layout
+        .as_ref()
+        .map(|layout| format!("layouts/{}", layout.name))
+        .unwrap_or_else(|| "layouts/fallback".to_string())
+}
+
+fn layout_error_diagnostic(path: Option<&str>, message: String) -> PreviewDiagnostic {
+    PreviewDiagnostic {
+        path: path.unwrap_or(ENTRY_RUNTIME_PATH).to_string(),
+        severity: "error",
+        code: "layoutFallback",
+        message: format!("{message}; using fallback layout"),
+        range: "1:1-1:1".to_string(),
+    }
+}
+
+fn preview_from_scene(
+    config: Config,
+    scene: SceneResponse,
+    diagnostics: Vec<PreviewDiagnostic>,
+    selected_layout_name: Option<String>,
+) -> EvaluatedPreview {
+    let window_geometries = collect_window_geometries(&scene.root);
+    let focus_tree = focus_tree_from_geometries(&window_geometries);
+    let partition_tree =
+        partition_tree_from_scene(&scene.root, ResizeBehaviorConfig::from_config(&config));
+    let error = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "layoutFallback")
+        .map(|diagnostic| diagnostic.message.clone());
+
+    EvaluatedPreview {
+        config,
+        scene: Some(scene),
+        focus_tree: Some(focus_tree),
+        partition_tree: Some(partition_tree),
+        diagnostics,
+        selected_layout_name,
+        error,
+    }
 }
 
 fn collect_diagnostics_from_buffers(

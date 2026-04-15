@@ -2,14 +2,21 @@
 
 #include <array>
 #include <cctype>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <spawn.h>
 #include <sstream>
 #include <string>
+#include <sys/wait.h>
+#include <thread>
+#include <vector>
 
 #include "src/plugins/PluginAPI.hpp"
+
+extern char** environ;
 
 namespace hypreact_plugin {
 
@@ -20,6 +27,30 @@ HANDLE g_pluginHandle = nullptr;
 Hyprlang::CConfigValue* g_configPathConfig = nullptr;
 std::optional<std::filesystem::path> g_resolvedConfigRoot;
 std::string g_lastDiagnosticNotificationKey;
+bool g_hasPersistentErrorBanner = false;
+std::string g_lastPersistentErrorBannerText;
+
+void spawnHyprctlCommand(std::vector<std::string> args) {
+    std::thread([args = std::move(args)]() mutable {
+        std::vector<char*> argv;
+        argv.reserve(args.size() + 2);
+        argv.push_back(const_cast<char*>("hyprctl"));
+        for (auto& arg : args) {
+            argv.push_back(arg.data());
+        }
+        argv.push_back(nullptr);
+
+        pid_t pid = 0;
+        const auto spawn_error = posix_spawnp(&pid, "hyprctl", nullptr, nullptr, argv.data(), environ);
+        if (spawn_error != 0) {
+            return;
+        }
+
+        int status = 0;
+        while (waitpid(pid, &status, 0) == -1 && errno == EINTR) {
+        }
+    }).detach();
+}
 
 void logStatusResult(const char* label, const HypreactStatusResult& result) {
     if (result.error != nullptr) {
@@ -40,6 +71,59 @@ void notifyHypreact(const std::string& text, uint64_t icon = ICON_WARNING, uint6
 }
 
 void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
+    auto setPersistentError = [](const std::string& text) {
+        if (!g_pluginHandle || g_lastPersistentErrorBannerText == text) {
+            return;
+        }
+
+        spawnHyprctlCommand({"seterror", "rgba(ff5555ff)", text});
+        g_hasPersistentErrorBanner = true;
+        g_lastPersistentErrorBannerText = text;
+    };
+
+    auto clearPersistentError = []() {
+        if (!g_pluginHandle || !g_hasPersistentErrorBanner) {
+            return;
+        }
+
+        spawnHyprctlCommand({"seterror", "disable"});
+        g_hasPersistentErrorBanner = false;
+        g_lastPersistentErrorBannerText.clear();
+    };
+
+    std::optional<std::string> persistentErrorText;
+    if (layout.error != nullptr) {
+        persistentErrorText = std::string{"hypreact: "} + layout.error;
+    } else {
+        for (size_t i = 0; i < layout.diagnostic_count; ++i) {
+            const auto& diagnostic = layout.diagnostics[i];
+            if (diagnostic.severity == nullptr || std::string_view(diagnostic.severity) != "error") {
+                continue;
+            }
+
+            const auto message = diagnostic.message == nullptr ? "" : diagnostic.message;
+            const std::string path = diagnostic.path == nullptr ? "" : diagnostic.path;
+            const auto source = diagnostic.source == nullptr ? "diagnostic" : diagnostic.source;
+            std::ostringstream text;
+            text << "hypreact " << source << ": " << message;
+            if (!path.empty()) {
+                text << " (" << path;
+                if (diagnostic.range.start_line > 0) {
+                    text << ":" << diagnostic.range.start_line;
+                }
+                text << ")";
+            }
+            persistentErrorText = text.str();
+            break;
+        }
+    }
+
+    if (persistentErrorText.has_value()) {
+        setPersistentError(*persistentErrorText);
+    } else {
+        clearPersistentError();
+    }
+
     std::string key;
     if (layout.error != nullptr) {
         key.append("error:");
@@ -85,8 +169,9 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
         const auto& diagnostic = layout.diagnostics[i];
         const auto message = diagnostic.message == nullptr ? "" : diagnostic.message;
         const std::string path = diagnostic.path == nullptr ? "" : diagnostic.path;
+        const auto source = diagnostic.source == nullptr ? "diagnostic" : diagnostic.source;
         std::ostringstream text;
-        text << "hypreact css: " << message;
+        text << "hypreact " << source << ": " << message;
         if (!path.empty()) {
             text << " (" << path;
             if (diagnostic.range.start_line > 0) {
@@ -235,10 +320,16 @@ HypreactLayoutStatusResult Runtime::layoutStatusResult() const {
 }
 
 HypreactPlacementResult Runtime::layoutPlacement() const {
+    const auto layout = hypreact_runtime_layout_status_result(handle_);
+    notifyDiagnostics(layout);
+    hypreact_runtime_free_layout_status_result(layout);
     return hypreact_runtime_layout_placement(handle_);
 }
 
 HypreactPlacementResult Runtime::layoutPlacementForWorkspace(const std::string& workspaceId) const {
+    const auto layout = hypreact_runtime_layout_status_result(handle_);
+    notifyDiagnostics(layout);
+    hypreact_runtime_free_layout_status_result(layout);
     return hypreact_runtime_layout_placement_for_workspace(handle_, workspaceId.c_str());
 }
 
@@ -305,6 +396,8 @@ void destroyRuntime() {
     g_runtime.reset();
     g_resolvedConfigRoot.reset();
     g_lastDiagnosticNotificationKey.clear();
+    g_hasPersistentErrorBanner = false;
+    g_lastPersistentErrorBannerText.clear();
 }
 
 void setPluginHandle(void* handle) {
