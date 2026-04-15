@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -14,6 +16,94 @@ use crate::session::{
 use crate::views::editor::EditorView;
 
 use super::scene::{body_style, frame_style, pane_style};
+
+#[derive(Clone, Copy, Debug)]
+struct HtopMetrics {
+    tick: u32,
+}
+
+impl HtopMetrics {
+    fn cpu_usage(self, index: usize) -> f32 {
+        let base = [69.0, 61.0, 48.0, 34.0][index];
+        let phase = self.tick as f32 * 0.23 + index as f32 * 0.82;
+        (base + phase.sin() * 8.5 + (phase * 0.41).cos() * 3.25).clamp(9.0, 96.0)
+    }
+
+    fn cpu_avg(self, index: usize) -> u32 {
+        let value =
+            [29.0, 17.0, 9.0, 5.0][index] + (self.tick as f32 * 0.37 + index as f32).cos() * 2.4;
+        value.round().clamp(1.0, 40.0) as u32
+    }
+
+    fn load_average(self) -> (f32, f32, f32) {
+        (
+            1.42 + (self.tick as f32 * 0.09).sin() * 0.19,
+            1.27 + (self.tick as f32 * 0.06 + 0.8).sin() * 0.14,
+            1.08 + (self.tick as f32 * 0.04 + 1.4).sin() * 0.11,
+        )
+    }
+
+    fn memory_gb(self) -> f32 {
+        (6.24 + (self.tick as f32 * 0.07).sin() * 0.31).clamp(5.9, 6.7)
+    }
+
+    fn swap_mb(self) -> u32 {
+        (248.0 + (self.tick as f32 * 0.11).cos() * 18.0).round().clamp(200.0, 320.0) as u32
+    }
+
+    fn battery(self) -> u32 {
+        (92.0 + (self.tick as f32 * 0.05).sin() * 2.0).round().clamp(88.0, 96.0) as u32
+    }
+
+    fn process_cpu(self, index: usize) -> f32 {
+        let base = [33.2, 17.4, 8.1, 1.0][index];
+        (base
+            + (self.tick as f32 * (0.17 + index as f32 * 0.03)).sin() * (2.6 - index as f32 * 0.35))
+            .clamp(0.1, 38.5)
+    }
+
+    fn process_mem(self, index: usize) -> f32 {
+        let base = [4.5, 3.0, 1.9, 0.0][index];
+        (base + (self.tick as f32 * (0.09 + index as f32 * 0.02)).cos() * 0.18).clamp(0.0, 5.1)
+    }
+
+    fn process_time(self, index: usize) -> String {
+        let total_seconds =
+            [72.0, 44.0, 13.0, 2.0][index] + self.tick as f32 * [0.82, 0.56, 0.34, 0.08][index];
+        let minutes = (total_seconds / 60.0).floor() as u32;
+        let seconds = (total_seconds % 60.0).floor() as u32;
+        let centis = ((total_seconds.fract()) * 100.0).round() as u32 % 100;
+        format!("{minutes:02}:{seconds:02}.{centis:02}")
+    }
+
+    fn process_order(self) -> [usize; 4] {
+        let mut order = [0usize, 1, 2, 3];
+        order.sort_by(|left, right| {
+            self.process_cpu(*right)
+                .partial_cmp(&self.process_cpu(*left))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        order
+    }
+}
+
+fn htop_meter(value: f32, width: usize) -> String {
+    let filled = ((value / 100.0) * width as f32).round().clamp(0.0, width as f32) as usize;
+    format!("[{}{} {:>4.1}%]", "|".repeat(filled), " ".repeat(width - filled), value)
+}
+
+fn htop_memory_meter(used: f32, total: f32, width: usize) -> String {
+    let ratio = (used / total * 100.0).clamp(0.0, 100.0);
+    let filled = ((ratio / 100.0) * width as f32).round().clamp(0.0, width as f32) as usize;
+    format!("[{}{} {:>4.2}G/{total:.1}G]", "|".repeat(filled), " ".repeat(width - filled), used)
+}
+
+fn htop_swap_meter(used_mb: u32, total_gb: f32, width: usize) -> String {
+    let total_mb = total_gb * 1024.0;
+    let ratio = (used_mb as f32 / total_mb * 100.0).clamp(0.0, 100.0);
+    let filled = ((ratio / 100.0) * width as f32).round().clamp(0.0, width as f32) as usize;
+    format!("[{}{} {:>3}M/{total_gb:.2}G]", "|".repeat(filled), " ".repeat(width - filled), used_mb)
+}
 
 fn window_subtitle(window: &WindowSnapshot) -> &str {
     window.app_id.as_deref().unwrap_or("preview window")
@@ -32,13 +122,17 @@ fn window_accent(window: &WindowSnapshot) -> String {
     PALETTE[hash % PALETTE.len()].to_string()
 }
 
-fn focused_window_label(app_state: AppState) -> String {
+fn focused_window_chip_label(app_state: AppState) -> String {
     let snapshot = app_state.session.get();
     snapshot
         .focused_window_id()
         .as_ref()
-        .map(|window_id| snapshot.window_name(window_id))
-        .unwrap_or_else(|| "none".to_string())
+        .and_then(|window_id| snapshot.model.windows.get(window_id))
+        .map(|window| {
+            let app_id = window.app_id.as_deref().unwrap_or("preview");
+            app_id.to_string()
+        })
+        .unwrap_or_else(|| "preview".to_string())
 }
 
 fn claimed_visible_windows(session: &PreviewSessionState) -> Vec<WindowSnapshot> {
@@ -134,9 +228,9 @@ pub fn PreviewView() -> impl IntoView {
             <div class="grid min-h-0 gap-2">
                 <div class="border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border">
                     <div
-                        class="border-terminal-border bg-terminal-topbar grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b pr-2 text-xs text-terminal-dim"
+                        class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-terminal-topbar pr-2 text-xs text-terminal-dim"
                     >
-                        <div class="flex min-w-0 items-center gap-1 overflow-x-auto">
+                        <div class="flex min-w-0 items-center gap-0 overflow-x-auto">
                             {move || {
                                 app_state
                                     .session
@@ -152,11 +246,11 @@ pub fn PreviewView() -> impl IntoView {
                                                 class=move || {
                                                     if app_state.session.get().active_workspace_name() == current {
                                                         format!(
-                                                            "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
+                                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-[#2b2b2b] text-terminal-fg"
                                                         )
                                                     } else {
                                                         format!(
-                                                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
+                                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-transparent text-terminal-faint hover:text-terminal-dim"
                                                         )
                                                     }
                                                 }
@@ -171,12 +265,17 @@ pub fn PreviewView() -> impl IntoView {
                                     })
                                     .collect_view()
                             }}
+                            <Show when=move || surface_mode.get() == PreviewSurfaceMode::Preview>
+                                <span class="ml-1 min-w-0 truncate text-[12px] text-[#6f7277]">
+                                    {move || focused_window_chip_label(app_state)}
+                                </span>
+                            </Show>
                         </div>
 
                         <div class="min-w-0 truncate px-2 text-center text-terminal-fg-strong">
                             {move || {
                                 match surface_mode.get() {
-                                    PreviewSurfaceMode::Preview => focused_window_label(app_state),
+                                    PreviewSurfaceMode::Preview => String::new(),
                                     PreviewSurfaceMode::Editor => "editor://workspace".to_string(),
                                     PreviewSurfaceMode::Diagnostics => {
                                         "diagnostics://journal".to_string()
@@ -187,7 +286,7 @@ pub fn PreviewView() -> impl IntoView {
                         </div>
 
                         <div class="flex items-center gap-2 justify-self-end">
-                            <div class="ui-select-wrap">
+                            <div class="ui-select-wrap mr-1">
                                 <select
                                     class="ui-select"
                                     name="layout"
@@ -522,7 +621,7 @@ fn DiagnosticsList(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) ->
 #[component]
 fn DiagnosticsWindow(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) -> impl IntoView {
     view! {
-        <div class="h-full w-full overflow-auto bg-[#0a0b0d] px-3 py-3 font-mono text-[0.8rem] leading-[1.45] text-[#c9d1d9]">
+        <div class="h-full w-full overflow-auto bg-[#111317] px-3 py-3 font-mono text-[0.8rem] leading-[1.45] text-[#c9d1d9]">
             <Show
                 when=move || !diagnostics.get().is_empty()
                 fallback=move || {
@@ -748,7 +847,7 @@ fn FootTerminal(focused: Signal<bool>) -> impl IntoView {
                 <span class=move || {
                     if focused.get() { "text-terminal-info" } else { "text-terminal-faint" }
                 }>
-                    "akisarou@spiders"
+                    "akisarou@hypreact"
                 </span>
                 <span class="text-terminal-dim">":$ "</span>
                 <Show when=move || focused.get()>
@@ -761,12 +860,48 @@ fn FootTerminal(focused: Signal<bool>) -> impl IntoView {
 
 #[component]
 fn HtopWindow() -> impl IntoView {
-    let cpu_rows = [
-        ("0", "[||||||||||||||||||      71.2%]", "71.2", "31"),
-        ("1", "[||||||||||||||||        64.8%]", "64.8", "16"),
-        ("2", "[|||||||||||||           51.1%]", "51.1", "08"),
-        ("3", "[||||||||||              39.6%]", "39.6", "04"),
-    ];
+    let metrics = RwSignal::new(HtopMetrics { tick: 0 });
+    let timer = Arc::new(Mutex::new(None::<i32>));
+    let timer_for_effect = Arc::clone(&timer);
+
+    Effect::new(move |_| {
+        if timer_for_effect.lock().map(|timer| timer.is_some()).unwrap_or(false) {
+            return;
+        }
+
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+
+        let tick_metrics = metrics;
+        let callback = Closure::wrap(Box::new(move || {
+            tick_metrics.update(|value| {
+                value.tick = value.tick.wrapping_add(1);
+            });
+        }) as Box<dyn FnMut()>);
+        let callback = callback.into_js_value();
+        let callback: js_sys::Function = callback.unchecked_into();
+
+        let interval_id = window
+            .set_interval_with_callback_and_timeout_and_arguments_0(callback.unchecked_ref(), 900)
+            .ok();
+
+        if let Some(interval_id) = interval_id {
+            if let Ok(mut timer) = timer_for_effect.lock() {
+                *timer = Some(interval_id);
+            }
+        }
+    });
+
+    on_cleanup(move || {
+        let interval_id = timer.lock().ok().and_then(|mut timer| timer.take());
+        if let Some(interval_id) = interval_id {
+            if let Some(window) = web_sys::window() {
+                window.clear_interval_with_handle(interval_id);
+            }
+        }
+    });
+
     let process_rows = [
         (
             "1842",
@@ -843,17 +978,26 @@ fn HtopWindow() -> impl IntoView {
         <div class="flex h-full w-full flex-col bg-[#0f0f0f] p-3 text-[12px] leading-5 text-[#d6d6d6]">
             <div class="grid gap-1">
                 <div class="flex items-center justify-between text-[#8bd450]">
-                    <span>"  0[ ||||||||||||||||||       71.2%]   Tasks: 142, 498 thr; 2 running"</span>
-                    <span>"Load average: 1.48 1.31 1.12"</span>
+                    <span>{move || {
+                        let metrics = metrics.get();
+                        format!(
+                            "  0{}   Tasks: 142, 498 thr; 2 running",
+                            htop_meter(metrics.cpu_usage(0), 18)
+                        )
+                    }}</span>
+                    <span>{move || {
+                        let (a, b, c) = metrics.get().load_average();
+                        format!("Load average: {a:.2} {b:.2} {c:.2}")
+                    }}</span>
                 </div>
                 <div class="grid gap-0.5">
-                    {cpu_rows.into_iter().map(|(index, meter, value, avg)| {
+                    {(0..4).map(|index| {
                         view! {
                             <div class="grid grid-cols-[3rem_minmax(0,1fr)_4rem_3rem] gap-2">
                                 <span class="text-[#7dd3fc]">{format!("CPU{index}")}</span>
-                                <span class="text-[#8bd450]">{meter}</span>
-                                <span class="text-right text-[#f4d35e]">{format!("{value}%")}</span>
-                                <span class="text-right text-[#c792ea]">{avg}</span>
+                                <span class="text-[#8bd450]">{move || htop_meter(metrics.get().cpu_usage(index), 18)}</span>
+                                <span class="text-right text-[#f4d35e]">{move || format!("{:.1}%", metrics.get().cpu_usage(index))}</span>
+                                <span class="text-right text-[#c792ea]">{move || format!("{:02}", metrics.get().cpu_avg(index))}</span>
                             </div>
                         }
                     }).collect_view()}
@@ -861,11 +1005,11 @@ fn HtopWindow() -> impl IntoView {
                 <div class="grid grid-cols-2 gap-4 pt-1">
                     <div class="truncate">
                         <span class="text-[#7dd3fc]">"Mem"</span>
-                        <span class="ml-2 text-[#8bd450]">"[|||||||||||||||||       6.42G/11.7G]"</span>
+                        <span class="ml-2 text-[#8bd450]">{move || htop_memory_meter(metrics.get().memory_gb(), 11.7, 17)}</span>
                     </div>
                     <div class="truncate">
                         <span class="text-[#7dd3fc]">"Swp"</span>
-                        <span class="ml-2 text-[#f4d35e]">"[||                      256M/8.00G]"</span>
+                        <span class="ml-2 text-[#f4d35e]">{move || htop_swap_meter(metrics.get().swap_mb(), 8.0, 22)}</span>
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
@@ -875,7 +1019,7 @@ fn HtopWindow() -> impl IntoView {
                     </div>
                     <div>
                         <span class="text-[#7dd3fc]">"Battery"</span>
-                        <span class="ml-2 text-[#8bd450]">"93%"</span>
+                        <span class="ml-2 text-[#8bd450]">{move || format!("{}%", metrics.get().battery())}</span>
                     </div>
                 </div>
             </div>
@@ -896,9 +1040,12 @@ fn HtopWindow() -> impl IntoView {
                     <span>"Command"</span>
                 </div>
                 <div class="grid auto-rows-min gap-px bg-[#2d2d2d]">
-                    {process_rows.into_iter().enumerate().map(|(index, row)| {
+                    {move || {
+                        let order = metrics.get().process_order();
+                        order.into_iter().enumerate().map(|(index, row_index)| {
+                        let row = process_rows[row_index];
                         let row_class = if index == 0 {
-                            "bg-[#0d2d57] text-[#ffffff]"
+                            "bg-[#2b2b2b] text-[#f1f1f1]"
                         } else {
                             "bg-[#0f0f0f] text-[#d6d6d6]"
                         };
@@ -912,21 +1059,21 @@ fn HtopWindow() -> impl IntoView {
                                 <span>{row.5}</span>
                                 <span>{row.6}</span>
                                 <span>{row.7}</span>
-                                <span>{row.8}</span>
-                                <span>{row.9}</span>
-                                <span>{row.10}</span>
+                                <span>{move || format!("{:.1}", metrics.get().process_cpu(row_index))}</span>
+                                <span>{move || format!("{:.1}", metrics.get().process_mem(row_index))}</span>
+                                <span>{move || metrics.get().process_time(row_index)}</span>
                                 <span class="truncate">{row.11}</span>
                             </div>
                         }
-                    }).collect_view()}
+                    }).collect_view()}}
                 </div>
             </div>
 
-            <div class="mt-2 grid grid-cols-5 gap-px bg-[#2d2d2d] text-[11px]">
+            <div class="mt-2 grid grid-cols-5 gap-1 text-[11px]">
                 {footer_keys.into_iter().map(|(key, label)| {
                     view! {
-                        <div class="bg-[#1a1a1a] px-1.5 py-0.5 text-[#d6d6d6]">
-                            <span class="bg-[#3b82f6] px-1 text-black">{key}</span>
+                        <div class="px-1.5 py-0.5 text-[#d6d6d6]">
+                            <span class="px-1 text-[#f4d35e]">{key}</span>
                             <span class="ml-1">{label}</span>
                         </div>
                     }

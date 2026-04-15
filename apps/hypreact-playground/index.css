@@ -61,7 +61,7 @@
 
 @layer components {
   .ui-select {
-    @apply text-terminal-fg-strong min-w-28 border border-terminal-border bg-terminal-bg-panel pl-1.5 pr-4 text-[11px];
+    @apply text-terminal-fg min-w-28 border border-terminal-border bg-terminal-bg-subtle pl-1.5 pr-4 text-[11px];
     appearance: none;
     letter-spacing: 0.01em;
     height: 18px;
@@ -74,7 +74,9 @@
 
   .ui-select:focus,
   .ui-select:focus-visible {
-    border-color: transparent;
+    border-color: #3c3c3c;
+    background: #242424;
+    color: #d0d0d0;
     box-shadow: none;
   }
 
@@ -95,7 +97,13 @@
 
   .ui-select option {
     background: #1f1f1f;
-    color: #ffffff;
+    color: #d0d0d0;
+  }
+
+  .ui-select option:checked,
+  .ui-select option:hover {
+    background: #2b2b2b;
+    color: #f1f1f1;
   }
 
   @supports (appearance: base-select) {

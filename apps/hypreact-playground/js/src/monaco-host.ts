@@ -455,7 +455,10 @@ export function updateMonacoEditor(
   handle.activePath = activePath || null;
   syncModels(handle, models);
   setActiveModel(handle, activePath || null);
-  handle.editor.updateOptions({ fontSize, lineHeight: Math.round(fontSize * 1.45) });
+  handle.editor.updateOptions({
+    fontSize,
+    lineHeight: Math.round(fontSize * 1.45),
+  });
 }
 
 export function revealMonacoPosition(

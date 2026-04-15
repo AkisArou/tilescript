@@ -52,7 +52,7 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
             }
         });
     let border_color = if focused {
-        "rgba(125, 211, 199, 1.0)".to_string()
+        "linear-gradient(180deg, rgba(51, 204, 255, 0.93), rgba(0, 255, 153, 0.93))".to_string()
     } else {
         layout_style
             .and_then(|style| style.border_color)
@@ -62,7 +62,7 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
                     .and_then(|colors| colors.top)
             })
             .map(css_color)
-            .unwrap_or_else(|| "rgba(47, 54, 71, 1.0)".to_string())
+            .unwrap_or_else(|| "rgba(89, 89, 89, 0.67)".to_string())
     };
     let border_width = layout_style
         .and_then(|style| style.border)
@@ -88,6 +88,12 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
         || border_width == 0
     {
         "border: none;".to_string()
+    } else if focused {
+        format!(
+            "border: {}px solid transparent; border-image: {} 1;",
+            border_width.max(1),
+            border_color
+        )
     } else {
         format!("border: {}px solid {};", border_width.max(1), border_color)
     };

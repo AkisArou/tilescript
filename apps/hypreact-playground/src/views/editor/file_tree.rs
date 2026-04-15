@@ -36,7 +36,7 @@ fn branch_guide(depth: usize, elbow: bool) -> String {
 }
 
 fn tree_row_style(depth: usize, elbow: bool, is_root: bool) -> String {
-    format!("{} {}", branch_indent(depth, is_root), branch_guide(depth, elbow))
+    format!("{}; {}", branch_indent(depth, is_root), branch_guide(depth, elbow))
 }
 
 fn is_directory_open(
@@ -76,7 +76,7 @@ pub fn FileTreeDirectoryView(
                     view! {
                         <div class="group/layout-subtree flex items-center gap-1">
                             <button
-                                class="text-terminal-dim flex flex-1 items-center gap-1 py-0 text-left text-[12px] leading-4 hover:text-terminal-fg"
+                                class="text-terminal-dim flex flex-1 items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] hover:text-terminal-fg"
                                 style=tree_row_style(depth, true, is_root)
                                 on:click=move |_| {
                                     app_state.toggle_directory(directory_path.clone(), default_open)
@@ -98,7 +98,7 @@ pub fn FileTreeDirectoryView(
                                         }
                                     }}
                                 </span>
-                                <span class="text-terminal-info shrink-0 text-[11px]">""</span>
+                                <span class="text-terminal-info shrink-0 text-[12px]">""</span>
                                 <span class="min-w-0 flex-1 truncate text-terminal-fg">{directory_name_text}</span>
                             </button>
 
@@ -116,7 +116,7 @@ pub fn FileTreeDirectoryView(
                                             class="ml-auto"
                                         >
                                             <button
-                                                class="py-0 px-1 text-terminal-faint text-[9px] uppercase tracking-[0.16em] hover:text-terminal-fg"
+                                class="py-0 px-1 text-terminal-faint text-[9px] uppercase tracking-[0.16em] hover:text-terminal-fg"
                                                 aria-label=download_title.clone()
                                                 on:click=move |event| {
                                                     event.stop_propagation();
@@ -170,9 +170,9 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                     <button
                         class=move || {
                             if app_state.active_file_id.get() == Some(file_id) {
-                                "flex w-full items-center gap-1 py-0 text-left text-[12px] leading-4 bg-terminal-bg-hover text-terminal-fg-strong"
+                                "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] bg-terminal-bg-hover text-terminal-fg-strong"
                             } else {
-                                "flex w-full items-center gap-1 py-0 text-left text-[12px] leading-4 text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
+                                "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
                             }
                         }
                         style=tree_row_style(depth, true, false)

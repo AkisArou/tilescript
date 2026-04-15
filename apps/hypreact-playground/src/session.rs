@@ -11,7 +11,7 @@ use hypreact_core::query::state_snapshot_for_model;
 use hypreact_core::resize::{
     ResizeDirection, apply_resize_step, gc_resize_state, select_resize_candidate,
 };
-use hypreact_core::snapshot::{StateSnapshot, WindowSnapshot};
+use hypreact_core::snapshot::WindowSnapshot;
 use hypreact_core::types::LayoutRef;
 use hypreact_core::window_id;
 use hypreact_core::wm::{DrawableSpace, WindowGeometry, WmModel};
@@ -120,46 +120,6 @@ impl PreviewSessionState {
             .collect()
     }
 
-    pub fn state_snapshot(&self) -> StateSnapshot {
-        state_snapshot_for_model(&self.model)
-    }
-
-    pub fn session_summary_rows(&self) -> Vec<(String, String)> {
-        let snapshot = self.state_snapshot();
-        let output = snapshot.current_output().cloned();
-        let workspace = snapshot.current_workspace().cloned();
-
-        vec![
-            (
-                "workspace id".to_string(),
-                workspace
-                    .as_ref()
-                    .map(|workspace| workspace.id.as_str().to_string())
-                    .unwrap_or_else(|| "none".to_string()),
-            ),
-            (
-                "output".to_string(),
-                output
-                    .as_ref()
-                    .map(|output| output.name.clone())
-                    .unwrap_or_else(|| "none".to_string()),
-            ),
-            (
-                "visible ids".to_string(),
-                if snapshot.visible_window_ids.is_empty() {
-                    "none".to_string()
-                } else {
-                    snapshot
-                        .visible_window_ids
-                        .iter()
-                        .map(|id| id.as_str().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                },
-            ),
-        ]
-    }
-
     pub fn window_name(&self, window_id: &WindowId) -> String {
         self.model
             .windows
@@ -251,8 +211,22 @@ fn build_demo_model() -> WmModel {
         "htop",
     );
     insert_demo_window(&mut model, "win-editor", &workspace_one, &output_id, "Editor", "nvim");
-    insert_demo_window(&mut model, "win-chat", &workspace_two, &output_id, "Chat", "discord");
-    insert_demo_window(&mut model, "win-notes", &workspace_two, &output_id, "Notes", "obsidian");
+    insert_demo_window(
+        &mut model,
+        "win-secondary-foot",
+        &workspace_two,
+        &output_id,
+        "Terminal",
+        "foot",
+    );
+    insert_demo_window(
+        &mut model,
+        "win-secondary-htop",
+        &workspace_two,
+        &output_id,
+        "Process Monitor",
+        "htop",
+    );
 
     model.set_window_focused(Some(window_id("win-editor")));
     model

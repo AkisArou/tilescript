@@ -243,7 +243,7 @@ pub fn MonacoEditorPane() -> impl IntoView {
     let _monaco_handle = Rc::new(RefCell::new(None::<MonacoEditorHandle>));
     let pending_navigation = RwSignal::new(None::<PendingNavigation>);
     let mounted_file = RwSignal::new(None::<EditorFileId>);
-    let editor_font_size = 13u32;
+    let editor_font_size = 14u32;
 
     {
         let editor_mount = editor_mount.clone();
@@ -389,7 +389,10 @@ pub fn MonacoEditorPane() -> impl IntoView {
                         }
                     }
                 >
-                    <div node_ref=editor_mount class="h-full w-full min-h-0" />
+                    <div
+                        node_ref=editor_mount
+                        class="h-full w-full min-h-0 text-[14px] leading-[20px]"
+                    />
                     <Show when=move || monaco_loading.get()>
                         <div class="grid absolute inset-0 place-items-center uppercase pointer-events-none bg-[linear-gradient(180deg,rgba(4,8,12,0.82),rgba(9,17,26,0.78))] text-[0.72rem] tracking-[0.18em] text-slate-400">
                             "loading monaco..."
