@@ -3,26 +3,25 @@ use leptos::prelude::*;
 
 use crate::app_state::AppState;
 use crate::components::context_menu::{ContextMenu, ContextMenuItem, ContextMenuPosition};
-use crate::editor_files::{EditorFileId, WORKSPACE_ROOT, file_by_id};
+use crate::editor_files::{EditorFileKey, WORKSPACE_ROOT, file_by_key};
 use crate::workspace::workspace_file_tree;
 
-use super::buffers::{active_file_is_dirty, active_file_path, is_file_dirty};
+use super::buffers::active_file_path;
 use super::clipboard::{CopyFeedback, copy_buffer_to_clipboard};
 use super::file_tree::FileTreeDirectoryView;
 use super::monaco::MonacoEditorPane;
 
 const ACTION_BUTTON_CLASS: &str = "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct TabContextMenuState {
-    file_id: EditorFileId,
+    file_id: EditorFileKey,
     position: ContextMenuPosition,
 }
 
 #[component]
 pub fn EditorView() -> impl IntoView {
     let app_state = expect_context::<AppState>();
-    let file_tree = workspace_file_tree();
     let copy_feedback = RwSignal::new(CopyFeedback::Idle);
     let tab_context_menu = RwSignal::new(None::<TabContextMenuState>);
 
@@ -42,7 +41,13 @@ pub fn EditorView() -> impl IntoView {
                         {WORKSPACE_ROOT}
                     </div>
                     <div class="py-1">
-                        <FileTreeDirectoryView directory=file_tree is_root=true depth=0/>
+                        <FileTreeDirectoryView
+                            directory=Signal::derive(move || {
+                                workspace_file_tree(&app_state.dynamic_layouts.get())
+                            })
+                            is_root=true
+                            depth=0
+                        />
                     </div>
                 </aside>
 
@@ -66,14 +71,22 @@ pub fn EditorView() -> impl IntoView {
                                             .get()
                                             .into_iter()
                                             .map(|file_id| {
-                                                let file = file_by_id(file_id);
-                                                let badge = super::buffers::editor_file_badge(file.language).to_string();
-                                                let label = file.label.to_string();
+                                                let file =
+                                                    file_by_key(&file_id, &app_state.dynamic_layouts.get());
+                                                let tab_file_id_active = file_id.clone();
+                                                let tab_file_id_context = file_id.clone();
+                                                let tab_file_id_select = file_id.clone();
+                                                let tab_file_id_close = file_id.clone();
+                                                let badge =
+                                                    super::buffers::editor_file_badge(&file.language).to_string();
+                                                let label = file.label.clone();
 
                                                 view! {
                                                     <div
                                                         class=move || {
-                                                            if app_state.active_file_id.get() == Some(file_id) {
+                                                            if app_state.active_file_id.get()
+                                                                == Some(tab_file_id_active.clone())
+                                                            {
                                                                 "flex min-w-0 items-center border border-b-0 border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-[12px]"
                                                             } else {
                                                                 "flex min-w-0 items-center border border-b-0 border-terminal-border bg-terminal-bg-panel text-terminal-dim text-[12px] hover:text-terminal-fg"
@@ -81,9 +94,9 @@ pub fn EditorView() -> impl IntoView {
                                                         }
                                                         on:contextmenu=move |event: MouseEvent| {
                                                             event.prevent_default();
-                                                            app_state.select_editor_file(file_id);
+                                                            app_state.select_editor_file(tab_file_id_context.clone());
                                                             tab_context_menu.set(Some(TabContextMenuState {
-                                                                file_id,
+                                                                file_id: tab_file_id_context.clone(),
                                                                 position: ContextMenuPosition {
                                                                     x: event.client_x(),
                                                                     y: event.client_y(),
@@ -95,13 +108,17 @@ pub fn EditorView() -> impl IntoView {
                                                             class="flex min-w-0 items-center gap-1 px-2 py-0.5"
                                                             on:click=move |_| {
                                                                 tab_context_menu.set(None);
-                                                                app_state.select_editor_file(file_id);
+                                                                app_state.select_editor_file(tab_file_id_select.clone());
                                                             }
                                                         >
                                                             <span
                                                                 class=move || {
                                                                     if file.language == "css" {
                                                                         "text-[#7b4fc9]"
+                                                                    } else if file.language == "typescript"
+                                                                        || file.language == "typescriptreact"
+                                                                    {
+                                                                        "text-[#519aba]"
                                                                     } else {
                                                                         "text-terminal-info"
                                                                     }
@@ -111,9 +128,6 @@ pub fn EditorView() -> impl IntoView {
                                                             </span>
                                                             <span class="truncate">{label.clone()}</span>
 
-                                                            <Show when=move || is_file_dirty(&app_state.editor_buffers.get(), file_id)>
-                                                                <span class="text-terminal-warn">"+"</span>
-                                                            </Show>
                                                         </button>
 
                                                         <button
@@ -121,7 +135,7 @@ pub fn EditorView() -> impl IntoView {
                                                             on:click=move |event| {
                                                                 event.stop_propagation();
                                                                 tab_context_menu.set(None);
-                                                                app_state.close_editor_file(file_id);
+                                                                app_state.close_editor_file(tab_file_id_close.clone());
                                                             }
                                                         >
                                                             "x"
@@ -199,11 +213,6 @@ pub fn EditorView() -> impl IntoView {
 
                     <div class="border-terminal-border bg-terminal-bg-panel text-terminal-faint flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
                         <span class="min-w-0 flex-1 truncate">{move || active_file_path(app_state)}</span>
-                        <div class="flex shrink-0 items-center gap-2">
-                            <Show when=move || active_file_is_dirty(app_state)>
-                                <span class="text-terminal-warn">"modified"</span>
-                            </Show>
-                        </div>
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-hidden">

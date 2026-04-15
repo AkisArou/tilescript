@@ -9,8 +9,8 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::app_state::AppState;
 use crate::editor_files::{
-    EDITOR_FILES, EditorFileId, WORKSPACE_FS_ROOT, file_id_by_model_path, initial_content,
-    model_path,
+    EditorFileKey, WORKSPACE_FS_ROOT, file_key_by_model_path, file_by_key, iter_dynamic_files,
+    model_path, static_files,
 };
 
 use super::buffers::active_buffer_text;
@@ -30,17 +30,25 @@ struct MonacoExtraLib {
     content: &'static str,
 }
 
-fn monaco_models(buffers: &BTreeMap<EditorFileId, String>) -> Vec<MonacoModel> {
-    EDITOR_FILES
+fn monaco_models(
+    buffers: &BTreeMap<EditorFileKey, String>,
+    dynamic_layouts: &[crate::editor_files::DynamicLayoutFileSet],
+) -> Vec<MonacoModel> {
+    static_files()
         .iter()
         .map(|file| MonacoModel {
-            path: model_path(file.id).to_string(),
+            path: model_path(&EditorFileKey::Static(file.id), dynamic_layouts).to_string(),
             language: monaco_language(file.language).to_string(),
             value: buffers
-                .get(&file.id)
+                .get(&EditorFileKey::Static(file.id))
                 .cloned()
-                .unwrap_or_else(|| initial_content(file.id).to_string()),
+                .unwrap_or_else(|| file_by_key(&EditorFileKey::Static(file.id), dynamic_layouts).initial_content),
         })
+        .chain(iter_dynamic_files(dynamic_layouts).map(|file| MonacoModel {
+            path: model_path(&file.key, dynamic_layouts).to_string(),
+            language: monaco_language(&file.language).to_string(),
+            value: buffers.get(&file.key).cloned().unwrap_or_else(|| file.initial_content.clone()),
+        }))
         .collect()
 }
 
@@ -242,7 +250,7 @@ pub fn MonacoEditorPane() -> impl IntoView {
     let monaco_loading = RwSignal::new(false);
     let _monaco_handle = Rc::new(RefCell::new(None::<MonacoEditorHandle>));
     let pending_navigation = RwSignal::new(None::<PendingNavigation>);
-    let mounted_file = RwSignal::new(None::<EditorFileId>);
+    let mounted_file = RwSignal::new(None::<EditorFileKey>);
     let editor_font_size = 14u32;
 
     {
@@ -259,15 +267,17 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
             if mounted_file.get() != active_file_id {
                 monaco_handle.borrow_mut().take();
-                mounted_file.set(active_file_id);
+                mounted_file.set(active_file_id.clone());
             }
 
             if monaco_handle.borrow().is_some() || monaco_loading.get() {
                 return;
             }
 
-            let models = monaco_models(&app_state_for_mount.editor_buffers.get_untracked());
-            let active_path = active_file_id.map(|file_id| model_path(file_id).to_string());
+            let dynamic_layouts = app_state_for_mount.dynamic_layouts.get_untracked();
+            let models = monaco_models(&app_state_for_mount.editor_buffers.get_untracked(), &dynamic_layouts);
+            let active_path =
+                active_file_id.as_ref().map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
             let monaco_handle = Rc::clone(&monaco_handle);
             let callback_state = app_state_for_mount;
             let pending_navigation = pending_navigation;
@@ -281,16 +291,18 @@ pub fn MonacoEditorPane() -> impl IntoView {
                     active_path.as_deref(),
                     &models,
                     move |path, value| {
-                        let Some(file_id) = file_id_by_model_path(&path) else {
+                        let dynamic_layouts = callback_state.dynamic_layouts.get_untracked();
+                        let Some(file_id) = file_key_by_model_path(&path, &dynamic_layouts) else {
                             return;
                         };
 
+                        let file_meta = file_by_key(&file_id, &dynamic_layouts);
                         let current_value = callback_state
                             .editor_buffers
                             .get_untracked()
                             .get(&file_id)
                             .cloned()
-                            .unwrap_or_else(|| initial_content(file_id).to_string());
+                            .unwrap_or(file_meta.initial_content);
 
                         if current_value != value {
                             callback_state.update_buffer(file_id, value);
@@ -302,7 +314,8 @@ pub fn MonacoEditorPane() -> impl IntoView {
                             payload.as_ref().map(|payload| payload.path.clone()).unwrap_or(path);
                         let selection = payload.and_then(|payload| payload.selection_or_position);
 
-                        if let Some(file_id) = file_id_by_model_path(&target_path) {
+                        let dynamic_layouts = callback_state.dynamic_layouts.get_untracked();
+                        if let Some(file_id) = file_key_by_model_path(&target_path, &dynamic_layouts) {
                             if let Some(selection) = selection {
                                 pending_navigation.set(Some(PendingNavigation {
                                     path: target_path.clone(),
@@ -331,8 +344,10 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
         let monaco_handle = Rc::clone(&_monaco_handle);
         Effect::new(move |_| {
-            let active_path = app_state.active_file_id.get().map(|file_id| model_path(file_id).to_string());
-            let models = monaco_models(&app_state.editor_buffers.get());
+            let dynamic_layouts = app_state.dynamic_layouts.get();
+            let active_path =
+                app_state.active_file_id.get().as_ref().map(|file_id| model_path(file_id, &dynamic_layouts).to_string());
+            let models = monaco_models(&app_state.editor_buffers.get(), &dynamic_layouts);
 
             if let Some(handle) = monaco_handle.borrow().as_ref() {
                 if let Err(error) = handle.sync(active_path.as_deref(), &models, editor_font_size) {
@@ -349,7 +364,8 @@ pub fn MonacoEditorPane() -> impl IntoView {
             let Some(active_file_id) = app_state.active_file_id.get() else {
                 return;
             };
-            if model_path(active_file_id) != navigation.path {
+            let dynamic_layouts = app_state.dynamic_layouts.get();
+            if model_path(&active_file_id, &dynamic_layouts) != navigation.path {
                 return;
             }
 

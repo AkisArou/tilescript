@@ -21,7 +21,10 @@ use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{Display, FlexDirectionValue, LayoutSnapshotNode, SceneResponse, SizeValue};
 
-use crate::editor_files::{EDITOR_FILES, ENTRY_RUNTIME_PATH, EditorFileId, runtime_path};
+use crate::editor_files::{
+    DynamicLayoutFileSet, EDITOR_FILES, ENTRY_RUNTIME_PATH, EditorFileKey,
+    initial_content_for_key, iter_dynamic_files, runtime_path,
+};
 use crate::session::PreviewDiagnostic;
 
 const ROOT_DIR: &str = "/playground";
@@ -53,11 +56,12 @@ impl ResizeBehaviorConfig {
 }
 
 pub async fn load_config_from_buffers(
-    buffers: &BTreeMap<EditorFileId, String>,
+    buffers: &BTreeMap<EditorFileKey, String>,
+    dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Result<Config, String> {
     let root_dir = PathBuf::from(ROOT_DIR);
     let entry_path = PathBuf::from(ENTRY_RUNTIME_PATH);
-    let sources = source_bundle_sources(buffers);
+    let sources = source_bundle_sources(buffers, dynamic_layouts);
     let maybe_service = LAYOUT_SERVICE.with_borrow_mut(|slot| slot.take());
     let service = match maybe_service {
         Some(service) => service,
@@ -77,12 +81,14 @@ pub async fn load_config_from_buffers(
 }
 
 pub async fn evaluate_preview_from_buffers(
-    buffers: &BTreeMap<EditorFileId, String>,
+    buffers: &BTreeMap<EditorFileKey, String>,
+    dynamic_layouts: &[DynamicLayoutFileSet],
     model: &WmModel,
+    manual_layouts: &BTreeMap<hypreact_core::WorkspaceId, hypreact_core::types::LayoutRef>,
 ) -> Result<EvaluatedPreview, String> {
     let root_dir = PathBuf::from(ROOT_DIR);
     let entry_path = PathBuf::from(ENTRY_RUNTIME_PATH);
-    let sources = source_bundle_sources(buffers);
+    let sources = source_bundle_sources(buffers, dynamic_layouts);
     let maybe_service = LAYOUT_SERVICE.with_borrow_mut(|slot| slot.take());
     let mut service = match maybe_service {
         Some(service) => service,
@@ -97,6 +103,9 @@ pub async fn evaluate_preview_from_buffers(
 
         let mut preview_model = model.clone();
         apply_layout_selection(&mut preview_model, &config);
+        for (workspace_id, layout) in manual_layouts {
+            preview_model.set_workspace_effective_layout(workspace_id.clone(), Some(layout.clone()));
+        }
 
         let state_snapshot = state_snapshot_for_model(&preview_model);
         let workspace = state_snapshot
@@ -110,7 +119,7 @@ pub async fn evaluate_preview_from_buffers(
             .await
             .map_err(|error| error.to_string())?;
 
-        let diagnostics = collect_diagnostics_from_buffers(buffers);
+        let diagnostics = collect_diagnostics_from_buffers(buffers, dynamic_layouts);
 
         match evaluation {
             Some(evaluation) => {
@@ -160,15 +169,25 @@ pub async fn evaluate_preview_from_buffers(
 }
 
 pub fn source_bundle_sources(
-    buffers: &BTreeMap<EditorFileId, String>,
+    buffers: &BTreeMap<EditorFileKey, String>,
+    dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> BTreeMap<PathBuf, String> {
     let mut sources = BTreeMap::new();
     for file in EDITOR_FILES {
+        let file_key = EditorFileKey::Static(file.id);
         let source = buffers
-            .get(&file.id)
+            .get(&file_key)
             .cloned()
-            .unwrap_or_else(|| crate::editor_files::initial_content(file.id).to_string());
-        sources.insert(PathBuf::from(runtime_path(file.id)), source);
+            .unwrap_or_else(|| initial_content_for_key(&file_key, dynamic_layouts));
+        sources.insert(PathBuf::from(runtime_path(&file_key, dynamic_layouts)), source);
+    }
+
+    for file in iter_dynamic_files(dynamic_layouts) {
+        let source = buffers
+            .get(&file.key)
+            .cloned()
+            .unwrap_or_else(|| file.initial_content.clone());
+        sources.insert(PathBuf::from(runtime_path(&file.key, dynamic_layouts)), source);
     }
     sources
 }
@@ -234,16 +253,18 @@ fn build_scene(
 }
 
 fn collect_diagnostics_from_buffers(
-    buffers: &BTreeMap<EditorFileId, String>,
+    buffers: &BTreeMap<EditorFileKey, String>,
+    dynamic_layouts: &[DynamicLayoutFileSet],
 ) -> Vec<PreviewDiagnostic> {
     EDITOR_FILES
         .iter()
         .filter(|file| file.language == "css")
         .flat_map(|file| {
+            let file_key = EditorFileKey::Static(file.id);
             let source = buffers
-                .get(&file.id)
+                .get(&file_key)
                 .cloned()
-                .unwrap_or_else(|| crate::editor_files::initial_content(file.id).to_string());
+                .unwrap_or_else(|| initial_content_for_key(&file_key, dynamic_layouts));
             analyze_stylesheet(&source)
                 .diagnostics
                 .into_iter()
@@ -274,6 +295,45 @@ fn collect_diagnostics_from_buffers(
                     ),
                 })
         })
+        .chain(
+            iter_dynamic_files(dynamic_layouts)
+                .filter(|file| file.language == "css")
+                .flat_map(|file| {
+                    let source = buffers
+                        .get(&file.key)
+                        .cloned()
+                        .unwrap_or_else(|| file.initial_content.clone());
+                    analyze_stylesheet(&source)
+                        .diagnostics
+                        .into_iter()
+                        .map(move |diagnostic| PreviewDiagnostic {
+                            path: file.path.clone(),
+                            severity: match diagnostic.severity {
+                                CssDiagnosticSeverity::Error => "error",
+                                CssDiagnosticSeverity::Warning => "warning",
+                                CssDiagnosticSeverity::Information => "information",
+                            },
+                            code: match diagnostic.code {
+                                CssDiagnosticCode::UnsupportedAtRule => "unsupportedAtRule",
+                                CssDiagnosticCode::UnsupportedSelector => "unsupportedSelector",
+                                CssDiagnosticCode::UnsupportedProperty => "unsupportedProperty",
+                                CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
+                                CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
+                                CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
+                                CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
+                                CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
+                            },
+                            message: diagnostic.message,
+                            range: format!(
+                                "{}:{}-{}:{}",
+                                diagnostic.range.start_line,
+                                diagnostic.range.start_column,
+                                diagnostic.range.end_line,
+                                diagnostic.range.end_column,
+                            ),
+                        })
+                }),
+        )
         .collect()
 }
 

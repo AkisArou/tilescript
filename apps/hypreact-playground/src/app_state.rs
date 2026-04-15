@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::editor_files::{
-    DEFAULT_OPEN_FILE_ID, EditorFileId, initial_editor_buffers, initial_open_editor_files,
+    DynamicLayoutFileSet, EditorFileKey, initial_editor_buffers, initial_open_editor_files,
 };
 use crate::layout_runtime::EvaluatedPreview;
 use crate::session::PreviewSessionState;
@@ -14,20 +14,22 @@ const STORAGE_KEY: &str = "hypreact.playground.ui-state.v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedAppState {
-    editor_buffers: BTreeMap<EditorFileId, String>,
-    active_file_id: Option<EditorFileId>,
-    open_file_ids: Vec<EditorFileId>,
+    editor_buffers: BTreeMap<EditorFileKey, String>,
+    active_file_id: Option<EditorFileKey>,
+    open_file_ids: Vec<EditorFileKey>,
     directory_open_state: BTreeMap<String, bool>,
     selected_workspace: Option<String>,
+    dynamic_layouts: Vec<DynamicLayoutFileSet>,
 }
 
 #[derive(Clone, Copy)]
 pub struct AppState {
     pub session: RwSignal<PreviewSessionState>,
-    pub editor_buffers: RwSignal<BTreeMap<EditorFileId, String>>,
-    pub active_file_id: RwSignal<Option<EditorFileId>>,
-    pub open_file_ids: RwSignal<Vec<EditorFileId>>,
+    pub editor_buffers: RwSignal<BTreeMap<EditorFileKey, String>>,
+    pub active_file_id: RwSignal<Option<EditorFileKey>>,
+    pub open_file_ids: RwSignal<Vec<EditorFileKey>>,
     pub directory_open_state: RwSignal<BTreeMap<String, bool>>,
+    pub dynamic_layouts: RwSignal<Vec<DynamicLayoutFileSet>>,
     pub latest_config_request_key: RwSignal<String>,
     pub preview_eval_request: RwSignal<u64>,
     pub loaded_config: RwSignal<Option<hypreact_config::model::Config>>,
@@ -40,10 +42,12 @@ impl AppState {
             .as_ref()
             .map(|state| state.editor_buffers.clone())
             .unwrap_or_else(initial_editor_buffers);
+        let dynamic_layouts =
+            persisted.as_ref().map(|state| state.dynamic_layouts.clone()).unwrap_or_default();
         let active_file_id = persisted
             .as_ref()
-            .and_then(|state| state.active_file_id)
-            .or(Some(DEFAULT_OPEN_FILE_ID));
+            .and_then(|state| state.active_file_id.clone())
+            .or_else(|| initial_open_editor_files().first().cloned());
         let open_file_ids = persisted
             .as_ref()
             .map(|state| state.open_file_ids.clone())
@@ -66,13 +70,14 @@ impl AppState {
             active_file_id: RwSignal::new(active_file_id),
             open_file_ids: RwSignal::new(open_file_ids),
             directory_open_state: RwSignal::new(directory_open_state),
+            dynamic_layouts: RwSignal::new(dynamic_layouts),
             latest_config_request_key: RwSignal::new(String::new()),
             preview_eval_request: RwSignal::new(1),
             loaded_config: RwSignal::new(None),
         }
     }
 
-    pub fn update_buffer(&self, file_id: EditorFileId, next_value: String) {
+    pub fn update_buffer(&self, file_id: EditorFileKey, next_value: String) {
         self.editor_buffers.update(|buffers| {
             buffers.insert(file_id, next_value);
         });
@@ -106,17 +111,17 @@ impl AppState {
         self.preview_eval_request.update(|value| *value += 1);
     }
 
-    pub fn select_editor_file(&self, file_id: EditorFileId) {
+    pub fn select_editor_file(&self, file_id: EditorFileKey) {
         self.open_file_ids.update(|open_files| {
             if !open_files.contains(&file_id) {
-                open_files.push(file_id);
+                open_files.push(file_id.clone());
             }
         });
         self.active_file_id.set(Some(file_id));
         self.persist_ui_state();
     }
 
-    pub fn close_editor_file(&self, file_id: EditorFileId) {
+    pub fn close_editor_file(&self, file_id: EditorFileKey) {
         self.open_file_ids.update(|open_files| {
             let Some(index) = open_files.iter().position(|open_file_id| *open_file_id == file_id)
             else {
@@ -125,15 +130,15 @@ impl AppState {
 
             open_files.remove(index);
             if self.active_file_id.get_untracked() == Some(file_id) {
-                let next_file_id = open_files.get(index.saturating_sub(1)).copied();
+                let next_file_id = open_files.get(index.saturating_sub(1)).cloned();
                 self.active_file_id.set(next_file_id);
             }
         });
         self.persist_ui_state();
     }
 
-    pub fn close_other_editor_files(&self, file_id: EditorFileId) {
-        self.open_file_ids.set(vec![file_id]);
+    pub fn close_other_editor_files(&self, file_id: EditorFileKey) {
+        self.open_file_ids.set(vec![file_id.clone()]);
         self.active_file_id.set(Some(file_id));
         self.persist_ui_state();
     }
@@ -152,6 +157,30 @@ impl AppState {
         self.persist_ui_state();
     }
 
+    pub fn create_layout(&self, layout: DynamicLayoutFileSet) {
+        self.dynamic_layouts.update(|layouts| {
+            layouts.retain(|candidate| candidate.name != layout.name);
+            layouts.push(layout.clone());
+            layouts.sort_by(|left, right| left.name.cmp(&right.name));
+        });
+        self.editor_buffers.update(|buffers| {
+            for file in &layout.files {
+                buffers.insert(file.key.clone(), file.initial_content.clone());
+            }
+        });
+        self.directory_open_state.update(|state| {
+            state.insert(format!("{}/layouts", crate::editor_files::WORKSPACE_ROOT), true);
+            state.insert(layout.directory_path.clone(), true);
+        });
+
+        if let Some(first_file) = layout.files.first() {
+            self.select_editor_file(first_file.key.clone());
+        } else {
+            self.persist_ui_state();
+            self.request_preview_reevaluation();
+        }
+    }
+
     pub fn persist_ui_state(&self) {
         let state = PersistedAppState {
             editor_buffers: self.editor_buffers.get_untracked(),
@@ -159,6 +188,7 @@ impl AppState {
             open_file_ids: self.open_file_ids.get_untracked(),
             directory_open_state: self.directory_open_state.get_untracked(),
             selected_workspace: Some(self.session.get_untracked().active_workspace_name()),
+            dynamic_layouts: self.dynamic_layouts.get_untracked(),
         };
         persist_state(&state);
     }

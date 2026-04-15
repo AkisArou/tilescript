@@ -3,11 +3,10 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::app_state::AppState;
 use crate::components::tooltip::Tooltip;
-use crate::editor_files::file_by_id;
+use crate::editor_files::{file_by_key, make_dynamic_layout};
 use crate::editor_host::download_directory;
 use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
 
-use super::buffers::is_file_dirty;
 use super::download::{collect_directory_download_items, download_directory_title};
 
 fn branch_indent(depth: usize, is_root: bool) -> String {
@@ -39,12 +38,7 @@ fn tree_row_style(depth: usize, elbow: bool, is_root: bool) -> String {
     format!("{}; {}", branch_indent(depth, is_root), branch_guide(depth, elbow))
 }
 
-fn is_directory_open(
-    app_state: AppState,
-    path: &'static str,
-    default_open: bool,
-    is_root: bool,
-) -> bool {
+fn is_directory_open(app_state: AppState, path: &str, default_open: bool, is_root: bool) -> bool {
     if is_root {
         true
     } else {
@@ -54,43 +48,40 @@ fn is_directory_open(
 
 #[component]
 pub fn FileTreeDirectoryView(
-    directory: EditorFileTreeDirectory,
+    directory: Signal<EditorFileTreeDirectory>,
     #[prop(optional)] is_root: bool,
     #[prop(optional)] depth: usize,
 ) -> impl IntoView {
     let app_state = expect_context::<AppState>();
-    let directory_path = directory.path.to_string();
-    let directory_name = directory.name.to_string();
-    let default_open = directory.default_open;
-    let download_title = download_directory_title(&directory);
-    let can_download = directory.download_root_path.is_some();
-    let download_directory_node = directory.clone();
-    let child_nodes = directory.children.clone();
+    let default_open = Signal::derive(move || directory.get().default_open);
+    let directory_path = Signal::derive(move || directory.get().path.to_string());
 
     view! {
         <div class="grid">
-            {(!is_root)
-                .then(|| {
-                    let directory_name_text = directory_name.clone();
-
+            {if !is_root {
                     view! {
                         <div class="group/layout-subtree flex items-center gap-1">
                             <button
                                 class="text-terminal-dim flex flex-1 items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] hover:text-terminal-fg"
                                 style=tree_row_style(depth, true, is_root)
                                 on:click=move |_| {
-                                    app_state.toggle_directory(directory_path.clone(), default_open)
+                                    let current = directory.get();
+                                    app_state.toggle_directory(
+                                        current.path.to_string(),
+                                        current.default_open,
+                                    )
                                 }
                             >
                                 <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                                 <span class="w-2 text-terminal-faint">
                                     {move || {
+                                        let current = directory.get();
                                         if app_state
                                             .directory_open_state
                                             .get()
-                                            .get(directory.path)
+                                            .get(current.path)
                                             .copied()
-                                            .unwrap_or(default_open)
+                                            .unwrap_or(current.default_open)
                                         {
                                             "v"
                                         } else {
@@ -99,54 +90,78 @@ pub fn FileTreeDirectoryView(
                                     }}
                                 </span>
                                 <span class="text-terminal-info shrink-0 text-[12px]">""</span>
-                                <span class="min-w-0 flex-1 truncate text-terminal-fg">{directory_name_text}</span>
+                                <span class="min-w-0 flex-1 truncate text-terminal-fg">
+                                    {move || directory.get().name.to_string()}
+                                </span>
                             </button>
 
-                            {can_download
-                                .then(|| {
-                                    let directory_for_download = download_directory_node.clone();
-                                    let directory_label = directory_for_download.name;
-
-                                    view! {
-                                        <Tooltip
-                                            content=Signal::derive({
-                                                let download_title = download_title.clone();
-                                                move || download_title.clone()
-                                            })
-                                            class="ml-auto"
-                                        >
-                                            <button
-                                class="py-0 px-1 text-terminal-faint text-[9px] uppercase tracking-[0.16em] hover:text-terminal-fg"
-                                                aria-label=download_title.clone()
-                                                on:click=move |event| {
-                                                    event.stop_propagation();
-                                                    let items = collect_directory_download_items(
-                                                        &directory_for_download,
-                                                        &app_state.editor_buffers.get_untracked(),
-                                                    );
-                                                    if items.is_empty() {
-                                                        return;
-                                                    }
-                                                    spawn_local(async move {
-                                                        let _ = download_directory(directory_label, &items).await;
-                                                    });
-                                                }
-                                            >
-                                                "dl"
-                                            </button>
-                                        </Tooltip>
+                            <Show when=move || directory.get().can_create_layout>
+                                <button
+                                    class="px-1 text-[11px] text-terminal-faint hover:text-terminal-fg"
+                                    on:click=move |event| {
+                                        event.stop_propagation();
+                                        let Some(window) = web_sys::window() else {
+                                            return;
+                                        };
+                                        let Ok(result) = window.prompt_with_message("Layout name") else {
+                                            return;
+                                        };
+                                        let Some(name) = result else {
+                                            return;
+                                        };
+                                        let layout = make_dynamic_layout(&name);
+                                        app_state.create_layout(layout);
                                     }
-                                })}
-                        </div>
+                                >
+                                    "+ Layout"
+                                </button>
+                            </Show>
+
+                            <Show when=move || directory.get().download_root_path.is_some()>
+                                <Tooltip
+                                    content=Signal::derive({ move || download_directory_title(&directory.get()) })
+                                    class="ml-auto"
+                                >
+                                    <button
+                                        class="py-0 px-1 text-terminal-faint text-[9px] uppercase tracking-[0.16em] hover:text-terminal-fg"
+                                        aria-label=move || download_directory_title(&directory.get())
+                                        on:click=move |event| {
+                                            event.stop_propagation();
+                                            let directory_for_download = directory.get();
+                                            let directory_label = directory_for_download.name;
+                                            let items = collect_directory_download_items(
+                                                &directory_for_download,
+                                                &app_state.editor_buffers.get_untracked(),
+                                                &app_state.dynamic_layouts.get_untracked(),
+                                            );
+                                            if items.is_empty() {
+                                                return;
+                                            }
+                                            spawn_local(async move {
+                                                let _ = download_directory(directory_label, &items).await;
+                                            });
+                                        }
+                                    >
+                                        "dl"
+                                    </button>
+                                </Tooltip>
+                            </Show>
+                </div>
                     }
-                })}
-            <Show when=move || is_directory_open(app_state, directory.path, default_open, is_root)>
+                        .into_any()
+                } else {
+                    view! { <></> }.into_any()
+                }}
+            <Show when=move || is_directory_open(app_state, &directory_path.get(), default_open.get(), is_root)>
                 <div class="grid">
-                    {child_nodes
-                        .clone()
-                        .into_iter()
-                        .map(|child| view! { <FileTreeNodeView node=child depth=depth + 1 /> })
-                        .collect_view()}
+                    {move || {
+                        let current = directory.get();
+                        current
+                            .children
+                            .into_iter()
+                            .map(|child| view! { <FileTreeNodeView node=child depth=depth + 1 /> })
+                            .collect_view()
+                    }}
                 </div>
             </Show>
         </div>
@@ -160,33 +175,42 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
     view! {
         {match node {
             EditorFileTreeNode::Directory(directory) => {
-                view! { <FileTreeDirectoryView directory=directory depth=depth /> }.into_any()
+                let child_directory = directory.clone();
+                view! {
+                    <FileTreeDirectoryView
+                        directory=Signal::derive(move || child_directory.clone())
+                        depth=depth
+                    />
+                }
+                    .into_any()
             }
             EditorFileTreeNode::File(file_id) => {
-                let file = file_by_id(file_id);
-                let label = file.label.to_string();
+                let file = file_by_key(&file_id, &app_state.dynamic_layouts.get());
+                let label = file.label.clone();
+                let file_key_active = file_id.clone();
+                let file_key_open = file_id.clone();
 
                 view! {
                     <button
                         class=move || {
-                            if app_state.active_file_id.get() == Some(file_id) {
+                            if app_state.active_file_id.get() == Some(file_key_active.clone()) {
                                 "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] bg-terminal-bg-hover text-terminal-fg-strong"
                             } else {
                                 "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
                             }
                         }
                         style=tree_row_style(depth, true, false)
-                        on:click=move |_| app_state.select_editor_file(file_id)
+                        on:click=move |_| app_state.select_editor_file(file_key_open.clone())
                     >
                         <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                         <span
-                            class=move || match file.language {
+                            class=move || match file.language.as_str() {
                                 "css" => "shrink-0 text-[#7b4fc9]",
                                 "typescript" | "typescriptreact" => "shrink-0 text-[#519aba]",
                                 _ => "shrink-0 text-terminal-info",
                             }
                         >
-                            {match file.language {
+                            {match file.language.as_str() {
                                 "css" => "",
                                 "typescript" | "typescriptreact" => "󰛦",
                                 _ => "󰈔",
@@ -194,9 +218,6 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                         </span>
                         <span class="min-w-0 flex-1 truncate">{label}</span>
 
-                        <Show when=move || is_file_dirty(&app_state.editor_buffers.get(), file_id)>
-                            <span class="text-terminal-warn ml-auto shrink-0">"●"</span>
-                        </Show>
                     </button>
                 }
                     .into_any()

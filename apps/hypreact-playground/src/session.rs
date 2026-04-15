@@ -18,6 +18,7 @@ use hypreact_core::wm::{DrawableSpace, WindowGeometry, WmModel};
 use hypreact_core::workspace::{ensure_default_workspace, ensure_workspace};
 use hypreact_core::{OutputId, WindowId, WorkspaceId};
 use hypreact_scene::SceneResponse;
+use std::collections::BTreeMap;
 
 use crate::layout_runtime::{
     EvaluatedPreview, apply_layout_selection, resize_step_units_for_partition,
@@ -45,6 +46,7 @@ pub struct PreviewSessionState {
     pub model: WmModel,
     pub scene: Option<SceneResponse>,
     pub partition_tree: Option<hypreact_core::resize::PartitionTree>,
+    pub manual_layout_by_workspace: BTreeMap<WorkspaceId, LayoutRef>,
     pub diagnostics: Vec<PreviewDiagnostic>,
     pub event_log: Vec<String>,
     pub last_action: String,
@@ -59,6 +61,7 @@ impl PreviewSessionState {
             model: build_demo_model(),
             scene: None,
             partition_tree: None,
+            manual_layout_by_workspace: BTreeMap::new(),
             diagnostics: Vec::new(),
             event_log: vec!["preview booted from template source bundle".to_string()],
             last_action: "boot preview".to_string(),
@@ -70,6 +73,9 @@ impl PreviewSessionState {
 
     pub fn apply_loaded_config(&mut self, config: &Config) {
         apply_layout_selection(&mut self.model, config);
+        for (workspace_id, layout) in &self.manual_layout_by_workspace {
+            self.model.set_workspace_effective_layout(workspace_id.clone(), Some(layout.clone()));
+        }
     }
 
     pub fn apply_loaded_preview(&mut self, preview: EvaluatedPreview) {
@@ -160,7 +166,7 @@ impl PreviewSessionState {
         self.last_action = label.clone();
 
         for action in actions {
-            apply_host_action(&mut self.model, action, config);
+            apply_host_action_with_session(self, action, config);
         }
 
         let current_workspace_id = self.model.current_workspace_id().cloned();
@@ -348,6 +354,20 @@ fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Co
             resize_focused_window_by_direction(model, direction, config);
         }
     }
+}
+
+fn apply_host_action_with_session(
+    state: &mut PreviewSessionState,
+    action: HostAction,
+    config: Option<&Config>,
+) {
+    if let HostAction::SetLayout { name } = &action {
+        if let Some(workspace_id) = state.model.current_workspace_id().cloned() {
+            state.manual_layout_by_workspace.insert(workspace_id, LayoutRef { name: name.clone() });
+        }
+    }
+
+    apply_host_action(&mut state.model, action, config);
 }
 
 fn activate_workspace(model: &mut WmModel, workspace_id: &str) {
