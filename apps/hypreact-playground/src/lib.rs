@@ -1,10 +1,8 @@
 use leptos::prelude::*;
-use leptos_router::components::{A, Route, Router, Routes};
-use leptos_router::hooks::use_location;
-use leptos_router::path;
 
 mod app_state;
 mod components;
+mod editor_host;
 mod editor_files;
 mod layout_runtime;
 mod session;
@@ -12,9 +10,7 @@ mod views;
 mod workspace;
 
 use app_state::AppState;
-use views::editor::EditorView;
 use views::preview::PreviewView;
-use views::system::SystemView;
 
 #[wasm_bindgen::prelude::wasm_bindgen(start)]
 pub fn start() {
@@ -31,79 +27,16 @@ fn App() -> impl IntoView {
     install_preview_renderer(app_state);
 
     view! {
-        <Router>
-            <AppShell />
-        </Router>
+        <AppShell />
     }
 }
 
 #[component]
 fn AppShell() -> impl IntoView {
-    let location = use_location();
-
-    let tab_class = move |route: &'static str| {
-        let current = location.pathname.get();
-        let is_active = match route {
-            "/" => current == "/" || current == "/preview",
-            _ => route == current,
-        };
-        if is_active {
-            "inline-flex items-center border border-b-0 px-3 py-1.5 text-sm transition duration-150 border-terminal-border-strong bg-terminal-bg text-terminal-fg-strong"
-        } else {
-            "inline-flex items-center border border-b-0 px-3 py-1.5 text-sm transition duration-150 border-terminal-border bg-terminal-bg-bar text-terminal-dim opacity-70 hover:text-terminal-fg hover:opacity-100"
-        }
-    };
-
     view! {
         <main class="flex h-screen flex-col overflow-hidden bg-terminal-bg text-terminal-fg">
-            <div class="min-h-0 flex-1 overflow-hidden">
-                <Routes fallback=NotFoundRoute>
-                    <Route path=path!("/") view=PreviewRoute />
-                    <Route path=path!("/preview") view=PreviewRoute />
-                    <Route path=path!("/editor") view=EditorRoute />
-                    <Route path=path!("/system") view=SystemRoute />
-                </Routes>
-            </div>
-
-            <div class="border-terminal-border bg-terminal-bg-subtle px-2 pb-1 border-t">
-                <nav class="flex flex-wrap gap-1 overflow-x-auto">
-                    <A href="/" attr:class=move || tab_class("/")>
-                    "1:preview"
-                    </A>
-                    <A href="/editor" attr:class=move || tab_class("/editor")>
-                    "2:editor"
-                    </A>
-                    <A href="/system" attr:class=move || tab_class("/system")>
-                    "3:system"
-                    </A>
-                </nav>
-            </div>
+            <PreviewView />
         </main>
-    }
-}
-
-#[component]
-fn PreviewRoute() -> impl IntoView {
-    view! { <PreviewView /> }
-}
-
-#[component]
-fn EditorRoute() -> impl IntoView {
-    view! { <EditorView /> }
-}
-
-#[component]
-fn SystemRoute() -> impl IntoView {
-    view! { <SystemView /> }
-}
-
-#[component]
-fn NotFoundRoute() -> impl IntoView {
-    view! {
-        <section class="empty-state">
-            <div class="eyebrow">"route://missing"</div>
-            <div class="title">"Not found"</div>
-        </section>
     }
 }
 

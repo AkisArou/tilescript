@@ -4,8 +4,7 @@ use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::editor_files::{
-    DEFAULT_OPEN_FILE_ID, EditorFileId, initial_content, initial_editor_buffers,
-    initial_open_editor_files,
+    DEFAULT_OPEN_FILE_ID, EditorFileId, initial_editor_buffers, initial_open_editor_files,
 };
 use crate::layout_runtime::EvaluatedPreview;
 use crate::session::PreviewSessionState;
@@ -20,7 +19,6 @@ struct PersistedAppState {
     open_file_ids: Vec<EditorFileId>,
     directory_open_state: BTreeMap<String, bool>,
     selected_workspace: Option<String>,
-    preview_sidebar_open: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -33,7 +31,6 @@ pub struct AppState {
     pub latest_config_request_key: RwSignal<String>,
     pub preview_eval_request: RwSignal<u64>,
     pub loaded_config: RwSignal<Option<hypreact_config::model::Config>>,
-    pub preview_sidebar_open: RwSignal<bool>,
 }
 
 impl AppState {
@@ -56,8 +53,6 @@ impl AppState {
             .as_ref()
             .map(|state| state.directory_open_state.clone())
             .unwrap_or_else(initial_open_directories);
-        let preview_sidebar_open =
-            persisted.as_ref().map(|state| state.preview_sidebar_open).unwrap_or(true);
         let mut session = PreviewSessionState::new();
         if let Some(workspace_name) =
             persisted.as_ref().and_then(|state| state.selected_workspace.clone())
@@ -74,7 +69,6 @@ impl AppState {
             latest_config_request_key: RwSignal::new(String::new()),
             preview_eval_request: RwSignal::new(1),
             loaded_config: RwSignal::new(None),
-            preview_sidebar_open: RwSignal::new(preview_sidebar_open),
         }
     }
 
@@ -158,22 +152,6 @@ impl AppState {
         self.persist_ui_state();
     }
 
-    pub fn reset_active_buffer(&self) {
-        let Some(file_id) = self.active_file_id.get_untracked() else {
-            return;
-        };
-        self.editor_buffers.update(|buffers| {
-            buffers.insert(file_id, initial_content(file_id).to_string());
-        });
-        self.persist_ui_state();
-        self.request_preview_reevaluation();
-    }
-
-    pub fn toggle_preview_sidebar(&self) {
-        self.preview_sidebar_open.update(|open| *open = !*open);
-        self.persist_ui_state();
-    }
-
     pub fn persist_ui_state(&self) {
         let state = PersistedAppState {
             editor_buffers: self.editor_buffers.get_untracked(),
@@ -181,7 +159,6 @@ impl AppState {
             open_file_ids: self.open_file_ids.get_untracked(),
             directory_open_state: self.directory_open_state.get_untracked(),
             selected_workspace: Some(self.session.get_untracked().active_workspace_name()),
-            preview_sidebar_open: self.preview_sidebar_open.get_untracked(),
         };
         persist_state(&state);
     }

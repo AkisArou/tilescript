@@ -6,6 +6,7 @@ use crate::editor_files::{EDITOR_FILES, EditorFileId, WORKSPACE_ROOT};
 pub struct EditorFileTreeDirectory {
     pub name: &'static str,
     pub path: &'static str,
+    pub download_root_path: Option<&'static str>,
     pub default_open: bool,
     pub children: Vec<EditorFileTreeNode>,
 }
@@ -20,6 +21,7 @@ pub enum EditorFileTreeNode {
 struct DirectoryBuilder {
     name: &'static str,
     path: &'static str,
+    download_root_path: Option<&'static str>,
     default_open: bool,
     directories: BTreeMap<String, DirectoryBuilder>,
     files: Vec<EditorFileId>,
@@ -27,7 +29,14 @@ struct DirectoryBuilder {
 
 impl DirectoryBuilder {
     fn new(name: &'static str, path: &'static str, default_open: bool) -> Self {
-        Self { name, path, default_open, directories: BTreeMap::new(), files: Vec::new() }
+        Self {
+            name,
+            path,
+            download_root_path: Some(path),
+            default_open,
+            directories: BTreeMap::new(),
+            files: Vec::new(),
+        }
     }
 
     fn insert_file(&mut self, file_path: &'static str, file_id: EditorFileId) {
@@ -69,6 +78,7 @@ impl DirectoryBuilder {
         EditorFileTreeDirectory {
             name: self.name,
             path: self.path,
+            download_root_path: self.download_root_path,
             default_open: self.default_open,
             children,
         }

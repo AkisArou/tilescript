@@ -1,4 +1,4 @@
-use crate::editor_files::{EDITOR_FILES, EditorFileId, file_by_id};
+use crate::editor_files::{EDITOR_FILES, EditorFileId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditorActionId {
@@ -50,14 +50,4 @@ pub fn command_palette_entries() -> Vec<EditorActionEntry> {
     ]);
 
     entries
-}
-
-pub fn action_display_name(action: EditorActionId) -> String {
-    match action {
-        EditorActionId::OpenFile(file_id) => format!("open {}", file_by_id(file_id).path),
-        EditorActionId::ResetActiveFile => "reset active file".to_string(),
-        EditorActionId::CloseActiveFile => "close active file".to_string(),
-        EditorActionId::CloseOtherFiles => "close other files".to_string(),
-        EditorActionId::CloseAllFiles => "close all files".to_string(),
-    }
 }

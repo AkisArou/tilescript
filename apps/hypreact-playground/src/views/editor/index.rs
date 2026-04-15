@@ -6,16 +6,11 @@ use crate::components::context_menu::{ContextMenu, ContextMenuItem, ContextMenuP
 use crate::editor_files::{EditorFileId, WORKSPACE_ROOT, file_by_id};
 use crate::workspace::workspace_file_tree;
 
-use super::buffers::{
-    active_file_badge, active_file_is_dirty, active_file_language, active_file_path, is_file_dirty,
-};
+use super::buffers::{active_file_is_dirty, active_file_path, is_file_dirty};
 use super::clipboard::{CopyFeedback, copy_buffer_to_clipboard};
 use super::file_tree::FileTreeDirectoryView;
 use super::monaco::MonacoEditorPane;
 
-const PANEL_CLASS: &str =
-    "border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border";
-const BAR_CLASS: &str = "border-terminal-border bg-terminal-bg-bar text-terminal-dim flex items-center justify-between border-b px-2 py-1 text-xs";
 const ACTION_BUTTON_CLASS: &str = "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +35,7 @@ pub fn EditorView() -> impl IntoView {
         Signal::derive(move || tab_context_menu.get().map(|state| state.file_id));
 
     view! {
-        <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2">
             <section class="border-terminal-border bg-terminal-bg-subtle relative grid min-h-0 overflow-hidden border lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <aside class="border-terminal-border bg-terminal-bg-subtle min-h-0 overflow-auto border-b lg:border-r lg:border-b-0">
                     <div class="border-terminal-border bg-terminal-bg-bar text-terminal-dim border-b px-2 py-1 text-xs">
@@ -79,9 +74,9 @@ pub fn EditorView() -> impl IntoView {
                                                     <div
                                                         class=move || {
                                                             if app_state.active_file_id.get() == Some(file_id) {
-                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-sm"
+                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-[12px]"
                                                             } else {
-                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border bg-terminal-bg-panel text-terminal-dim text-sm hover:text-terminal-fg"
+                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border bg-terminal-bg-panel text-terminal-dim text-[12px] hover:text-terminal-fg"
                                                             }
                                                         }
                                                         on:contextmenu=move |event: MouseEvent| {
@@ -97,7 +92,7 @@ pub fn EditorView() -> impl IntoView {
                                                         }
                                                     >
                                                         <button
-                                                            class="flex min-w-0 items-center gap-1 px-2 py-1"
+                                                            class="flex min-w-0 items-center gap-1 px-2 py-0.5"
                                                             on:click=move |_| {
                                                                 tab_context_menu.set(None);
                                                                 app_state.select_editor_file(file_id);
@@ -205,8 +200,6 @@ pub fn EditorView() -> impl IntoView {
                     <div class="border-terminal-border bg-terminal-bg-panel text-terminal-faint flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
                         <span class="min-w-0 flex-1 truncate">{move || active_file_path(app_state)}</span>
                         <div class="flex shrink-0 items-center gap-2">
-                            <span>{move || active_file_badge(app_state)}</span>
-                            <span>{move || active_file_language(app_state)}</span>
                             <Show when=move || active_file_is_dirty(app_state)>
                                 <span class="text-terminal-warn">"modified"</span>
                             </Show>
@@ -226,56 +219,6 @@ pub fn EditorView() -> impl IntoView {
                         >
                             <MonacoEditorPane/>
                         </Show>
-                    </div>
-                </div>
-            </section>
-
-            <section class="grid min-h-0 gap-2 xl:grid-rows-[auto_auto_1fr]">
-                <div class=PANEL_CLASS>
-                    <div class=BAR_CLASS>"editor://state"</div>
-                    <div class="text-terminal-muted grid gap-1 p-2 text-sm">
-                        <div class="border-terminal-border bg-terminal-bg-panel flex justify-between border px-2 py-1">
-                            <span>"workspace"</span>
-                            <span class="text-terminal-fg-strong">{WORKSPACE_ROOT}</span>
-                        </div>
-                        <div class="border-terminal-border bg-terminal-bg-panel flex justify-between border px-2 py-1">
-                            <span>"language"</span>
-                            <span class="text-terminal-fg-strong">{move || active_file_language(app_state)}</span>
-                        </div>
-                        <div class="border-terminal-border bg-terminal-bg-panel flex justify-between border px-2 py-1">
-                            <span>"layout"</span>
-                            <span class="text-terminal-fg-strong">{move || app_state.session.get().active_layout_name()}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class=PANEL_CLASS>
-                    <div class=BAR_CLASS>"editor://bindings"</div>
-                    <div class="text-terminal-muted min-h-0 overflow-auto p-2 text-sm">
-                        <div class="grid gap-1">
-                            <div class="border-terminal-border bg-terminal-bg-panel grid gap-1 border px-2 py-1">
-                                <div class="text-terminal-fg-strong">"Ctrl/Meta + S"</div>
-                                <div class="text-terminal-dim">"saved implicitly to the in-memory source bundle"</div>
-                            </div>
-                            <div class="border-terminal-border bg-terminal-bg-panel grid gap-1 border px-2 py-1">
-                                <div class="text-terminal-fg-strong">"Preview keys"</div>
-                                <div class="text-terminal-dim">"j/k focus, shift+j/k workspace, [/] layout, f floating, enter fullscreen"</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class=PANEL_CLASS>
-                    <div class=BAR_CLASS>"editor://runtime"</div>
-                    <div class="text-terminal-muted grid gap-1 p-2 text-sm">
-                        <div class="border-terminal-border bg-terminal-bg-panel border px-2 py-1">
-                            <div class="text-terminal-info text-xs">"applied live"</div>
-                            <div class="mt-1">"config.ts, root css, layout css, and active layout TSX stay in sync with the browser runtime preview source bundle"</div>
-                        </div>
-                        <div class="border-terminal-border bg-terminal-bg-panel border px-2 py-1">
-                            <div class="text-terminal-info text-xs">"editor host"</div>
-                            <div class="mt-1">"Monaco models are hydrated from the local template source bundle in this crate and receive @hypreact/sdk type libraries"</div>
-                        </div>
                     </div>
                 </div>
             </section>

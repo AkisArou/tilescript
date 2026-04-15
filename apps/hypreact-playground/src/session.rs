@@ -97,10 +97,6 @@ impl PreviewSessionState {
             .collect()
     }
 
-    pub fn visible_window_count(&self) -> usize {
-        self.visible_windows().len()
-    }
-
     pub fn state_snapshot(&self) -> StateSnapshot {
         state_snapshot_for_model(&self.model)
     }
@@ -223,8 +219,15 @@ fn build_demo_model() -> WmModel {
     );
 
     insert_demo_window(&mut model, "win-terminal", &workspace_one, &output_id, "Terminal", "foot");
-    insert_demo_window(&mut model, "win-browser", &workspace_one, &output_id, "Browser", "zen");
-    insert_demo_window(&mut model, "win-editor", &workspace_one, &output_id, "Editor", "zed");
+    insert_demo_window(
+        &mut model,
+        "win-monitor",
+        &workspace_one,
+        &output_id,
+        "Process Monitor",
+        "htop",
+    );
+    insert_demo_window(&mut model, "win-editor", &workspace_one, &output_id, "Editor", "nvim");
     insert_demo_window(&mut model, "win-chat", &workspace_two, &output_id, "Chat", "discord");
     insert_demo_window(&mut model, "win-notes", &workspace_two, &output_id, "Notes", "obsidian");
 

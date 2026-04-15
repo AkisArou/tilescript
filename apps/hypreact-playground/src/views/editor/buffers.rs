@@ -20,18 +20,6 @@ pub fn active_file_path(app_state: AppState) -> String {
         .unwrap_or_else(|| "no file open".to_string())
 }
 
-pub fn active_file_language(app_state: AppState) -> String {
-    active_file(app_state)
-        .map(|file| file.language.to_string())
-        .unwrap_or_else(|| "none".to_string())
-}
-
-pub fn active_file_badge(app_state: AppState) -> String {
-    active_file(app_state)
-        .map(|file| editor_file_badge(file.language).to_string())
-        .unwrap_or_else(|| "--".to_string())
-}
-
 pub fn editor_file_badge(language: &str) -> &'static str {
     file_badge(language)
 }

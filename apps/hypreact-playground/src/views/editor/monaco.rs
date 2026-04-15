@@ -124,6 +124,7 @@ mod wasm {
             handle: &JsValue,
             active_path: &str,
             models: JsValue,
+            font_size: u32,
         ) -> Result<(), JsValue>;
 
         #[wasm_bindgen(catch, js_name = revealMonacoPosition)]
@@ -151,9 +152,10 @@ mod wasm {
             &self,
             active_path: Option<&str>,
             models: &[MonacoModel],
+            font_size: u32,
         ) -> Result<(), String> {
             let models = serde_wasm_bindgen::to_value(models).map_err(|error| error.to_string())?;
-            update_monaco_editor_js(&self.handle, active_path.unwrap_or_default(), models)
+            update_monaco_editor_js(&self.handle, active_path.unwrap_or_default(), models, font_size)
                 .map_err(js_error_message)
         }
 
@@ -241,6 +243,7 @@ pub fn MonacoEditorPane() -> impl IntoView {
     let _monaco_handle = Rc::new(RefCell::new(None::<MonacoEditorHandle>));
     let pending_navigation = RwSignal::new(None::<PendingNavigation>);
     let mounted_file = RwSignal::new(None::<EditorFileId>);
+    let editor_font_size = 13u32;
 
     {
         let editor_mount = editor_mount.clone();
@@ -332,7 +335,7 @@ pub fn MonacoEditorPane() -> impl IntoView {
             let models = monaco_models(&app_state.editor_buffers.get());
 
             if let Some(handle) = monaco_handle.borrow().as_ref() {
-                if let Err(error) = handle.sync(active_path.as_deref(), &models) {
+                if let Err(error) = handle.sync(active_path.as_deref(), &models, editor_font_size) {
                     monaco_error.set(Some(error));
                 }
             }
