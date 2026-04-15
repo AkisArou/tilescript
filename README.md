@@ -102,6 +102,11 @@ plugin {
 
 The plugin looks for `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` inside that directory.
 
+Planning notes:
+
+- `docs/plan/lua.md`
+- `docs/plan/fennel.md`
+
 If `config_path` is omitted, the plugin uses `~/.config/hypreact`.
 
 If that config root does not exist yet, the plugin bootstraps it from `examples/js/`.

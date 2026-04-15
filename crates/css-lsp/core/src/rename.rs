@@ -1,5 +1,5 @@
-use lsp_types::{Position, TextEdit, Url, WorkspaceEdit};
 use hypreact_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
+use lsp_types::{Position, TextEdit, Url, WorkspaceEdit};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
 use crate::references::references_for;

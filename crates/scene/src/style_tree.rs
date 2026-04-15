@@ -1,11 +1,11 @@
 use crate::css::{
-    compute_style, map_computed_style_to_taffy, CssValueError, NodeComputedStyle, StyledLayoutTree,
-};
-use hypreact_core::resize::{
-    reconciled_branch_shares, scale_authored_share_units, PartitionAxis, PartitionId,
-    WorkspaceResizeState,
+    CssValueError, NodeComputedStyle, StyledLayoutTree, compute_style, map_computed_style_to_taffy,
 };
 use hypreact_core::ResolvedLayoutNode;
+use hypreact_core::resize::{
+    PartitionAxis, PartitionId, WorkspaceResizeState, reconciled_branch_shares,
+    scale_authored_share_units,
+};
 use hypreact_css::{Display, FlexDirectionValue, SizeValue};
 use taffy::style::Dimension as TaffyDimension;
 
@@ -13,9 +13,7 @@ pub fn build_styled_layout_tree_from_sheet(
     root: &ResolvedLayoutNode,
     sheet: &crate::css::CompiledStyleSheet,
 ) -> Result<StyledLayoutTree, CssValueError> {
-    Ok(StyledLayoutTree {
-        root: style_node(root, sheet)?,
-    })
+    Ok(StyledLayoutTree { root: style_node(root, sheet)? })
 }
 
 pub fn build_styled_layout_tree_from_sheet_with_resize_state(
@@ -39,18 +37,12 @@ fn style_node(
         ResolvedLayoutNode::Workspace { children, .. }
         | ResolvedLayoutNode::Group { children, .. }
         | ResolvedLayoutNode::Window { children, .. }
-        | ResolvedLayoutNode::Content { children, .. } => children
-            .iter()
-            .map(|child| style_node(child, sheet))
-            .collect::<Result<Vec<_>, _>>()?,
+        | ResolvedLayoutNode::Content { children, .. } => {
+            children.iter().map(|child| style_node(child, sheet)).collect::<Result<Vec<_>, _>>()?
+        }
     };
 
-    Ok(NodeComputedStyle {
-        node: node.clone(),
-        computed,
-        taffy_style,
-        children,
-    })
+    Ok(NodeComputedStyle { node: node.clone(), computed, taffy_style, children })
 }
 
 fn apply_resize_adjustments(
@@ -73,9 +65,8 @@ fn apply_resize_adjustments(
     let Some(partition_id) = current_partition_id else {
         return;
     };
-    let Some(adjustment) = resize_state
-        .adjustments_by_partition_id
-        .get(&PartitionId(partition_id.clone()))
+    let Some(adjustment) =
+        resize_state.adjustments_by_partition_id.get(&PartitionId(partition_id.clone()))
     else {
         return;
     };
@@ -85,11 +76,7 @@ fn apply_resize_adjustments(
     if node.children.len() < 2 {
         return;
     }
-    if node
-        .children
-        .iter()
-        .any(|child| branch_is_fixed_on_axis(&child.computed, axis))
-    {
+    if node.children.iter().any(|child| branch_is_fixed_on_axis(&child.computed, axis)) {
         return;
     }
 
@@ -122,11 +109,7 @@ fn partition_id_for_styled_node(
         return None;
     }
 
-    node.node
-        .meta()
-        .id
-        .clone()
-        .or_else(|| partition_structural_id(node, path, is_root))
+    node.node.meta().id.clone().or_else(|| partition_structural_id(node, path, is_root))
 }
 
 fn partition_structural_id(
@@ -169,11 +152,7 @@ fn branch_id_for_styled_child(
         return id.clone();
     }
 
-    if let ResolvedLayoutNode::Window {
-        window_id: Some(window_id),
-        ..
-    } = &child.node
-    {
+    if let ResolvedLayoutNode::Window { window_id: Some(window_id), .. } = &child.node {
         return window_id.to_string();
     }
 

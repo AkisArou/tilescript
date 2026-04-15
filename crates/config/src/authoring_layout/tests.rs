@@ -154,9 +154,7 @@ impl AuthoringConfigRuntime for StubAuthoredRuntime {
     fn load_prepared_config(&self, _path: &std::path::Path) -> Result<Config, RuntimeError> {
         if self.prepared_load_failures_remaining.load(Ordering::SeqCst) > 0 {
             self.prepared_load_failures_remaining.fetch_sub(1, Ordering::SeqCst);
-            return Err(RuntimeError::Other {
-                message: "prepared config load failed".into(),
-            });
+            return Err(RuntimeError::Other { message: "prepared config load failed".into() });
         }
 
         Ok(self.config.clone())
@@ -231,9 +229,11 @@ impl SourceBundlePreparedLayoutRuntime for StubSourceBundleRuntime {
         _artifact: &'a PreparedLayout,
         _context: &'a LayoutEvaluationContext,
     ) -> Pin<
-        Box<dyn Future<Output = Result<EvaluatedSourceLayout, crate::model::LayoutConfigError>> + 'a>,
-    >
-    {
+        Box<
+            dyn Future<Output = Result<EvaluatedSourceLayout, crate::model::LayoutConfigError>>
+                + 'a,
+        >,
+    > {
         Box::pin(async move {
             Ok(EvaluatedSourceLayout {
                 layout: SourceLayoutNode::Workspace { meta: Default::default(), children: vec![] },

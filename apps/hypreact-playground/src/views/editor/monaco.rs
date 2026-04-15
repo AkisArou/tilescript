@@ -66,6 +66,7 @@ fn monaco_language(language: &str) -> &'static str {
     match language {
         "css" => "css",
         "lua" => "lua",
+        "fennel" => "clojure",
         _ => "typescript",
     }
 }

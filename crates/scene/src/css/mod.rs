@@ -13,8 +13,8 @@ pub use hypreact_css::compile;
 pub use hypreact_css::compile::CompiledDeclaration;
 pub use hypreact_css::compile::CssValueError;
 pub use hypreact_css::compiled::*;
-pub use hypreact_css::parsing::{parse_stylesheet, CssParseError};
-pub use taffy::{map_computed_style_to_taffy, NodeComputedStyle, StyledLayoutTree};
+pub use hypreact_css::parsing::{CssParseError, parse_stylesheet};
+pub use taffy::{NodeComputedStyle, StyledLayoutTree, map_computed_style_to_taffy};
 
 #[cfg(test)]
 mod tests {
@@ -76,12 +76,7 @@ mod tests {
     fn rejects_unsupported_selector() {
         let error = parse_stylesheet("slot { display: flex; }").unwrap_err();
 
-        assert_eq!(
-            error,
-            CssParseError::UnsupportedSelector {
-                selector: "slot".into()
-            }
-        );
+        assert_eq!(error, CssParseError::UnsupportedSelector { selector: "slot".into() });
     }
 
     #[test]
@@ -101,12 +96,7 @@ mod tests {
     fn rejects_at_rules_for_v1() {
         let error = parse_stylesheet("@media screen { window { width: 100%; } }").unwrap_err();
 
-        assert_eq!(
-            error,
-            CssParseError::UnsupportedAtRule {
-                name: "media".into()
-            }
-        );
+        assert_eq!(error, CssParseError::UnsupportedAtRule { name: "media".into() });
     }
 
     #[test]
@@ -118,30 +108,12 @@ mod tests {
             ..LayoutNodeMeta::default()
         });
 
-        assert!(selector_matches(
-            &parse_selector_list("window").unwrap(),
-            &node
-        ));
-        assert!(selector_matches(
-            &parse_selector_list("#main").unwrap(),
-            &node
-        ));
-        assert!(selector_matches(
-            &parse_selector_list(".stack").unwrap(),
-            &node
-        ));
-        assert!(selector_matches(
-            &parse_selector_list("[app_id='foot']").unwrap(),
-            &node
-        ));
-        assert!(!selector_matches(
-            &parse_selector_list("group").unwrap(),
-            &node
-        ));
-        assert!(!selector_matches(
-            &parse_selector_list(".missing").unwrap(),
-            &node
-        ));
+        assert!(selector_matches(&parse_selector_list("window").unwrap(), &node));
+        assert!(selector_matches(&parse_selector_list("#main").unwrap(), &node));
+        assert!(selector_matches(&parse_selector_list(".stack").unwrap(), &node));
+        assert!(selector_matches(&parse_selector_list("[app_id='foot']").unwrap(), &node));
+        assert!(!selector_matches(&parse_selector_list("group").unwrap(), &node));
+        assert!(!selector_matches(&parse_selector_list(".missing").unwrap(), &node));
     }
 
     #[test]
@@ -151,18 +123,9 @@ mod tests {
             ..LayoutNodeMeta::default()
         });
 
-        assert!(selector_matches(
-            &parse_selector_list("window:focused").unwrap(),
-            &node
-        ));
-        assert!(selector_matches(
-            &parse_selector_list("window:floating").unwrap(),
-            &node
-        ));
-        assert!(!selector_matches(
-            &parse_selector_list("window:fullscreen").unwrap(),
-            &node
-        ));
+        assert!(selector_matches(&parse_selector_list("window:focused").unwrap(), &node));
+        assert!(selector_matches(&parse_selector_list("window:floating").unwrap(), &node));
+        assert!(!selector_matches(&parse_selector_list("window:fullscreen").unwrap(), &node));
     }
 
     #[test]
@@ -180,14 +143,8 @@ mod tests {
         let matches = matching_rules(&sheet, &node);
 
         assert_eq!(matches.len(), 2);
-        assert!(matches!(
-            matches[0].declarations[0],
-            CompiledDeclaration::Width(_)
-        ));
-        assert!(matches!(
-            matches[1].declarations[0],
-            CompiledDeclaration::Height(_)
-        ));
+        assert!(matches!(matches[0].declarations[0], CompiledDeclaration::Width(_)));
+        assert!(matches!(matches[1].declarations[0], CompiledDeclaration::Height(_)));
     }
 
     #[test]
@@ -221,10 +178,7 @@ mod tests {
         assert_eq!(style.aspect_ratio, Some(16.0 / 9.0));
         assert_eq!(
             style.gap,
-            Some(Size2 {
-                width: LengthPercentage::Px(20.0),
-                height: LengthPercentage::Px(10.0)
-            })
+            Some(Size2 { width: LengthPercentage::Px(20.0), height: LengthPercentage::Px(10.0) })
         );
         assert_eq!(style.box_sizing, Some(BoxSizingValue::ContentBox));
         assert_eq!(
@@ -260,9 +214,7 @@ mod tests {
 
         assert_eq!(
             error,
-            CssParseError::UnsupportedSelector {
-                selector: "window::titlebar".into()
-            }
+            CssParseError::UnsupportedSelector { selector: "window::titlebar".into() }
         );
     }
 
@@ -289,9 +241,7 @@ mod tests {
 
         assert_eq!(
             error,
-            CssParseError::UnsupportedProperty {
-                property: "-hypreact-partition-axis".into()
-            }
+            CssParseError::UnsupportedProperty { property: "-hypreact-partition-axis".into() }
         );
     }
 
@@ -301,15 +251,7 @@ mod tests {
         let node = runtime_window_with_meta(LayoutNodeMeta::default());
         let style = compute_style(&sheet, &node).unwrap();
 
-        assert_eq!(
-            style.color,
-            Some(ColorValue {
-                red: 12,
-                green: 34,
-                blue: 56,
-                alpha: 128
-            })
-        );
+        assert_eq!(style.color, Some(ColorValue { red: 12, green: 34, blue: 56, alpha: 128 }));
     }
 
     #[test]
@@ -354,9 +296,7 @@ mod tests {
 
         assert_eq!(
             declaration,
-            CompiledDeclaration::Transform(TransformValue {
-                operations: Vec::new()
-            })
+            CompiledDeclaration::Transform(TransformValue { operations: Vec::new() })
         );
     }
 
@@ -407,12 +347,7 @@ mod tests {
         assert_eq!(style.opacity, Some(0.94));
         assert_eq!(
             style.border_color,
-            Some(ColorValue {
-                red: 34,
-                green: 34,
-                blue: 34,
-                alpha: 255
-            })
+            Some(ColorValue { red: 34, green: 34, blue: 34, alpha: 255 })
         );
         assert_eq!(
             style.border_radius,
@@ -440,15 +375,13 @@ mod tests {
         assert_eq!(sheet.keyframes.len(), 1);
         assert_eq!(sheet.keyframes[0].name, "open-zoom");
         assert_eq!(sheet.keyframes[0].steps.len(), 2);
-        assert!(sheet.keyframes[0]
-            .steps
-            .iter()
-            .flat_map(|step| step.declarations.iter())
-            .any(|declaration| matches!(
+        assert!(sheet.keyframes[0].steps.iter().flat_map(|step| step.declarations.iter()).any(
+            |declaration| matches!(
                 declaration,
                 CompiledDeclaration::Transform(TransformValue { operations })
                 if operations.len() == 2
-            )));
+            )
+        ));
         assert!(style.box_shadow.is_some());
     }
 
@@ -462,10 +395,7 @@ mod tests {
 
         assert_eq!(
             style.gap,
-            Some(Size2 {
-                width: LengthPercentage::Px(24.0),
-                height: LengthPercentage::Px(12.0)
-            })
+            Some(Size2 { width: LengthPercentage::Px(24.0), height: LengthPercentage::Px(12.0) })
         );
     }
 
@@ -478,18 +408,9 @@ mod tests {
 
         let style = compute_style(&sheet, &node).unwrap();
 
-        assert_eq!(
-            style.flex_basis,
-            Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0)))
-        );
-        assert_eq!(
-            style.min_width,
-            Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0)))
-        );
-        assert_eq!(
-            style.min_height,
-            Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0)))
-        );
+        assert_eq!(style.flex_basis, Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0))));
+        assert_eq!(style.min_width, Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0))));
+        assert_eq!(style.min_height, Some(SizeValue::LengthPercentage(LengthPercentage::Px(0.0))));
         assert_eq!(
             style.padding,
             Some(BoxEdges {
@@ -515,16 +436,10 @@ mod tests {
 
         let style = compute_style(&sheet, &node).unwrap();
 
-        assert_eq!(
-            style.width,
-            Some(SizeValue::LengthPercentage(LengthPercentage::Percent(60.0)))
-        );
+        assert_eq!(style.width, Some(SizeValue::LengthPercentage(LengthPercentage::Percent(60.0))));
         assert_eq!(
             style.gap,
-            Some(Size2 {
-                width: LengthPercentage::Px(12.0),
-                height: LengthPercentage::Px(12.0)
-            })
+            Some(Size2 { width: LengthPercentage::Px(12.0), height: LengthPercentage::Px(12.0) })
         );
     }
 
@@ -555,9 +470,7 @@ mod tests {
                     GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
                     GridTemplateComponent::Repeat(GridTrackRepeat {
                         count: GridRepetitionCount::Count(2),
-                        tracks: vec![GridTrackValue::LengthPercentage(LengthPercentage::Px(
-                            500.0
-                        ))],
+                        tracks: vec![GridTrackValue::LengthPercentage(LengthPercentage::Px(500.0))],
                         line_names: vec![vec!["mid".into()], vec![]],
                     }),
                     GridTemplateComponent::Single(GridTrackValue::MinMax(
@@ -648,9 +561,7 @@ mod tests {
                     GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
                     GridTemplateComponent::Repeat(GridTrackRepeat {
                         count: GridRepetitionCount::Count(2),
-                        tracks: vec![GridTrackValue::LengthPercentage(LengthPercentage::Px(
-                            500.0,
-                        ))],
+                        tracks: vec![GridTrackValue::LengthPercentage(LengthPercentage::Px(500.0))],
                         line_names: vec![vec!["mid".into()], vec![]],
                     }),
                 ],
@@ -705,22 +616,10 @@ mod tests {
         let mapped = map_computed_style_to_taffy(&style);
 
         assert_eq!(mapped.display, ::taffy::prelude::Display::Flex);
-        assert_eq!(
-            mapped.flex_direction,
-            ::taffy::prelude::FlexDirection::Column
-        );
+        assert_eq!(mapped.flex_direction, ::taffy::prelude::FlexDirection::Column);
         assert_eq!(mapped.size.width, ::taffy::prelude::Dimension::percent(0.6));
-        assert_eq!(
-            mapped.size.height,
-            ::taffy::prelude::Dimension::length(200.0)
-        );
-        assert_eq!(
-            mapped.gap.width,
-            ::taffy::style::LengthPercentage::length(12.0)
-        );
-        assert_eq!(
-            mapped.padding.left,
-            ::taffy::style::LengthPercentage::length(16.0)
-        );
+        assert_eq!(mapped.size.height, ::taffy::prelude::Dimension::length(200.0));
+        assert_eq!(mapped.gap.width, ::taffy::style::LengthPercentage::length(12.0));
+        assert_eq!(mapped.padding.left, ::taffy::style::LengthPercentage::length(16.0));
     }
 }

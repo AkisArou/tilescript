@@ -6,8 +6,8 @@ use hypreact_config::model::{ConfigPaths, LayoutConfigError};
 use hypreact_config::runtime::RuntimeBundle;
 
 pub use hypreact_runtime_js_core::{
-    JavaScriptModule, JavaScriptModuleGraph, decode_js_layout_value,
-    decode_runtime_graph_payload, encode_runtime_graph_payload,
+    JavaScriptModule, JavaScriptModuleGraph, decode_js_layout_value, decode_runtime_graph_payload,
+    encode_runtime_graph_payload,
 };
 pub use module_graph_runtime::{
     ModuleGraphRuntimeError, call_entry_export_with_json_arg, evaluate_entry_export_to_json,
@@ -15,8 +15,9 @@ pub use module_graph_runtime::{
 };
 pub use runtime::QuickJsPreparedLayoutRuntime;
 
-pub type DefaultLayoutRuntime =
-    runtime::QuickJsPreparedLayoutRuntime<hypreact_runtime_js_core::loader::RuntimeProjectLayoutSourceLoader>;
+pub type DefaultLayoutRuntime = runtime::QuickJsPreparedLayoutRuntime<
+    hypreact_runtime_js_core::loader::RuntimeProjectLayoutSourceLoader,
+>;
 
 pub fn build_default_runtime(paths: &ConfigPaths) -> DefaultLayoutRuntime {
     let resolver = hypreact_runtime_js_core::loader::RuntimePathResolver::new(

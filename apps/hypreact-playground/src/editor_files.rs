@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum AuthoringLanguage {
     JavaScript,
     Lua,
+    Fennel,
 }
 
 impl AuthoringLanguage {}
@@ -14,6 +15,7 @@ impl AuthoringLanguage {}
 pub enum EditorFileKey {
     StaticJavaScript(JavaScriptStaticEditorFileId),
     StaticLua(LuaStaticEditorFileId),
+    StaticFennel(FennelStaticEditorFileId),
     Dynamic(String),
 }
 
@@ -42,6 +44,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/editor_files_manifest.rs"));
 }
 
+pub use generated::fennel::EditorFileId as FennelStaticEditorFileId;
 pub use generated::javascript::EditorFileId as JavaScriptStaticEditorFileId;
 pub use generated::lua::EditorFileId as LuaStaticEditorFileId;
 
@@ -57,6 +60,7 @@ pub fn entry_runtime_path(language: AuthoringLanguage) -> &'static str {
     match language {
         AuthoringLanguage::JavaScript => generated::javascript::ENTRY_RUNTIME_PATH,
         AuthoringLanguage::Lua => generated::lua::ENTRY_RUNTIME_PATH,
+        AuthoringLanguage::Fennel => generated::fennel::ENTRY_RUNTIME_PATH,
     }
 }
 
@@ -66,6 +70,9 @@ pub fn runtime_path(file_key: &EditorFileKey, dynamic_layouts: &[DynamicLayoutFi
             generated::javascript::runtime_path(*file_id).to_string()
         }
         EditorFileKey::StaticLua(file_id) => generated::lua::runtime_path(*file_id).to_string(),
+        EditorFileKey::StaticFennel(file_id) => {
+            generated::fennel::runtime_path(*file_id).to_string()
+        }
         EditorFileKey::Dynamic(key) => iter_dynamic_files(dynamic_layouts)
             .find(|file| matches!(&file.key, EditorFileKey::Dynamic(candidate) if candidate == key))
             .map(|file| workspace_path_to_runtime_path(&file.path))
@@ -96,6 +103,7 @@ pub fn file_badge(language: &str) -> &'static str {
         "typescriptreact" => "tsx",
         "typescript" => "ts",
         "lua" => "lua",
+        "fennel" => "fnl",
         _ => "txt",
     }
 }
@@ -105,6 +113,7 @@ pub fn file_icon(language: &str) -> &'static str {
         "css" => "",
         "typescript" | "typescriptreact" => "󰛦",
         "lua" => "",
+        "fennel" => "󱘎",
         _ => "󰈔",
     }
 }
@@ -114,6 +123,7 @@ pub fn file_color_class(language: &str) -> &'static str {
         "css" => "text-[#7b4fc9]",
         "typescript" | "typescriptreact" => "text-[#519aba]",
         "lua" => "text-[#51a0cf]",
+        "fennel" => "text-[#8fbf57]",
         _ => "text-terminal-info",
     }
 }
@@ -177,6 +187,21 @@ pub fn file_by_key(
                 is_reference_only: generated::lua::is_reference_only(*file_id),
             }
         }
+        EditorFileKey::StaticFennel(file_id) => {
+            let file = generated::fennel::EDITOR_FILES
+                .iter()
+                .find(|file| file.id == *file_id)
+                .expect("static editor file should exist");
+            EditorFileMeta {
+                key: EditorFileKey::StaticFennel(*file_id),
+                label: file.label.to_string(),
+                path: file.path.to_string(),
+                language: file.language.to_string(),
+                initial_content: generated::fennel::initial_content(*file_id).to_string(),
+                is_dynamic: false,
+                is_reference_only: generated::fennel::is_reference_only(*file_id),
+            }
+        }
         EditorFileKey::Dynamic(key) => {
             let file = iter_dynamic_files(dynamic_layouts)
                 .find(|file| matches!(&file.key, EditorFileKey::Dynamic(candidate) if candidate == key))
@@ -211,6 +236,10 @@ pub fn initial_open_editor_files(language: AuthoringLanguage) -> Vec<EditorFileK
             .into_iter()
             .map(EditorFileKey::StaticLua)
             .collect(),
+        AuthoringLanguage::Fennel => generated::fennel::initial_open_editor_files()
+            .into_iter()
+            .map(EditorFileKey::StaticFennel)
+            .collect(),
     }
 }
 
@@ -222,6 +251,7 @@ pub fn make_dynamic_layout(language: AuthoringLanguage, layout_name: &str) -> Dy
         match language {
             AuthoringLanguage::JavaScript => "javascript",
             AuthoringLanguage::Lua => "lua",
+            AuthoringLanguage::Fennel => "fennel",
         }
     );
     let source_file = match language {
@@ -257,6 +287,20 @@ pub fn make_dynamic_layout(language: AuthoringLanguage, layout_name: &str) -> Dy
                 "    h.slot(),\n",
                 "  }\n",
                 "end\n",
+            )
+            .to_string(),
+            is_reference_only: false,
+        },
+        AuthoringLanguage::Fennel => DynamicEditorFile {
+            key: EditorFileKey::Dynamic(format!("{base_key}:fnl")),
+            label: "index.fnl".to_string(),
+            path: format!("{directory_path}/index.fnl"),
+            language: "fennel".to_string(),
+            initial_content: concat!(
+                "(local h (require \"hypreact\"))\n\n",
+                "(fn [ctx]\n",
+                "  ((h.workspace {})\n",
+                "   [(h.slot {})]))\n",
             )
             .to_string(),
             is_reference_only: false,
@@ -329,6 +373,7 @@ pub struct EditorFileMeta {
 pub enum StaticEditorFileRef {
     JavaScript(&'static generated::EditorFile<JavaScriptStaticEditorFileId>),
     Lua(&'static generated::EditorFile<LuaStaticEditorFileId>),
+    Fennel(&'static generated::EditorFile<FennelStaticEditorFileId>),
 }
 
 impl StaticEditorFileRef {
@@ -336,6 +381,7 @@ impl StaticEditorFileRef {
         match self {
             Self::JavaScript(file) => StaticFileId::JavaScript(file.id),
             Self::Lua(file) => StaticFileId::Lua(file.id),
+            Self::Fennel(file) => StaticFileId::Fennel(file.id),
         }
     }
 
@@ -347,6 +393,7 @@ impl StaticEditorFileRef {
         match self {
             Self::JavaScript(file) => file.path,
             Self::Lua(file) => file.path,
+            Self::Fennel(file) => file.path,
         }
     }
 
@@ -354,6 +401,7 @@ impl StaticEditorFileRef {
         match self {
             Self::JavaScript(file) => file.language,
             Self::Lua(file) => file.language,
+            Self::Fennel(file) => file.language,
         }
     }
 }
@@ -362,12 +410,14 @@ impl StaticEditorFileRef {
 pub enum StaticFileId {
     JavaScript(JavaScriptStaticEditorFileId),
     Lua(LuaStaticEditorFileId),
+    Fennel(FennelStaticEditorFileId),
 }
 
 pub const fn static_file_key(file_id: StaticFileId) -> EditorFileKey {
     match file_id {
         StaticFileId::JavaScript(id) => EditorFileKey::StaticJavaScript(id),
         StaticFileId::Lua(id) => EditorFileKey::StaticLua(id),
+        StaticFileId::Fennel(id) => EditorFileKey::StaticFennel(id),
     }
 }
 
@@ -380,6 +430,10 @@ pub fn static_files(language: AuthoringLanguage) -> Vec<StaticEditorFileRef> {
         AuthoringLanguage::Lua => {
             generated::lua::EDITOR_FILES.iter().map(|file| StaticEditorFileRef::Lua(file)).collect()
         }
+        AuthoringLanguage::Fennel => generated::fennel::EDITOR_FILES
+            .iter()
+            .map(|file| StaticEditorFileRef::Fennel(file))
+            .collect(),
     }
 }
 
@@ -396,6 +450,7 @@ pub fn file_layout_language(
     match file_key {
         EditorFileKey::StaticJavaScript(_) => Some(AuthoringLanguage::JavaScript),
         EditorFileKey::StaticLua(_) => Some(AuthoringLanguage::Lua),
+        EditorFileKey::StaticFennel(_) => Some(AuthoringLanguage::Fennel),
         EditorFileKey::Dynamic(_) => dynamic_layouts.iter().find_map(|layout| {
             layout.files.iter().any(|file| &file.key == file_key).then_some(layout.language)
         }),
@@ -410,6 +465,9 @@ fn initial_static_content(language: AuthoringLanguage, file_id: StaticFileId) ->
         (AuthoringLanguage::Lua, StaticFileId::Lua(file_id)) => {
             generated::lua::initial_content(file_id)
         }
+        (AuthoringLanguage::Fennel, StaticFileId::Fennel(file_id)) => {
+            generated::fennel::initial_content(file_id)
+        }
         _ => unreachable!("static file id must match authoring language"),
     }
 }
@@ -421,6 +479,9 @@ fn static_key(language: AuthoringLanguage, file_id: impl Into<StaticFileId>) -> 
         }
         (AuthoringLanguage::Lua, StaticFileId::Lua(file_id)) => {
             static_file_key(StaticFileId::Lua(file_id))
+        }
+        (AuthoringLanguage::Fennel, StaticFileId::Fennel(file_id)) => {
+            static_file_key(StaticFileId::Fennel(file_id))
         }
         _ => unreachable!("static file id must match authoring language"),
     }
@@ -435,5 +496,11 @@ impl From<JavaScriptStaticEditorFileId> for StaticFileId {
 impl From<LuaStaticEditorFileId> for StaticFileId {
     fn from(value: LuaStaticEditorFileId) -> Self {
         Self::Lua(value)
+    }
+}
+
+impl From<FennelStaticEditorFileId> for StaticFileId {
+    fn from(value: FennelStaticEditorFileId) -> Self {
+        Self::Fennel(value)
     }
 }

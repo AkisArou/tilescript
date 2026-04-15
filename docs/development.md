@@ -16,6 +16,8 @@
 - `dev/test-config` - local authored config fixture
 - `examples/js` - JavaScript/TypeScript starter config
 - `examples/lua` - Lua starter config
+- `docs/plan/lua.md` - Lua runtime and authoring plan
+- `docs/plan/fennel.md` - Fennel authoring/runtime plan
 
 ## Common Commands
 

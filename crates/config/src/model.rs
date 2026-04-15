@@ -49,10 +49,7 @@ pub struct ResizeConfig {
 
 impl Default for ResizeConfig {
     fn default() -> Self {
-        Self {
-            step_px: None,
-            min_branch_size_px: None,
-        }
+        Self { step_px: None, min_branch_size_px: None }
     }
 }
 
@@ -113,10 +110,7 @@ pub fn config_discovery_options_from_env() -> ConfigDiscoveryOptions {
 
 impl ConfigPaths {
     pub fn new(authored_config: impl Into<PathBuf>, prepared_config: impl Into<PathBuf>) -> Self {
-        Self {
-            authored_config: authored_config.into(),
-            prepared_config: prepared_config.into(),
-        }
+        Self { authored_config: authored_config.into(), prepared_config: prepared_config.into() }
     }
 
     pub fn discover(options: ConfigDiscoveryOptions) -> Result<Self, LayoutConfigError> {
@@ -127,27 +121,28 @@ impl ConfigPaths {
             authored_config_override,
         } = options;
 
-        let config_root = match config_dir_override {
-            Some(path) => path,
-            None => home_dir
-                .as_ref()
-                .map(|path| path.join(".config/hypreact"))
-                .ok_or_else(|| LayoutConfigError::ReadConfig {
-                    path: PathBuf::from(
-                        "config discovery requires a home_dir or config_dir_override",
-                    ),
-                })?,
-        };
+        let config_root =
+            match config_dir_override {
+                Some(path) => path,
+                None => home_dir.as_ref().map(|path| path.join(".config/hypreact")).ok_or_else(
+                    || LayoutConfigError::ReadConfig {
+                        path: PathBuf::from(
+                            "config discovery requires a home_dir or config_dir_override",
+                        ),
+                    },
+                )?,
+            };
         let cache_root = match cache_dir_override {
             Some(path) => path,
-            None => home_dir
-                .as_ref()
-                .map(|path| path.join(".cache/hypreact"))
-                .ok_or_else(|| LayoutConfigError::ReadConfig {
-                    path: PathBuf::from(
-                        "config discovery requires a home_dir or cache_dir_override",
-                    ),
-                })?,
+            None => {
+                home_dir.as_ref().map(|path| path.join(".cache/hypreact")).ok_or_else(|| {
+                    LayoutConfigError::ReadConfig {
+                        path: PathBuf::from(
+                            "config discovery requires a home_dir or cache_dir_override",
+                        ),
+                    }
+                })?
+            }
         };
 
         let authored_config = authored_config_override.unwrap_or_else(|| {
@@ -159,27 +154,22 @@ impl ConfigPaths {
         });
         let prepared_config = cache_root.join("config.js");
 
-        Ok(Self {
-            authored_config,
-            prepared_config,
-        })
+        Ok(Self { authored_config, prepared_config })
     }
 }
 
-pub const fn supported_authored_config_names() -> [&'static str; 5] {
-    ["config.tsx", "config.ts", "config.jsx", "config.js", "config.lua"]
+pub const fn supported_authored_config_names() -> [&'static str; 6] {
+    ["config.tsx", "config.ts", "config.jsx", "config.js", "config.lua", "config.fnl"]
 }
 
 impl Config {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, LayoutConfigError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|_| LayoutConfigError::ReadConfig {
-            path: path.to_path_buf(),
-        })?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|_| LayoutConfigError::ReadConfig { path: path.to_path_buf() })?;
 
-        serde_json::from_str(&text).map_err(|_| LayoutConfigError::ParseConfig {
-            path: path.to_path_buf(),
-        })
+        serde_json::from_str(&text)
+            .map_err(|_| LayoutConfigError::ParseConfig { path: path.to_path_buf() })
     }
 
     pub fn layout_by_name(&self, name: &str) -> Option<&LayoutDefinition> {
@@ -190,10 +180,7 @@ impl Config {
         &'a self,
         workspace: &'a WorkspaceSnapshot,
     ) -> Option<&'a LayoutDefinition> {
-        workspace
-            .effective_layout
-            .as_ref()
-            .and_then(|layout| self.layout_by_name(&layout.name))
+        workspace.effective_layout.as_ref().and_then(|layout| self.layout_by_name(&layout.name))
     }
 
     pub fn selected_layout_ref_for_workspace(
@@ -231,9 +218,7 @@ impl Config {
             })
             .or_else(|| {
                 workspace.effective_layout.as_ref().map(|layout| {
-                    Err(LayoutConfigError::UnknownLayout {
-                        name: layout.name.clone(),
-                    })
+                    Err(LayoutConfigError::UnknownLayout { name: layout.name.clone() })
                 })
             })
             .transpose()
@@ -261,10 +246,7 @@ impl Config {
         let request = SceneRequest {
             workspace_id: workspace.id.clone(),
             output_id: output.map(|output| output.id.clone()),
-            layout_name: workspace
-                .effective_layout
-                .as_ref()
-                .map(|layout| layout.name.clone()),
+            layout_name: workspace.effective_layout.as_ref().map(|layout| layout.name.clone()),
             root,
             stylesheets: artifact.stylesheets.clone(),
             space: LayoutSpace {
@@ -308,8 +290,7 @@ impl Config {
             .and_then(|output_id| state.output_by_id(output_id))
             .or_else(|| state.current_output());
 
-        self.build_scene_request(state, workspace, output, root, artifact)
-            .map(Some)
+        self.build_scene_request(state, workspace, output, root, artifact).map(Some)
     }
 
     pub fn build_scene_request_for_output_from_state(
@@ -328,16 +309,12 @@ impl Config {
         };
         let output = state.output_by_id(output_id);
 
-        self.build_scene_request(state, workspace, output, root, artifact)
-            .map(Some)
+        self.build_scene_request(state, workspace, output, root, artifact).map(Some)
     }
 }
 
 fn workspace_name_index(workspace_name: &str) -> Option<usize> {
-    workspace_name
-        .parse::<usize>()
-        .ok()
-        .and_then(|index| index.checked_sub(1))
+    workspace_name.parse::<usize>().ok().and_then(|index| index.checked_sub(1))
 }
 
 fn layout_rule_matches(
@@ -346,11 +323,15 @@ fn layout_rule_matches(
     workspace_index: Option<usize>,
     output_id: Option<&OutputId>,
 ) -> bool {
-    if let Some(index) = rule.index && workspace_index != Some(index) {
+    if let Some(index) = rule.index
+        && workspace_index != Some(index)
+    {
         return false;
     }
 
-    if let Some(name) = rule.name.as_deref() && name != workspace_name {
+    if let Some(name) = rule.name.as_deref()
+        && name != workspace_name
+    {
         return false;
     }
 
@@ -379,9 +360,7 @@ fn layout_rule_specificity(rule: &LayoutRule) -> u8 {
 
 impl From<&LayoutDefinition> for LayoutRef {
     fn from(value: &LayoutDefinition) -> Self {
-        Self {
-            name: value.name.clone(),
-        }
+        Self { name: value.name.clone() }
     }
 }
 
@@ -404,9 +383,7 @@ mod tests {
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(LayoutRef {
-                name: layout_name.into(),
-            }),
+            effective_layout: Some(LayoutRef { name: layout_name.into() }),
         }
     }
 
@@ -491,10 +468,7 @@ mod tests {
                 &state_snapshot(),
                 &workspace("master-stack"),
                 Some(&output()),
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("master-stack", "layouts/master-stack.js"),
             )
             .unwrap();
@@ -529,10 +503,7 @@ mod tests {
                     ..workspace("master-stack")
                 },
                 Some(&output()),
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("master-stack", "layouts/master-stack.js"),
             )
             .unwrap();
@@ -555,9 +526,7 @@ mod tests {
             ..Config::default()
         };
 
-        let selected = config
-            .resolve_selected_layout(&workspace("master-stack"))
-            .unwrap();
+        let selected = config.resolve_selected_layout(&workspace("master-stack")).unwrap();
 
         assert_eq!(
             selected,
@@ -598,10 +567,7 @@ mod tests {
         let request = config
             .build_scene_request_from_state(
                 &state,
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("master-stack", "layouts/master-stack.js"),
             )
             .unwrap()
@@ -630,10 +596,7 @@ mod tests {
             current_output_id: Some(OutputId::from("out-1")),
             current_workspace_id: Some(WorkspaceId::from("ws-1")),
             outputs: vec![output()],
-            workspaces: vec![WorkspaceSnapshot {
-                output_id: None,
-                ..workspace("master-stack")
-            }],
+            workspaces: vec![WorkspaceSnapshot { output_id: None, ..workspace("master-stack") }],
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
@@ -643,10 +606,7 @@ mod tests {
         let request = config
             .build_scene_request_from_state(
                 &state,
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("master-stack", "layouts/master-stack.js"),
             )
             .unwrap()
@@ -696,9 +656,7 @@ mod tests {
                     active_workspaces: vec!["2".into()],
                     focused: false,
                     visible: true,
-                    effective_layout: Some(LayoutRef {
-                        name: "master-stack".into(),
-                    }),
+                    effective_layout: Some(LayoutRef { name: "master-stack".into() }),
                 },
             ],
             windows: vec![],
@@ -711,10 +669,7 @@ mod tests {
             .build_scene_request_for_output_from_state(
                 &state,
                 &OutputId::from("out-2"),
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("master-stack", "layouts/master-stack.js"),
             )
             .unwrap()
@@ -734,20 +689,12 @@ mod tests {
                 &state_snapshot(),
                 &workspace("missing"),
                 Some(&output()),
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("missing", "layouts/missing.js"),
             )
             .unwrap_err();
 
-        assert_eq!(
-            error,
-            LayoutConfigError::UnknownLayout {
-                name: "missing".into()
-            }
-        );
+        assert_eq!(error, LayoutConfigError::UnknownLayout { name: "missing".into() });
     }
 
     #[test]
@@ -769,10 +716,7 @@ mod tests {
                 &state_snapshot(),
                 &workspace("master-stack"),
                 Some(&output()),
-                ResolvedLayoutNode::Workspace {
-                    meta: Default::default(),
-                    children: vec![],
-                },
+                ResolvedLayoutNode::Workspace { meta: Default::default(), children: vec![] },
                 &artifact("secondary", "layouts/secondary.js"),
             )
             .unwrap_err();
@@ -815,12 +759,7 @@ mod tests {
 
         let error = Config::from_path(&config_path).unwrap_err();
 
-        assert_eq!(
-            error,
-            LayoutConfigError::ParseConfig {
-                path: config_path.clone()
-            }
-        );
+        assert_eq!(error, LayoutConfigError::ParseConfig { path: config_path.clone() });
 
         let _ = fs::remove_file(config_path);
     }
@@ -841,12 +780,32 @@ mod tests {
         })
         .unwrap();
 
-        assert!(paths
-            .authored_config
-            .ends_with(".config/hypreact/config.tsx"));
+        assert!(paths.authored_config.ends_with(".config/hypreact/config.tsx"));
         assert!(paths.prepared_config.ends_with(".cache/hypreact/config.js"));
 
         let _ = fs::remove_file(config_dir.join("config.tsx"));
+    }
+
+    #[test]
+    fn discovers_fennel_config_from_home_dir() {
+        let temp_dir = std::env::temp_dir();
+        let home_dir = temp_dir.join("hypreact-config-discovery-fennel-home");
+        let config_dir = home_dir.join(".config/hypreact");
+        let data_dir = home_dir.join(".cache/hypreact");
+        let _ = fs::create_dir_all(&config_dir);
+        let _ = fs::create_dir_all(&data_dir);
+        fs::write(config_dir.join("config.fnl"), "{:defaultLayout \"master-stack\"}").unwrap();
+
+        let paths = ConfigPaths::discover(ConfigDiscoveryOptions {
+            home_dir: Some(home_dir.clone()),
+            ..ConfigDiscoveryOptions::default()
+        })
+        .unwrap();
+
+        assert!(paths.authored_config.ends_with(".config/hypreact/config.fnl"));
+        assert!(paths.prepared_config.ends_with(".cache/hypreact/config.js"));
+
+        let _ = fs::remove_file(config_dir.join("config.fnl"));
     }
 
     #[test]
@@ -931,11 +890,7 @@ mod tests {
         let config = Config {
             default_layout: Some("master-stack".into()),
             layout_rules: vec![
-                LayoutRule {
-                    index: Some(4),
-                    layout: "testing".into(),
-                    ..LayoutRule::default()
-                },
+                LayoutRule { index: Some(4), layout: "testing".into(), ..LayoutRule::default() },
                 LayoutRule {
                     monitor: Some("eDP-1".into()),
                     layout: "master-stack".into(),

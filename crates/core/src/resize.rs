@@ -183,9 +183,7 @@ pub fn select_resize_candidate(
     direction: ResizeDirection,
 ) -> Option<ResizeCandidate> {
     let target_axis = PartitionAxis::from_resize_direction(direction);
-    let partition_path = partition_tree
-        .window_to_partition_path
-        .get(focused_window_id)?;
+    let partition_path = partition_tree.window_to_partition_path.get(focused_window_id)?;
 
     for partition_id in partition_path.iter().rev() {
         let partition = partition_tree.partitions.get(partition_id)?;
@@ -226,13 +224,11 @@ pub fn select_resize_candidate(
                 shrink_branch_index: focused_branch_index + 1,
             })
             .or_else(|| {
-                focused_branch_index
-                    .checked_sub(1)
-                    .map(|previous_branch_index| ResizeCandidate {
-                        partition_id: partition.partition_id.clone(),
-                        grow_branch_index: previous_branch_index,
-                        shrink_branch_index: focused_branch_index,
-                    })
+                focused_branch_index.checked_sub(1).map(|previous_branch_index| ResizeCandidate {
+                    partition_id: partition.partition_id.clone(),
+                    grow_branch_index: previous_branch_index,
+                    shrink_branch_index: focused_branch_index,
+                })
             }),
         };
         let Some(candidate) = candidate else {
@@ -276,10 +272,7 @@ pub fn apply_resize_step(
 
     let grow_share = adjustment.branch_shares[candidate.grow_branch_index];
     let shrink_share = adjustment.branch_shares[candidate.shrink_branch_index];
-    let shrink_min = shrink_branch
-        .constraints
-        .min_share
-        .unwrap_or(MIN_BRANCH_SHARE_UNITS);
+    let shrink_min = shrink_branch.constraints.min_share.unwrap_or(MIN_BRANCH_SHARE_UNITS);
     let grow_max = grow_branch.constraints.max_share;
 
     if shrink_share <= shrink_min {
@@ -312,11 +305,7 @@ pub fn apply_resize_step(
 }
 
 pub fn gc_resize_state(state: &mut WorkspaceResizeState, partition_tree: &PartitionTree) {
-    let valid_partition_ids = partition_tree
-        .partitions
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let valid_partition_ids = partition_tree.partitions.keys().cloned().collect::<BTreeSet<_>>();
     state
         .adjustments_by_partition_id
         .retain(|partition_id, _| valid_partition_ids.contains(partition_id));
@@ -324,11 +313,7 @@ pub fn gc_resize_state(state: &mut WorkspaceResizeState, partition_tree: &Partit
 
 fn default_partition_adjustment(partition: &PartitionNode) -> PartitionAdjustment {
     PartitionAdjustment {
-        branch_ids: partition
-            .branches
-            .iter()
-            .map(|branch| branch.branch_id.clone())
-            .collect(),
+        branch_ids: partition.branches.iter().map(|branch| branch.branch_id.clone()).collect(),
         branch_shares: partition
             .branches
             .iter()
@@ -338,16 +323,10 @@ fn default_partition_adjustment(partition: &PartitionNode) -> PartitionAdjustmen
 }
 
 fn sync_partition_adjustment(adjustment: &mut PartitionAdjustment, partition: &PartitionNode) {
-    let branch_ids = partition
-        .branches
-        .iter()
-        .map(|branch| branch.branch_id.clone())
-        .collect::<Vec<_>>();
-    let branch_default_shares = partition
-        .branches
-        .iter()
-        .map(|branch| branch.default_share)
-        .collect::<Vec<_>>();
+    let branch_ids =
+        partition.branches.iter().map(|branch| branch.branch_id.clone()).collect::<Vec<_>>();
+    let branch_default_shares =
+        partition.branches.iter().map(|branch| branch.default_share).collect::<Vec<_>>();
     let branch_shares = reconciled_branch_shares(adjustment, &branch_ids, &branch_default_shares);
 
     adjustment.branch_ids = branch_ids;
@@ -355,11 +334,7 @@ fn sync_partition_adjustment(adjustment: &mut PartitionAdjustment, partition: &P
 }
 
 fn default_branch_share(branch_default_shares: &[Option<u32>], index: usize) -> u32 {
-    branch_default_shares
-        .get(index)
-        .copied()
-        .flatten()
-        .unwrap_or(DEFAULT_BRANCH_SHARE_UNITS)
+    branch_default_shares.get(index).copied().flatten().unwrap_or(DEFAULT_BRANCH_SHARE_UNITS)
 }
 
 #[cfg(test)]
@@ -378,34 +353,19 @@ mod tests {
                 PartitionNode {
                     partition_id: partition_id.clone(),
                     axis: PartitionAxis::Horizontal,
-                    rect: LayoutRect {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 1000.0,
-                        height: 700.0,
-                    },
+                    rect: LayoutRect { x: 0.0, y: 0.0, width: 1000.0, height: 700.0 },
                     adjustable: true,
                     branches: vec![
                         PartitionBranch {
                             branch_id: "master".to_string(),
-                            rect: LayoutRect {
-                                x: 0.0,
-                                y: 0.0,
-                                width: 600.0,
-                                height: 700.0,
-                            },
+                            rect: LayoutRect { x: 0.0, y: 0.0, width: 600.0, height: 700.0 },
                             descendant_window_ids: vec![master.clone()],
                             default_share: None,
                             constraints: PartitionConstraints::default(),
                         },
                         PartitionBranch {
                             branch_id: "stack".to_string(),
-                            rect: LayoutRect {
-                                x: 600.0,
-                                y: 0.0,
-                                width: 400.0,
-                                height: 700.0,
-                            },
+                            rect: LayoutRect { x: 600.0, y: 0.0, width: 400.0, height: 700.0 },
                             descendant_window_ids: vec![stack.clone()],
                             default_share: None,
                             constraints: PartitionConstraints::default(),
@@ -480,12 +440,7 @@ mod tests {
             select_resize_candidate(&tree, &WindowId::from("master"), ResizeDirection::Right)
                 .expect("resize candidate");
 
-        assert!(apply_resize_step(
-            &mut state,
-            &tree,
-            &candidate,
-            DEFAULT_RESIZE_STEP_UNITS,
-        ));
+        assert!(apply_resize_step(&mut state, &tree, &candidate, DEFAULT_RESIZE_STEP_UNITS,));
         assert_eq!(
             state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
             vec![132, 108]
@@ -516,41 +471,24 @@ mod tests {
 
         gc_resize_state(&mut state, &tree);
 
-        assert!(state
-            .adjustments_by_partition_id
-            .contains_key(&PartitionId::new("frame")));
-        assert!(!state
-            .adjustments_by_partition_id
-            .contains_key(&PartitionId::new("stale")));
+        assert!(state.adjustments_by_partition_id.contains_key(&PartitionId::new("frame")));
+        assert!(!state.adjustments_by_partition_id.contains_key(&PartitionId::new("stale")));
     }
 
     #[test]
     fn apply_resize_step_uses_authored_default_branch_shares() {
         let mut tree = partition_tree();
-        tree.partitions
-            .get_mut(&PartitionId::new("frame"))
-            .expect("frame partition")
-            .branches = vec![
+        tree.partitions.get_mut(&PartitionId::new("frame")).expect("frame partition").branches = vec![
             PartitionBranch {
                 branch_id: "master".to_string(),
-                rect: LayoutRect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 600.0,
-                    height: 700.0,
-                },
+                rect: LayoutRect { x: 0.0, y: 0.0, width: 600.0, height: 700.0 },
                 descendant_window_ids: vec![WindowId::from("master")],
                 default_share: Some(scale_authored_share_units(3)),
                 constraints: PartitionConstraints::default(),
             },
             PartitionBranch {
                 branch_id: "stack".to_string(),
-                rect: LayoutRect {
-                    x: 600.0,
-                    y: 0.0,
-                    width: 400.0,
-                    height: 700.0,
-                },
+                rect: LayoutRect { x: 600.0, y: 0.0, width: 400.0, height: 700.0 },
                 descendant_window_ids: vec![WindowId::from("stack")],
                 default_share: Some(scale_authored_share_units(2)),
                 constraints: PartitionConstraints::default(),
@@ -561,12 +499,7 @@ mod tests {
             select_resize_candidate(&tree, &WindowId::from("master"), ResizeDirection::Right)
                 .expect("resize candidate");
 
-        assert!(apply_resize_step(
-            &mut state,
-            &tree,
-            &candidate,
-            DEFAULT_RESIZE_STEP_UNITS,
-        ));
+        assert!(apply_resize_step(&mut state, &tree, &candidate, DEFAULT_RESIZE_STEP_UNITS,));
         assert_eq!(
             state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
             vec![48, 12]
@@ -597,10 +530,7 @@ mod tests {
     #[test]
     fn apply_resize_step_clamps_against_branch_min_and_max() {
         let mut tree = partition_tree();
-        let frame = tree
-            .partitions
-            .get_mut(&PartitionId::new("frame"))
-            .expect("frame partition");
+        let frame = tree.partitions.get_mut(&PartitionId::new("frame")).expect("frame partition");
         frame.branches[0].default_share = Some(scale_authored_share_units(3));
         frame.branches[0].constraints.max_share = Some(scale_authored_share_units(4));
         frame.branches[1].default_share = Some(scale_authored_share_units(2));

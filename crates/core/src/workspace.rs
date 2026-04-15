@@ -38,10 +38,7 @@ where
     model.set_current_workspace(workspace_id.clone());
     let focused_window_id = model.preferred_focus_window_on_current_workspace(window_ids);
 
-    Some(WorkspaceSelection {
-        workspace_id,
-        focused_window_id,
-    })
+    Some(WorkspaceSelection { workspace_id, focused_window_id })
 }
 
 pub fn request_select_next_workspace<I>(
@@ -112,7 +109,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{window_id, OutputId, WorkspaceId};
+    use crate::{OutputId, WorkspaceId, window_id};
 
     #[test]
     fn ensuring_default_workspace_creates_and_selects_it() {
@@ -121,15 +118,9 @@ mod tests {
         let workspace_id = ensure_default_workspace(&mut model, "1");
 
         assert_eq!(workspace_id, WorkspaceId("1".to_string()));
+        assert_eq!(model.current_workspace_id, Some(WorkspaceId("1".to_string())));
         assert_eq!(
-            model.current_workspace_id,
-            Some(WorkspaceId("1".to_string()))
-        );
-        assert_eq!(
-            model
-                .workspaces
-                .get(&WorkspaceId("1".to_string()))
-                .map(|workspace| workspace.focused),
+            model.workspaces.get(&WorkspaceId("1".to_string())).map(|workspace| workspace.focused),
             Some(true)
         );
     }
@@ -151,22 +142,13 @@ mod tests {
                 focused_window_id: None,
             })
         );
+        assert_eq!(model.current_workspace_id, Some(WorkspaceId("2".to_string())));
         assert_eq!(
-            model.current_workspace_id,
-            Some(WorkspaceId("2".to_string()))
-        );
-        assert_eq!(
-            model
-                .workspaces
-                .get(&WorkspaceId("1".to_string()))
-                .map(|workspace| workspace.focused),
+            model.workspaces.get(&WorkspaceId("1".to_string())).map(|workspace| workspace.focused),
             Some(false)
         );
         assert_eq!(
-            model
-                .workspaces
-                .get(&WorkspaceId("2".to_string()))
-                .map(|workspace| workspace.visible),
+            model.workspaces.get(&WorkspaceId("2".to_string())).map(|workspace| workspace.visible),
             Some(true)
         );
     }

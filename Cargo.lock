@@ -1114,6 +1114,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hypreact-runtime-fennel-core"
+version = "0.1.0"
+
+[[package]]
 name = "hypreact-runtime-js-browser"
 version = "0.1.0"
 dependencies = [
@@ -1166,6 +1170,7 @@ version = "0.1.0"
 dependencies = [
  "hypreact-config",
  "hypreact-core",
+ "hypreact-runtime-fennel-core",
  "hypreact-runtime-lua-core",
  "js-sys",
  "serde",
@@ -1191,6 +1196,7 @@ version = "0.1.0"
 dependencies = [
  "hypreact-config",
  "hypreact-core",
+ "hypreact-runtime-fennel-core",
  "hypreact-runtime-lua-core",
  "mlua",
  "serde_json",

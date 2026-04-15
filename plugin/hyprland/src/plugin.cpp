@@ -4,13 +4,13 @@
 
 #include <json/json.h>
 
+#include "hypreact_hypr_ffi.h"
 #include "hypreact_plugin_algorithm.hpp"
 #include "hypreact_plugin_dispatchers.hpp"
 #include "hypreact_plugin_hooks.hpp"
-#include "hypreact_plugin_sync.hpp"
-#include "hypreact_hypr_ffi.h"
 #include "hypreact_plugin_query.hpp"
 #include "hypreact_plugin_runtime.hpp"
+#include "hypreact_plugin_sync.hpp"
 
 #include "src/Compositor.hpp"
 #include "src/SharedDefs.hpp"
@@ -22,6 +22,7 @@ inline HANDLE PHANDLE = nullptr;
 
 namespace {
 
+using hypreact_plugin::applyPlacementForWorkspace;
 using hypreact_plugin::clearConfigPathValue;
 using hypreact_plugin::clearHooks;
 using hypreact_plugin::clearPluginHandle;
@@ -32,19 +33,18 @@ using hypreact_plugin::layoutRuntimeLoaded;
 using hypreact_plugin::loadLayoutRuntimeConfig;
 using hypreact_plugin::makeWindowId;
 using hypreact_plugin::markRecentWorkspaceResize;
-using hypreact_plugin::applyPlacementForWorkspace;
 using hypreact_plugin::queueWorkspaceRecalculate;
 using hypreact_plugin::recalculateWorkspace;
-using hypreact_plugin::runtime;
 using hypreact_plugin::resyncAll;
+using hypreact_plugin::runtime;
 using hypreact_plugin::setConfigPathValue;
 using hypreact_plugin::setPluginHandle;
+using hypreact_plugin::stringify;
 using hypreact_plugin::syncFocusedWindow;
 using hypreact_plugin::syncWindow;
 using hypreact_plugin::syncWorkspace;
 using hypreact_plugin::syncWorkspaceLayoutSpace;
 using hypreact_plugin::syncWorkspaceWindows;
-using hypreact_plugin::stringify;
 using hypreact_plugin::trim;
 using hypreact_plugin::workspaceName;
 
@@ -70,19 +70,18 @@ std::string fromFfiDirection(HypreactDirection direction) {
 
 void registerHypreactDispatchers() {
   hypreact_plugin::registerHypreactDispatchers(
-      PHANDLE,
-      hypreact_plugin::DispatcherCallbacks{
-          .callDispatcher = callDispatcher,
-          .makeWindowId = makeWindowId,
-          .syncWorkspace = syncWorkspace,
-          .syncWindow = syncWindow,
-          .syncWorkspaceWindows = syncWorkspaceWindows,
-          .recalculateWorkspace = recalculateWorkspace,
-          .syncFocusedWindow = syncFocusedWindow,
-          .queueWorkspaceRecalculate = queueWorkspaceRecalculate,
-          .applyPlacementForWorkspace = applyPlacementForWorkspace,
-          .markRecentWorkspaceResize = markRecentWorkspaceResize,
-      });
+      PHANDLE, hypreact_plugin::DispatcherCallbacks{
+                   .callDispatcher = callDispatcher,
+                   .makeWindowId = makeWindowId,
+                   .syncWorkspace = syncWorkspace,
+                   .syncWindow = syncWindow,
+                   .syncWorkspaceWindows = syncWorkspaceWindows,
+                   .recalculateWorkspace = recalculateWorkspace,
+                   .syncFocusedWindow = syncFocusedWindow,
+                   .queueWorkspaceRecalculate = queueWorkspaceRecalculate,
+                   .applyPlacementForWorkspace = applyPlacementForWorkspace,
+                   .markRecentWorkspaceResize = markRecentWorkspaceResize,
+               });
 }
 
 void refreshWorkspaceAlgorithms() {
@@ -91,11 +90,10 @@ void refreshWorkspaceAlgorithms() {
 
 void registerHypreactAlgorithm() {
   hypreact_plugin::registerHypreactAlgorithm(
-      PHANDLE,
-      hypreact_plugin::AlgorithmCallbacks{
-          .makeWindowId = makeWindowId,
-          .workspaceName = workspaceName,
-      });
+      PHANDLE, hypreact_plugin::AlgorithmCallbacks{
+                   .makeWindowId = makeWindowId,
+                   .workspaceName = workspaceName,
+               });
 }
 
 void unregisterHypreactAlgorithm() {
@@ -266,7 +264,7 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   return {
       .name = "hypreact",
       .description = "Hyprland plugin bridge for hypreact",
-      .author = "OpenCode",
+      .author = "AkisArou",
       .version = "0.1.0",
   };
 }

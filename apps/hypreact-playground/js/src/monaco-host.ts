@@ -63,6 +63,7 @@ self.MonacoEnvironment = {
 let configured = false;
 let cssLspRegistered = false;
 let luaConfigured = false;
+let fennelConfigured = false;
 
 function ensureMonacoStyles() {
   const styleId = "hypreact-monaco-host-css";
@@ -158,6 +159,14 @@ async function ensureLuaConfigured() {
   if (luaConfigured) return;
   await import("monaco-editor/esm/vs/basic-languages/lua/lua.contribution.js");
   luaConfigured = true;
+}
+
+async function ensureFennelConfigured() {
+  if (fennelConfigured) return;
+  await import(
+    "monaco-editor/esm/vs/basic-languages/clojure/clojure.contribution.js"
+  );
+  fennelConfigured = true;
 }
 
 function registerCssLspProviders() {
@@ -300,6 +309,10 @@ async function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
 
   if (models.some((model) => model.language === "lua")) {
     await ensureLuaConfigured();
+  }
+
+  if (models.some((model) => model.language === "clojure")) {
+    await ensureFennelConfigured();
   }
 
   for (const model of models) {

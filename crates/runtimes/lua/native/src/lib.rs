@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use hypreact_config::config_decode::decode_config_value;
 use hypreact_config::layout_decode::decode_layout_value;
@@ -15,6 +15,7 @@ use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLay
 use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
 use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use hypreact_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
 use hypreact_runtime_lua_core::LUA_SDK_SOURCE;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value};
 
@@ -43,6 +44,9 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
 
         let source = fs::read_to_string(&layout.module)
             .map_err(|_| RuntimeError::MissingRuntimeSource { name: layout.name.clone() })?;
+        let lua = create_lua_runtime().map_err(runtime_error)?;
+        let source = compile_authored_source(&lua, Path::new(&layout.module), &source)
+            .map_err(runtime_error)?;
 
         Ok(Some(PreparedLayout {
             selected: config
@@ -144,6 +148,12 @@ fn load_authored_config(path: &Path) -> Result<Config, LayoutConfigError> {
         path: path.to_path_buf(),
         message: error.to_string(),
     })?;
+    let source = compile_authored_source(&lua, path, &source).map_err(|error| {
+        LayoutConfigError::CompileAuthoredConfig {
+            path: path.to_path_buf(),
+            message: error.to_string(),
+        }
+    })?;
     let raw =
         lua.load(&source).set_name(path.to_string_lossy().into_owned()).eval::<Value>().map_err(
             |error| LayoutConfigError::EvaluateAuthoredConfig {
@@ -191,10 +201,9 @@ fn discover_layout_definitions(
             continue;
         }
 
-        let module_path = path.join("index.lua");
-        if !module_path.exists() {
+        let Some(module_path) = discover_layout_module_path(&path) else {
             continue;
-        }
+        };
 
         let stylesheet_path = path.join("index.css");
         let name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_owned();
@@ -247,6 +256,7 @@ fn load_stylesheet(path: Option<&str>) -> Option<PreparedStylesheet> {
 fn create_lua_runtime() -> Result<Lua, mlua::Error> {
     let lua = Lua::new();
     preload_hypreact_sdk(&lua)?;
+    preload_fennel_compiler(&lua)?;
     Ok(lua)
 }
 
@@ -256,6 +266,36 @@ fn preload_hypreact_sdk(lua: &Lua) -> Result<(), mlua::Error> {
     let loader = lua.create_function(|lua, ()| lua.load(LUA_SDK_SOURCE).eval::<Table>())?;
     preload.set("hypreact", loader)?;
     Ok(())
+}
+
+fn preload_fennel_compiler(lua: &Lua) -> Result<(), mlua::Error> {
+    let package: Table = lua.globals().get("package")?;
+    let preload: Table = package.get("preload")?;
+    let loader = lua.create_function(|lua, ()| lua.load(FENNEL_COMPILER_SOURCE).eval::<Table>())?;
+    preload.set("fennel", loader)?;
+    Ok(())
+}
+
+fn compile_authored_source(lua: &Lua, path: &Path, source: &str) -> Result<String, mlua::Error> {
+    if path.extension().and_then(|ext| ext.to_str()) != Some("fnl") {
+        return Ok(source.to_owned());
+    }
+
+    let fennel: Table = lua.load("return require('fennel')").eval()?;
+    let compile_string: Function = fennel.get("compileString")?;
+    let options = lua.create_table()?;
+    options.set("filename", path.to_string_lossy().into_owned())?;
+    compile_string.call((source, options))
+}
+
+fn discover_layout_module_path(path: &Path) -> Option<PathBuf> {
+    let lua_module_path = path.join("index.lua");
+    if lua_module_path.exists() {
+        return Some(lua_module_path);
+    }
+
+    let fennel_module_path = path.join("index.fnl");
+    fennel_module_path.exists().then_some(fennel_module_path)
 }
 
 fn config_error(error: LayoutConfigError) -> RuntimeError {
@@ -365,5 +405,98 @@ mod tests {
     #[test]
     fn supported_config_names_include_lua() {
         assert!(supported_authored_config_names().contains(&"config.lua"));
+        assert!(supported_authored_config_names().contains(&"config.fnl"));
+    }
+
+    #[test]
+    fn loads_fennel_authored_config_and_discovers_fennel_layouts() {
+        let root = std::env::temp_dir().join(format!(
+            "hypreact-fennel-config-{}",
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
+        std::fs::write(
+            root.join("config.fnl"),
+            "{:defaultLayout \"master-stack\" :layoutRules [{:index 0 :layout \"master-stack\"}]}",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("layouts/master-stack/index.fnl"),
+            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"root\"}) [(h.slot {:id \"main\" :take 1})]))",
+        )
+        .unwrap();
+
+        let config = load_authored_config(&root.join("config.fnl")).unwrap();
+
+        assert_eq!(config.default_layout.as_deref(), Some("master-stack"));
+        assert_eq!(config.layouts.len(), 1);
+        assert_eq!(config.layouts[0].runtime, RuntimeKind::Lua);
+        assert!(config.layouts[0].module.ends_with("index.fnl"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn evaluates_fennel_layout_dsl() {
+        let root = std::env::temp_dir().join(format!(
+            "hypreact-fennel-layout-{}",
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
+        std::fs::write(
+            root.join("layouts/master-stack/index.fnl"),
+            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"frame\"}) [(h.slot {:id \"master\" :take 1})]))",
+        )
+        .unwrap();
+
+        let runtime = LuaPreparedLayoutRuntime;
+        let config = Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Lua,
+                directory: root.join("layouts/master-stack").to_string_lossy().into_owned(),
+                module: root.join("layouts/master-stack/index.fnl").to_string_lossy().into_owned(),
+                stylesheet_path: None,
+                runtime_cache_payload: None,
+            }],
+            default_layout: Some("master-stack".into()),
+            layout_rules: vec![],
+            global_stylesheet_path: None,
+            resize: Default::default(),
+        };
+        let workspace = WorkspaceSnapshot {
+            id: hypreact_core::WorkspaceId::from("ws-1"),
+            name: "1".into(),
+            output_id: None,
+            layout_space: None,
+            active_workspaces: vec!["1".into()],
+            focused: true,
+            visible: true,
+            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+        };
+        let state = StateSnapshot {
+            focused_window_id: None,
+            current_output_id: None,
+            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            outputs: vec![],
+            workspaces: vec![workspace.clone()],
+            windows: vec![],
+            visible_window_ids: vec![],
+            workspace_names: vec!["1".into()],
+            resize_state: Default::default(),
+        };
+
+        let artifact = runtime.prepare_layout(&config, &workspace).unwrap().unwrap();
+        let context = runtime.build_context(&state, &workspace, Some(&artifact));
+        let layout = runtime.evaluate_layout(&artifact, &context).unwrap();
+
+        match layout {
+            SourceLayoutNode::Workspace { meta, children } => {
+                assert_eq!(meta.id.as_deref(), Some("frame"));
+                assert_eq!(children.len(), 1);
+            }
+            _ => panic!("expected workspace root"),
+        }
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -1,6 +1,6 @@
+use hypreact_core::WindowId;
 use hypreact_core::snapshot::WindowSnapshot;
 use hypreact_core::types::{WindowMode, WindowShell};
-use hypreact_core::WindowId;
 use hypreact_core::{LayoutNodeMeta, LayoutNodeType, MatchClause, MatchKey, RemainingTake};
 
 use super::*;
@@ -30,10 +30,7 @@ fn window(id: &str, app_id: &str, title: &str) -> WindowSnapshot {
 
 #[test]
 fn rejects_non_workspace_root() {
-    let tree = SourceLayoutNode::Group {
-        meta: LayoutNodeMeta::default(),
-        children: vec![],
-    };
+    let tree = SourceLayoutNode::Group { meta: LayoutNodeMeta::default(), children: vec![] };
 
     let error = ValidatedLayoutTree::new(tree).unwrap_err();
 
@@ -43,23 +40,14 @@ fn rejects_non_workspace_root() {
 #[test]
 fn rejects_duplicate_ids() {
     let tree = SourceLayoutNode::Workspace {
-        meta: LayoutNodeMeta {
-            id: Some("root".into()),
-            ..LayoutNodeMeta::default()
-        },
+        meta: LayoutNodeMeta { id: Some("root".into()), ..LayoutNodeMeta::default() },
         children: vec![
             SourceLayoutNode::Group {
-                meta: LayoutNodeMeta {
-                    id: Some("dup".into()),
-                    ..LayoutNodeMeta::default()
-                },
+                meta: LayoutNodeMeta { id: Some("dup".into()), ..LayoutNodeMeta::default() },
                 children: vec![],
             },
             SourceLayoutNode::Window {
-                meta: LayoutNodeMeta {
-                    id: Some("dup".into()),
-                    ..LayoutNodeMeta::default()
-                },
+                meta: LayoutNodeMeta { id: Some("dup".into()), ..LayoutNodeMeta::default() },
                 window_match: None,
             },
         ],
@@ -67,10 +55,7 @@ fn rejects_duplicate_ids() {
 
     let error = ValidatedLayoutTree::new(tree).unwrap_err();
 
-    assert_eq!(
-        error,
-        LayoutValidationError::DuplicateId { id: "dup".into() }
-    );
+    assert_eq!(error, LayoutValidationError::DuplicateId { id: "dup".into() });
 }
 
 #[test]
@@ -117,10 +102,7 @@ fn accepts_non_empty_match_clauses() {
         children: vec![SourceLayoutNode::Window {
             meta: LayoutNodeMeta::default(),
             window_match: Some(WindowMatch {
-                clauses: vec![MatchClause {
-                    key: MatchKey::AppId,
-                    value: "firefox".into(),
-                }],
+                clauses: vec![MatchClause { key: MatchKey::AppId, value: "firefox".into() }],
             }),
         }],
     };
@@ -149,14 +131,8 @@ fn normalizes_authored_match_expression_before_validation() {
                 meta: LayoutNodeMeta::default(),
                 window_match: Some(WindowMatch {
                     clauses: vec![
-                        MatchClause {
-                            key: MatchKey::AppId,
-                            value: "firefox".into()
-                        },
-                        MatchClause {
-                            key: MatchKey::Title,
-                            value: "Mozilla Firefox".into()
-                        },
+                        MatchClause { key: MatchKey::AppId, value: "firefox".into() },
+                        MatchClause { key: MatchKey::Title, value: "Mozilla Firefox".into() },
                     ],
                 }),
             }],
@@ -178,9 +154,7 @@ fn authored_invalid_match_bubbles_up_as_validation_error() {
     assert_eq!(
         error,
         LayoutValidationError::InvalidMatch {
-            source: MatchParseError::ExpectedQuotedValue {
-                key: "app_id".into()
-            },
+            source: MatchParseError::ExpectedQuotedValue { key: "app_id".into() },
         }
     );
 }
@@ -190,33 +164,22 @@ fn resolve_keeps_unmatched_window_node_as_empty_runtime_leaf() {
     let tree = ValidatedLayoutTree::new(SourceLayoutNode::Workspace {
         meta: LayoutNodeMeta::default(),
         children: vec![SourceLayoutNode::Window {
-            meta: LayoutNodeMeta {
-                id: Some("main".into()),
-                ..LayoutNodeMeta::default()
-            },
+            meta: LayoutNodeMeta { id: Some("main".into()), ..LayoutNodeMeta::default() },
             window_match: Some(WindowMatch {
-                clauses: vec![MatchClause {
-                    key: MatchKey::AppId,
-                    value: "firefox".into(),
-                }],
+                clauses: vec![MatchClause { key: MatchKey::AppId, value: "firefox".into() }],
             }),
         }],
     })
     .unwrap();
 
-    let resolved = tree
-        .resolve(&[window("w1", "alacritty", "Terminal")])
-        .unwrap();
+    let resolved = tree.resolve(&[window("w1", "alacritty", "Terminal")]).unwrap();
 
     assert_eq!(
         resolved.root,
         ResolvedLayoutNode::Workspace {
             meta: LayoutNodeMeta::default(),
             children: vec![ResolvedLayoutNode::Window {
-                meta: LayoutNodeMeta {
-                    id: Some("main".into()),
-                    ..LayoutNodeMeta::default()
-                },
+                meta: LayoutNodeMeta { id: Some("main".into()), ..LayoutNodeMeta::default() },
                 window_id: None,
                 children: vec![],
             }],
@@ -229,15 +192,9 @@ fn resolve_slot_expands_into_multiple_runtime_windows_in_order() {
     let tree = ValidatedLayoutTree::new(SourceLayoutNode::Workspace {
         meta: LayoutNodeMeta::default(),
         children: vec![SourceLayoutNode::Slot {
-            meta: LayoutNodeMeta {
-                class: vec!["stack".into()],
-                ..LayoutNodeMeta::default()
-            },
+            meta: LayoutNodeMeta { class: vec!["stack".into()], ..LayoutNodeMeta::default() },
             window_match: Some(WindowMatch {
-                clauses: vec![MatchClause {
-                    key: MatchKey::AppId,
-                    value: "firefox".into(),
-                }],
+                clauses: vec![MatchClause { key: MatchKey::AppId, value: "firefox".into() }],
             }),
             take: SlotTake::Count(2),
         }],
@@ -298,27 +255,15 @@ fn resolve_later_nodes_only_see_unclaimed_windows() {
         meta: LayoutNodeMeta::default(),
         children: vec![
             SourceLayoutNode::Window {
-                meta: LayoutNodeMeta {
-                    id: Some("primary".into()),
-                    ..LayoutNodeMeta::default()
-                },
+                meta: LayoutNodeMeta { id: Some("primary".into()), ..LayoutNodeMeta::default() },
                 window_match: Some(WindowMatch {
-                    clauses: vec![MatchClause {
-                        key: MatchKey::AppId,
-                        value: "firefox".into(),
-                    }],
+                    clauses: vec![MatchClause { key: MatchKey::AppId, value: "firefox".into() }],
                 }),
             },
             SourceLayoutNode::Slot {
-                meta: LayoutNodeMeta {
-                    id: Some("rest".into()),
-                    ..LayoutNodeMeta::default()
-                },
+                meta: LayoutNodeMeta { id: Some("rest".into()), ..LayoutNodeMeta::default() },
                 window_match: Some(WindowMatch {
-                    clauses: vec![MatchClause {
-                        key: MatchKey::AppId,
-                        value: "firefox".into(),
-                    }],
+                    clauses: vec![MatchClause { key: MatchKey::AppId, value: "firefox".into() }],
                 }),
                 take: SlotTake::Remaining(RemainingTake::Remaining),
             },
@@ -409,10 +354,7 @@ fn resolve_focus_repro_slots_keep_second_window_in_main_column() {
                     ..LayoutNodeMeta::default()
                 },
                 children: vec![SourceLayoutNode::Slot {
-                    meta: LayoutNodeMeta {
-                        id: Some("side".into()),
-                        ..LayoutNodeMeta::default()
-                    },
+                    meta: LayoutNodeMeta { id: Some("side".into()), ..LayoutNodeMeta::default() },
                     window_match: None,
                     take: SlotTake::Remaining(RemainingTake::Remaining),
                 }],

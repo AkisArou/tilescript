@@ -11,7 +11,7 @@ pub fn build_runtime_bundle(paths: &ConfigPaths) -> Result<RuntimeBundle, Layout
 
 fn runtime_kind_for_authored_config(paths: &ConfigPaths) -> RuntimeKind {
     match paths.authored_config.extension().and_then(|ext| ext.to_str()) {
-        Some("lua") => RuntimeKind::Lua,
+        Some("lua" | "fnl") => RuntimeKind::Lua,
         _ => RuntimeKind::Js,
     }
 }

@@ -2,8 +2,8 @@ use leptos::prelude::*;
 
 mod app_state;
 mod components;
-mod editor_host;
 mod editor_files;
+mod editor_host;
 mod layout_runtime;
 mod session;
 mod views;

@@ -5,16 +5,10 @@ use crate::wm::{OutputModel, WindowModel, WmModel, WorkspaceModel};
 pub fn state_snapshot_for_model(model: &WmModel) -> StateSnapshot {
     let outputs: Vec<OutputSnapshot> = model.outputs.values().map(output_snapshot).collect();
     let workspace_names = model.workspace_names();
-    let workspaces: Vec<WorkspaceSnapshot> = model
-        .workspaces
-        .values()
-        .map(|workspace| workspace_snapshot(model, workspace))
-        .collect();
-    let mut windows: Vec<WindowSnapshot> = model
-        .windows
-        .values()
-        .map(|window| window_snapshot(model, window))
-        .collect();
+    let workspaces: Vec<WorkspaceSnapshot> =
+        model.workspaces.values().map(|workspace| workspace_snapshot(model, workspace)).collect();
+    let mut windows: Vec<WindowSnapshot> =
+        model.windows.values().map(|window| window_snapshot(model, window)).collect();
 
     let ordered_window_ids = model
         .current_workspace_id()
@@ -69,11 +63,7 @@ pub fn workspace_snapshot(model: &WmModel, workspace: &WorkspaceModel) -> Worksp
 pub fn window_snapshot(model: &WmModel, window: &WindowModel) -> WindowSnapshot {
     WindowSnapshot {
         id: window.id.clone(),
-        shell: if window.is_xwayland {
-            WindowShell::Xwayland
-        } else {
-            WindowShell::Wayland
-        },
+        shell: if window.is_xwayland { WindowShell::Xwayland } else { WindowShell::Wayland },
         app_id: window.app_id.clone(),
         title: window.title.clone(),
         class: window.class.clone(),
@@ -146,10 +136,7 @@ mod tests {
         assert_eq!(snapshot.current_workspace_id, Some(WorkspaceId::from("1")));
         assert_eq!(snapshot.current_output_id, Some(OutputId::from("output-1")));
         assert_eq!(snapshot.focused_window_id, Some(window_id(1)));
-        assert_eq!(
-            snapshot.workspace_names,
-            vec!["1".to_string(), "2".to_string()]
-        );
+        assert_eq!(snapshot.workspace_names, vec!["1".to_string(), "2".to_string()]);
         assert_eq!(snapshot.visible_window_ids, vec![window_id(1)]);
         assert_eq!(snapshot.outputs.len(), 1);
         assert_eq!(snapshot.workspaces.len(), 2);

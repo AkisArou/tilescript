@@ -8,22 +8,24 @@ use hypreact_config::runtime::build_source_bundle_authoring_layout_service;
 use hypreact_core::focus::{FocusTree, FocusTreeWindowGeometry};
 use hypreact_core::navigation::WindowGeometryCandidate;
 use hypreact_core::query::state_snapshot_for_model;
-use hypreact_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets, SelectedLayout};
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
     PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
     scale_authored_share_units,
 };
+use hypreact_core::runtime::prepared_layout::{
+    PreparedLayout, PreparedStylesheets, SelectedLayout,
+};
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::WindowSnapshot;
 use hypreact_core::wm::{WindowGeometry, WmModel};
+use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
 use hypreact_runtime_js_browser::JavaScriptBrowserRuntimeProvider;
 use hypreact_runtime_lua_browser::LuaBrowserRuntimeProvider;
 use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{Display, FlexDirectionValue, LayoutSnapshotNode, SceneResponse, SizeValue};
-use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
 
 use crate::editor_files::{
     AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, entry_runtime_path,
@@ -32,7 +34,8 @@ use crate::editor_files::{
 use crate::session::PreviewDiagnostic;
 
 const ROOT_DIR: &str = "/playground";
-const FALLBACK_LAYOUT_STYLESHEET: &str = "workspace { display: flex; width: 100%; height: 100%; } window { flex: 1 1 0; }";
+const FALLBACK_LAYOUT_STYLESHEET: &str =
+    "workspace { display: flex; width: 100%; height: 100%; } window { flex: 1 1 0; }";
 
 #[derive(Debug, Clone)]
 pub struct EvaluatedPreview {
@@ -111,7 +114,8 @@ pub async fn evaluate_preview_from_buffers(
         let mut preview_model = model.clone();
         apply_layout_selection(&mut preview_model, &config);
         for (workspace_id, layout) in manual_layouts {
-            preview_model.set_workspace_effective_layout(workspace_id.clone(), Some(layout.clone()));
+            preview_model
+                .set_workspace_effective_layout(workspace_id.clone(), Some(layout.clone()));
         }
 
         let state_snapshot = state_snapshot_for_model(&preview_model);
@@ -120,9 +124,16 @@ pub async fn evaluate_preview_from_buffers(
             .cloned()
             .ok_or_else(|| "preview workspace is unavailable".to_string())?;
 
-        let selected_layout_name = workspace.effective_layout.as_ref().map(|layout| layout.name.clone());
+        let selected_layout_name =
+            workspace.effective_layout.as_ref().map(|layout| layout.name.clone());
         let evaluation = service
-            .evaluate_prepared_for_workspace(&root_dir, &sources, &config, &state_snapshot, &workspace)
+            .evaluate_prepared_for_workspace(
+                &root_dir,
+                &sources,
+                &config,
+                &state_snapshot,
+                &workspace,
+            )
             .await;
 
         let mut diagnostics = collect_diagnostics_from_buffers(language, buffers, dynamic_layouts);
@@ -217,10 +228,8 @@ pub fn source_bundle_sources(
     for file in iter_dynamic_files(dynamic_layouts)
         .filter(|file| file_layout_language(&file.key, dynamic_layouts) == Some(language))
     {
-        let source = buffers
-            .get(&file.key)
-            .cloned()
-            .unwrap_or_else(|| file.initial_content.clone());
+        let source =
+            buffers.get(&file.key).cloned().unwrap_or_else(|| file.initial_content.clone());
         sources.insert(PathBuf::from(runtime_path(&file.key, dynamic_layouts)), source);
     }
     sources
@@ -241,9 +250,10 @@ fn build_layout_service(
     entry_path: &Path,
 ) -> Result<SourceBundleAuthoringLayoutService, LayoutConfigError> {
     let bundle = match language {
-        AuthoringLanguage::JavaScript => JavaScriptBrowserRuntimeProvider::new()
-            .build_source_bundle_runtime_bundle()?,
-        AuthoringLanguage::Lua => {
+        AuthoringLanguage::JavaScript => {
+            JavaScriptBrowserRuntimeProvider::new().build_source_bundle_runtime_bundle()?
+        }
+        AuthoringLanguage::Lua | AuthoringLanguage::Fennel => {
             LuaBrowserRuntimeProvider::new().build_source_bundle_runtime_bundle()?
         }
     };
@@ -302,7 +312,10 @@ fn workspace_windows(
         .filter(|window| window.workspace_id.as_ref() == Some(&workspace.id))
         .filter(|window| window.output_id.as_ref() == workspace.output_id.as_ref())
         .filter(|window| {
-            window.mapped && !window.closing && !window.mode.is_floating() && !window.mode.is_fullscreen()
+            window.mapped
+                && !window.closing
+                && !window.mode.is_floating()
+                && !window.mode.is_fullscreen()
         })
         .cloned()
         .collect()
@@ -371,14 +384,13 @@ fn selected_layout_for_workspace(
     SelectedLayout {
         runtime: match language {
             AuthoringLanguage::JavaScript => RuntimeKind::Js,
-            AuthoringLanguage::Lua => RuntimeKind::Lua,
+            AuthoringLanguage::Lua | AuthoringLanguage::Fennel => RuntimeKind::Lua,
         },
-        module: fallback_module
-            .map(str::to_string)
-            .unwrap_or_else(|| match language {
-                AuthoringLanguage::JavaScript => format!("{directory}/index.tsx"),
-                AuthoringLanguage::Lua => format!("{directory}/index.lua"),
-            }),
+        module: fallback_module.map(str::to_string).unwrap_or_else(|| match language {
+            AuthoringLanguage::JavaScript => format!("{directory}/index.tsx"),
+            AuthoringLanguage::Lua => format!("{directory}/index.lua"),
+            AuthoringLanguage::Fennel => format!("{directory}/index.fnl"),
+        }),
         name,
         directory,
     }
@@ -453,10 +465,8 @@ fn collect_diagnostics_from_buffers(
                 .get(&file_key)
                 .cloned()
                 .unwrap_or_else(|| initial_content_for_key(&file_key, dynamic_layouts));
-            analyze_stylesheet(&source)
-                .diagnostics
-                .into_iter()
-                .map(move |diagnostic| PreviewDiagnostic {
+            analyze_stylesheet(&source).diagnostics.into_iter().map(move |diagnostic| {
+                PreviewDiagnostic {
                     path: file.path().to_string(),
                     severity: match diagnostic.severity {
                         CssDiagnosticSeverity::Error => "error",
@@ -481,7 +491,8 @@ fn collect_diagnostics_from_buffers(
                         diagnostic.range.end_line,
                         diagnostic.range.end_column,
                     ),
-                })
+                }
+            })
         })
         .chain(
             iter_dynamic_files(dynamic_layouts)
@@ -492,10 +503,8 @@ fn collect_diagnostics_from_buffers(
                         .get(&file.key)
                         .cloned()
                         .unwrap_or_else(|| file.initial_content.clone());
-                    analyze_stylesheet(&source)
-                        .diagnostics
-                        .into_iter()
-                        .map(move |diagnostic| PreviewDiagnostic {
+                    analyze_stylesheet(&source).diagnostics.into_iter().map(move |diagnostic| {
+                        PreviewDiagnostic {
                             path: file.path.clone(),
                             severity: match diagnostic.severity {
                                 CssDiagnosticSeverity::Error => "error",
@@ -510,7 +519,9 @@ fn collect_diagnostics_from_buffers(
                                 CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
                                 CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
                                 CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
-                                CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
+                                CssDiagnosticCode::UnsupportedAttributeKey => {
+                                    "unsupportedAttributeKey"
+                                }
                             },
                             message: diagnostic.message,
                             range: format!(
@@ -520,7 +531,8 @@ fn collect_diagnostics_from_buffers(
                                 diagnostic.range.end_line,
                                 diagnostic.range.end_column,
                             ),
-                        })
+                        }
+                    })
                 }),
         )
         .collect()
@@ -760,7 +772,11 @@ fn branch_id_for_scene_child(
     fallback_branch_id(parent, child, index)
 }
 
-fn fallback_branch_id(parent: &LayoutSnapshotNode, child: &LayoutSnapshotNode, index: usize) -> String {
+fn fallback_branch_id(
+    parent: &LayoutSnapshotNode,
+    child: &LayoutSnapshotNode,
+    index: usize,
+) -> String {
     if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = child {
         return window_id.to_string();
     }
@@ -794,7 +810,8 @@ fn partition_axis_from_style(computed: &hypreact_scene::ComputedStyle) -> Option
 }
 
 fn partition_is_adjustable(node: &LayoutSnapshotNode) -> bool {
-    let Some(axis) = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout)) else {
+    let Some(axis) = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout))
+    else {
         return false;
     };
 
@@ -804,7 +821,10 @@ fn partition_is_adjustable(node: &LayoutSnapshotNode) -> bool {
     resizable_children >= 2
 }
 
-fn inferred_branch_constraints(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> PartitionConstraints {
+fn inferred_branch_constraints(
+    node: &LayoutSnapshotNode,
+    axis: Option<PartitionAxis>,
+) -> PartitionConstraints {
     PartitionConstraints {
         min_share: None,
         max_share: inferred_max_share(node),

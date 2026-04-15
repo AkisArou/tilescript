@@ -29,16 +29,11 @@ impl ValidatedLayoutTree {
         };
 
         let mut claimed = BTreeSet::new();
-        let resolved_children = children
-            .iter()
-            .flat_map(|child| resolve_node(child, windows, &mut claimed))
-            .collect();
+        let resolved_children =
+            children.iter().flat_map(|child| resolve_node(child, windows, &mut claimed)).collect();
 
         Ok(ResolvedLayoutTree {
-            root: ResolvedLayoutNode::Workspace {
-                meta: meta.clone(),
-                children: resolved_children,
-            },
+            root: ResolvedLayoutNode::Workspace { meta: meta.clone(), children: resolved_children },
         })
     }
 }
@@ -120,11 +115,7 @@ fn resolve_node(
                 children: Vec::new(),
             }]
         }
-        SourceLayoutNode::Slot {
-            meta,
-            window_match,
-            take,
-        } => {
+        SourceLayoutNode::Slot { meta, window_match, take } => {
             let matching_ids: Vec<_> = windows
                 .iter()
                 .filter(|window| can_claim_window(window_match.as_ref(), window, claimed))

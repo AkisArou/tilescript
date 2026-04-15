@@ -68,10 +68,7 @@ pub fn parse_window_match(input: &str) -> Result<WindowMatch, MatchParseError> {
 }
 
 pub fn matches_window(window_match: &WindowMatch, window: &WindowSnapshot) -> bool {
-    window_match
-        .clauses
-        .iter()
-        .all(|clause| clause_matches(clause, window))
+    window_match.clauses.iter().all(|clause| clause_matches(clause, window))
 }
 
 fn clause_matches(clause: &MatchClause, window: &WindowSnapshot) -> bool {
@@ -95,33 +92,22 @@ fn shell_name(shell: WindowShell) -> &'static str {
 
 fn parse_clause(token: &str) -> Result<MatchClause, MatchParseError> {
     let Some((raw_key, raw_value)) = token.split_once('=') else {
-        return Err(MatchParseError::ExpectedEquals {
-            key: token.to_owned(),
-        });
+        return Err(MatchParseError::ExpectedEquals { key: token.to_owned() });
     };
 
     let key = parse_key(raw_key)?;
     let Some(raw_value) = raw_value.strip_prefix('"') else {
-        return Err(MatchParseError::ExpectedQuotedValue {
-            key: raw_key.to_owned(),
-        });
+        return Err(MatchParseError::ExpectedQuotedValue { key: raw_key.to_owned() });
     };
     let Some(raw_value) = raw_value.strip_suffix('"') else {
-        return Err(MatchParseError::UnterminatedValue {
-            key: raw_key.to_owned(),
-        });
+        return Err(MatchParseError::UnterminatedValue { key: raw_key.to_owned() });
     };
 
     if raw_value.contains('"') {
-        return Err(MatchParseError::TrailingContent {
-            content: token.to_owned(),
-        });
+        return Err(MatchParseError::TrailingContent { content: token.to_owned() });
     }
 
-    Ok(MatchClause {
-        key,
-        value: raw_value.replace("\\\"", "\"").replace("\\\\", "\\"),
-    })
+    Ok(MatchClause { key, value: raw_value.replace("\\\"", "\"").replace("\\\\", "\\") })
 }
 
 fn parse_key(input: &str) -> Result<MatchKey, MatchParseError> {
@@ -133,9 +119,7 @@ fn parse_key(input: &str) -> Result<MatchKey, MatchParseError> {
         "role" => Ok(MatchKey::Role),
         "shell" => Ok(MatchKey::Shell),
         "window_type" => Ok(MatchKey::WindowType),
-        other => Err(MatchParseError::UnsupportedKey {
-            key: other.to_owned(),
-        }),
+        other => Err(MatchParseError::UnsupportedKey { key: other.to_owned() }),
     }
 }
 
@@ -174,14 +158,8 @@ mod tests {
             parsed,
             WindowMatch {
                 clauses: vec![
-                    MatchClause {
-                        key: MatchKey::AppId,
-                        value: "firefox".into()
-                    },
-                    MatchClause {
-                        key: MatchKey::Title,
-                        value: "Mozilla Firefox".into()
-                    },
+                    MatchClause { key: MatchKey::AppId, value: "firefox".into() },
+                    MatchClause { key: MatchKey::Title, value: "Mozilla Firefox".into() },
                 ],
             }
         );
@@ -198,12 +176,7 @@ mod tests {
     fn rejects_unquoted_values() {
         let error = parse_window_match("app_id=firefox").unwrap_err();
 
-        assert_eq!(
-            error,
-            MatchParseError::ExpectedQuotedValue {
-                key: "app_id".into()
-            }
-        );
+        assert_eq!(error, MatchParseError::ExpectedQuotedValue { key: "app_id".into() });
     }
 
     #[test]
@@ -217,14 +190,8 @@ mod tests {
     fn matches_all_clauses_against_window_snapshot() {
         let window_match = WindowMatch {
             clauses: vec![
-                MatchClause {
-                    key: MatchKey::AppId,
-                    value: "firefox".into(),
-                },
-                MatchClause {
-                    key: MatchKey::Shell,
-                    value: "wayland".into(),
-                },
+                MatchClause { key: MatchKey::AppId, value: "firefox".into() },
+                MatchClause { key: MatchKey::Shell, value: "wayland".into() },
             ],
         };
 
@@ -234,10 +201,7 @@ mod tests {
     #[test]
     fn mismatched_clause_rejects_window_snapshot() {
         let window_match = WindowMatch {
-            clauses: vec![MatchClause {
-                key: MatchKey::Title,
-                value: "Alacritty".into(),
-            }],
+            clauses: vec![MatchClause { key: MatchKey::Title, value: "Alacritty".into() }],
         };
 
         assert!(!matches_window(&window_match, &test_window("win-1")));

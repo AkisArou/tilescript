@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 hypreact-config = { path = "../../../config" }
 hypreact-core = { path = "../../../core" }
+hypreact-runtime-fennel-core = { path = "../../fennel/core" }
 hypreact-runtime-lua-core = { path = "../core" }
 mlua = { workspace = true, features = ["lua54", "vendored", "serialize"] }
 serde_json.workspace = true

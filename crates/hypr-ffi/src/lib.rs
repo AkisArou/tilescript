@@ -1,5 +1,5 @@
-mod action;
 mod abi;
+mod action;
 mod bootstrap;
 mod ffi_string;
 mod layout;
@@ -7,16 +7,22 @@ mod response;
 mod runtime_types;
 mod sdk;
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use hypreact_core::OutputId;
+use hypreact_core::WorkspaceId;
+use hypreact_core::host::{HostAction, dispatch_wm_command};
 use hypreact_core::query::state_snapshot_for_model;
 use hypreact_core::resize::ResizeDirection;
 use hypreact_core::wm::DrawableSpace;
-use hypreact_core::host::{HostAction, dispatch_wm_command};
-use hypreact_core::OutputId;
-use hypreact_core::WorkspaceId;
 use hypreact_layout_runtime as runtime_facade;
 
+pub use abi::{
+    HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactDiagnostic,
+    HypreactDiagnosticRange, HypreactLayoutStatusResult, HypreactOutputSync,
+    HypreactPlacementGeometry, HypreactPlacementResult, HypreactStateResult, HypreactStatusResult,
+    HypreactStringResult, HypreactWindowSync, HypreactWorkspaceLayoutSpaceSync,
+};
 use action::{action_to_ffi, wm_command_from_ffi};
 use bootstrap::bootstrap_config_root;
 use ffi_string::{cstr_to_str, optional_cstr_to_string, string_free};
@@ -28,12 +34,6 @@ use layout::{
 use response::FfiError;
 use runtime_types::{HypreactRuntimeHandle, LayoutRuntimeStatus, StatusResult};
 use sdk::sync_sdk_support;
-pub use abi::{
-    HypreactAction, HypreactActionResult, HypreactCommandInput, HypreactLayoutStatusResult,
-    HypreactDiagnostic, HypreactDiagnosticRange, HypreactOutputSync, HypreactPlacementGeometry,
-    HypreactPlacementResult, HypreactStateResult, HypreactStatusResult, HypreactStringResult,
-    HypreactWindowSync, HypreactWorkspaceLayoutSpaceSync,
-};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn hypreact_runtime_new() -> *mut HypreactRuntimeHandle {
@@ -82,10 +82,7 @@ pub extern "C" fn hypreact_runtime_reset_state_result(
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         runtime_facade::reset_model(&mut handle.model);
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -115,10 +112,7 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_output_result(
             output.logical_height,
         );
 
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -135,10 +129,7 @@ pub extern "C" fn hypreact_runtime_remove_output_result(
         let handle = ffi_handle_mut(handle)?;
         let output_id = OutputId::from(cstr_to_str(output_id)?.to_string());
         let changed = runtime_facade::remove_output(&mut handle.model, &output_id);
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -162,10 +153,7 @@ pub extern "C" fn hypreact_runtime_activate_workspace_result(
         };
         runtime_facade::activate_workspace(&mut handle.model, workspace_id, output_id);
 
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -192,16 +180,10 @@ pub unsafe extern "C" fn hypreact_runtime_set_workspace_layout_space_result(
             &mut handle.model,
             workspace_id,
             output_id,
-            DrawableSpace {
-                width: layout_space.width as i32,
-                height: layout_space.height as i32,
-            },
+            DrawableSpace { width: layout_space.width as i32, height: layout_space.height as i32 },
         );
 
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -218,10 +200,7 @@ pub extern "C" fn hypreact_runtime_focus_window_result(
         let handle = ffi_handle_mut(handle)?;
         let window_id = optional_cstr_to_window_id(window_id)?;
         runtime_facade::focus_window(&mut handle.model, window_id);
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -239,10 +218,7 @@ pub extern "C" fn hypreact_runtime_set_window_closing_result(
         let handle = ffi_handle_mut(handle)?;
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window_id)?.to_string());
         let changed = runtime_facade::set_window_closing(&mut handle.model, &window_id, closing);
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -305,10 +281,7 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_window_result(
             window.fullscreen,
         );
 
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -323,10 +296,7 @@ pub extern "C" fn hypreact_runtime_bootstrap_config_result(
     match catch_unwind(AssertUnwindSafe(|| {
         let config_root = std::path::PathBuf::from(cstr_to_str(config_root)?);
         let changed = bootstrap_config_root(&config_root)?;
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -341,10 +311,7 @@ pub extern "C" fn hypreact_runtime_sync_sdk_support_result(
     match catch_unwind(AssertUnwindSafe(|| {
         let config_root = std::path::PathBuf::from(cstr_to_str(config_root)?);
         let changed = sync_sdk_support(&config_root)?;
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -361,10 +328,7 @@ pub extern "C" fn hypreact_runtime_load_layout_config_result(
         let handle = ffi_handle_mut(handle)?;
         let config_path = cstr_to_str(config_path)?.to_string();
         let _ = load_layout_config(handle, config_path)?;
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -379,10 +343,7 @@ pub extern "C" fn hypreact_runtime_reload_layout_config_result(
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let _ = reload_layout_config(handle)?;
-        status_result(StatusResult {
-            changed: true,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed: true, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -399,10 +360,9 @@ pub extern "C" fn hypreact_runtime_layout_placement(
         placement_result(layout_runtime_placement(handle))
     })) {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => HypreactPlacementResult {
-            geometries: std::ptr::null_mut(),
-            geometry_count: 0,
-        },
+        Ok(Err(_)) | Err(_) => {
+            HypreactPlacementResult { geometries: std::ptr::null_mut(), geometry_count: 0 }
+        }
     }
 }
 
@@ -417,10 +377,9 @@ pub extern "C" fn hypreact_runtime_layout_placement_for_workspace(
         placement_result(layout_runtime_placement_for_workspace(handle, workspace_id))
     })) {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => HypreactPlacementResult {
-            geometries: std::ptr::null_mut(),
-            geometry_count: 0,
-        },
+        Ok(Err(_)) | Err(_) => {
+            HypreactPlacementResult { geometries: std::ptr::null_mut(), geometry_count: 0 }
+        }
     }
 }
 
@@ -434,9 +393,7 @@ pub extern "C" fn hypreact_runtime_layout_focus_candidate(
         string_result(layout_focus_candidate(handle, cstr_to_str(direction)?)?)
     })) {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => HypreactStringResult {
-            value: std::ptr::null_mut(),
-        },
+        Ok(Err(_)) | Err(_) => HypreactStringResult { value: std::ptr::null_mut() },
     }
 }
 
@@ -447,15 +404,10 @@ pub extern "C" fn hypreact_runtime_layout_close_focus_candidate(
 ) -> HypreactStringResult {
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
-        string_result(layout_close_focus_candidate(
-            handle,
-            cstr_to_str(window_id)?,
-        )?)
+        string_result(layout_close_focus_candidate(handle, cstr_to_str(window_id)?)?)
     })) {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => HypreactStringResult {
-            value: std::ptr::null_mut(),
-        },
+        Ok(Err(_)) | Err(_) => HypreactStringResult { value: std::ptr::null_mut() },
     }
 }
 
@@ -469,9 +421,7 @@ pub extern "C" fn hypreact_runtime_layout_swap_candidate(
         string_result(layout_focus_candidate(handle, cstr_to_str(direction)?)?)
     })) {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => HypreactStringResult {
-            value: std::ptr::null_mut(),
-        },
+        Ok(Err(_)) | Err(_) => HypreactStringResult { value: std::ptr::null_mut() },
     }
 }
 
@@ -492,10 +442,7 @@ pub extern "C" fn hypreact_runtime_move_tiled_window(
             &first_window_id,
             &second_window_id,
         );
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -511,9 +458,7 @@ pub extern "C" fn hypreact_runtime_resize_direction(
     match catch_unwind(AssertUnwindSafe(|| {
         let handle = ffi_handle_mut(handle)?;
         let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
-            return Err(FfiError::InvalidInput(
-                "layout runtime not initialized".to_string(),
-            ));
+            return Err(FfiError::InvalidInput("layout runtime not initialized".to_string()));
         };
 
         let direction = match cstr_to_str(direction)? {
@@ -522,9 +467,7 @@ pub extern "C" fn hypreact_runtime_resize_direction(
             "up" => ResizeDirection::Up,
             "down" => ResizeDirection::Down,
             value => {
-                return Err(FfiError::InvalidInput(format!(
-                    "invalid resize direction: {value}"
-                )))
+                return Err(FfiError::InvalidInput(format!("invalid resize direction: {value}")));
             }
         };
 
@@ -534,10 +477,7 @@ pub extern "C" fn hypreact_runtime_resize_direction(
             direction,
         )
         .map_err(|error| FfiError::InvalidJson(error.to_string()))?;
-        status_result(StatusResult {
-            changed,
-            focused_window_id: None,
-        })
+        status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
@@ -585,11 +525,7 @@ pub unsafe extern "C" fn hypreact_runtime_free_placement_result(result: Hypreact
     }
 
     let geometries = unsafe {
-        Vec::from_raw_parts(
-            result.geometries,
-            result.geometry_count,
-            result.geometry_count,
-        )
+        Vec::from_raw_parts(result.geometries, result.geometry_count, result.geometry_count)
     };
 
     for geometry in geometries {
@@ -718,17 +654,12 @@ fn placement_result(
     let geometries_ptr = geometries.as_mut_ptr();
     std::mem::forget(geometries);
 
-    Ok(HypreactPlacementResult {
-        geometries: geometries_ptr,
-        geometry_count,
-    })
+    Ok(HypreactPlacementResult { geometries: geometries_ptr, geometry_count })
 }
 
 fn string_result(value: Option<String>) -> Result<HypreactStringResult, FfiError> {
     let Some(value) = value else {
-        return Ok(HypreactStringResult {
-            value: std::ptr::null_mut(),
-        });
+        return Ok(HypreactStringResult { value: std::ptr::null_mut() });
     };
 
     Ok(HypreactStringResult {
@@ -749,11 +680,7 @@ fn action_result(actions: Vec<HostAction>) -> Result<HypreactActionResult, FfiEr
     let actions_ptr = actions.as_mut_ptr();
     std::mem::forget(actions);
 
-    Ok(HypreactActionResult {
-        actions: actions_ptr,
-        action_count,
-        error: std::ptr::null_mut(),
-    })
+    Ok(HypreactActionResult { actions: actions_ptr, action_count, error: std::ptr::null_mut() })
 }
 
 fn error_action_result(error: FfiError) -> HypreactActionResult {
@@ -761,11 +688,7 @@ fn error_action_result(error: FfiError) -> HypreactActionResult {
         .expect("ffi error strings must not contain nul bytes")
         .into_raw();
 
-    HypreactActionResult {
-        actions: std::ptr::null_mut(),
-        action_count: 0,
-        error,
-    }
+    HypreactActionResult { actions: std::ptr::null_mut(), action_count: 0, error }
 }
 
 fn state_result(

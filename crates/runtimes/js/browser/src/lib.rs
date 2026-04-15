@@ -3,26 +3,26 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use js_sys::{Array, Function, Promise, Reflect};
-use serde_json::Value;
 use hypreact_config::model::{Config, LayoutConfigError};
 use hypreact_config::runtime::{
     EvaluatedSourceLayout, SourceBundle, SourceBundleConfigRuntime,
     SourceBundlePreparedLayoutRuntime, SourceBundleRuntimeBundle,
 };
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
 use hypreact_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets,
 };
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_runtime_js_core::{
     JavaScriptModule, JavaScriptModuleGraph, compile_source_bundle_to_module_graph,
     decode_config_value, decode_js_layout_value, decode_runtime_graph_payload,
     encode_runtime_graph_payload, validate_layout_selection,
 };
+use js_sys::{Array, Function, Promise, Reflect};
+use serde_json::Value;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -591,12 +591,12 @@ impl SourceBundleConfigRuntime for JavaScriptBrowserConfigRuntime {
         sources: &'a SourceBundle,
     ) -> Pin<Box<dyn Future<Output = Result<Config, LayoutConfigError>> + 'a>> {
         Box::pin(async move {
-            load_config_from_source_bundle(root_dir, entry_path, sources)
-                .await
-                .map_err(|message| LayoutConfigError::EvaluateAuthoredConfig {
+            load_config_from_source_bundle(root_dir, entry_path, sources).await.map_err(|message| {
+                LayoutConfigError::EvaluateAuthoredConfig {
                     path: entry_path.to_path_buf(),
                     message,
-                })
+                }
+            })
         })
     }
 }
@@ -674,11 +674,12 @@ impl SourceBundlePreparedLayoutRuntime for JavaScriptBrowserPreparedLayoutRuntim
                         message: error.to_string(),
                     }
                 })?;
-            let value = evaluate_layout_module_graph(&runtime_graph, context)
-                .await
-                .map_err(|message| LayoutConfigError::EvaluateAuthoredConfig {
-                    path: PathBuf::from(&artifact.selected.module),
-                    message,
+            let value =
+                evaluate_layout_module_graph(&runtime_graph, context).await.map_err(|message| {
+                    LayoutConfigError::EvaluateAuthoredConfig {
+                        path: PathBuf::from(&artifact.selected.module),
+                        message,
+                    }
                 })?;
             let layout = decode_js_layout_value(&value.layout).map_err(|message| {
                 LayoutConfigError::DecodeAuthoredConfig {
@@ -699,11 +700,8 @@ fn load_stylesheet_asset(
 ) -> Option<PreparedStylesheet> {
     let path = path?;
     let source_path = PathBuf::from(path);
-    let resolved = if source_path.is_absolute() {
-        source_path
-    } else {
-        root_dir.join(&source_path)
-    };
+    let resolved =
+        if source_path.is_absolute() { source_path } else { root_dir.join(&source_path) };
     let source = sources.get(&resolved).cloned().unwrap_or_default();
     Some(PreparedStylesheet { path: path.to_string(), source })
 }

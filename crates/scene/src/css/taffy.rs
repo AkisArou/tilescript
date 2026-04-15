@@ -68,50 +68,26 @@ pub fn map_computed_style_to_taffy(style: &ComputedStyle) -> TaffyStyle {
     }
     if style.overflow_x.is_some() || style.overflow_y.is_some() {
         taffy_style.overflow = taffy::geometry::Point {
-            x: style
-                .overflow_x
-                .map(map_overflow)
-                .unwrap_or(TaffyOverflow::Visible),
-            y: style
-                .overflow_y
-                .map(map_overflow)
-                .unwrap_or(TaffyOverflow::Visible),
+            x: style.overflow_x.map(map_overflow).unwrap_or(TaffyOverflow::Visible),
+            y: style.overflow_y.map(map_overflow).unwrap_or(TaffyOverflow::Visible),
         };
     }
     if style.width.is_some() || style.height.is_some() {
         taffy_style.size = TaffySize {
-            width: style
-                .width
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
-            height: style
-                .height
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
+            width: style.width.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
+            height: style.height.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
         };
     }
     if style.min_width.is_some() || style.min_height.is_some() {
         taffy_style.min_size = TaffySize {
-            width: style
-                .min_width
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
-            height: style
-                .min_height
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
+            width: style.min_width.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
+            height: style.min_height.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
         };
     }
     if style.max_width.is_some() || style.max_height.is_some() {
         taffy_style.max_size = TaffySize {
-            width: style
-                .max_width
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
-            height: style
-                .max_height
-                .map(map_size_value)
-                .unwrap_or_else(TaffyDimension::auto),
+            width: style.max_width.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
+            height: style.max_height.map(map_size_value).unwrap_or_else(TaffyDimension::auto),
         };
     }
     if let Some(gap) = style.gap {
@@ -139,34 +115,22 @@ pub fn map_computed_style_to_taffy(style: &ComputedStyle) -> TaffyStyle {
         taffy_style.justify_content = Some(map_justify_content(justify_content));
     }
     if let Some(tracks) = &style.grid_template_rows {
-        taffy_style.grid_template_rows = tracks
-            .components
-            .iter()
-            .map(map_grid_template_component)
-            .collect();
+        taffy_style.grid_template_rows =
+            tracks.components.iter().map(map_grid_template_component).collect();
         taffy_style.grid_template_row_names = tracks.line_names.clone();
     }
     if let Some(tracks) = &style.grid_template_columns {
-        taffy_style.grid_template_columns = tracks
-            .components
-            .iter()
-            .map(map_grid_template_component)
-            .collect();
+        taffy_style.grid_template_columns =
+            tracks.components.iter().map(map_grid_template_component).collect();
         taffy_style.grid_template_column_names = tracks.line_names.clone();
     }
     if let Some(tracks) = &style.grid_auto_rows {
-        taffy_style.grid_auto_rows = tracks
-            .iter()
-            .copied()
-            .map(map_grid_track_sizing_function)
-            .collect();
+        taffy_style.grid_auto_rows =
+            tracks.iter().copied().map(map_grid_track_sizing_function).collect();
     }
     if let Some(tracks) = &style.grid_auto_columns {
-        taffy_style.grid_auto_columns = tracks
-            .iter()
-            .copied()
-            .map(map_grid_track_sizing_function)
-            .collect();
+        taffy_style.grid_auto_columns =
+            tracks.iter().copied().map(map_grid_track_sizing_function).collect();
     }
     if let Some(flow) = style.grid_auto_flow {
         taffy_style.grid_auto_flow = map_grid_auto_flow(flow);
@@ -332,10 +296,7 @@ fn map_grid_auto_flow(flow: GridAutoFlow) -> TaffyGridAutoFlow {
 }
 
 fn map_grid_line(value: Line<GridPlacementValue>) -> TaffyLine<TaffyGridPlacement> {
-    TaffyLine {
-        start: map_grid_placement(value.start),
-        end: map_grid_placement(value.end),
-    }
+    TaffyLine { start: map_grid_placement(value.start), end: map_grid_placement(value.end) }
 }
 
 fn map_grid_placement(value: GridPlacementValue) -> TaffyGridPlacement {
@@ -364,12 +325,7 @@ fn map_grid_template_component(
 fn map_grid_track_repeat(repetition: &GridTrackRepeat) -> TaffyGridTemplateRepetition<String> {
     TaffyGridTemplateRepetition {
         count: map_grid_repetition_count(repetition.count),
-        tracks: repetition
-            .tracks
-            .iter()
-            .copied()
-            .map(map_grid_track_sizing_function)
-            .collect(),
+        tracks: repetition.tracks.iter().copied().map(map_grid_track_sizing_function).collect(),
         line_names: repetition.line_names.clone(),
     }
 }

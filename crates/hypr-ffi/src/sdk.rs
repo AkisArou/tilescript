@@ -9,7 +9,8 @@ pub fn sync_sdk_support(config_root: &Path) -> Result<bool, FfiError> {
     let managed_root = config_root.join(".sdk");
     let mut expected_paths = BTreeSet::new();
     let mut changed = sync_directory(&js_sdk_source_root(), &managed_root, &mut expected_paths)?;
-    changed |= sync_directory(&lua_sdk_source_root(), &managed_root.join("lua"), &mut expected_paths)?;
+    changed |=
+        sync_directory(&lua_sdk_source_root(), &managed_root.join("lua"), &mut expected_paths)?;
 
     prune_stale_files(&managed_root, &expected_paths, &mut changed)?;
     changed |= remove_legacy_node_modules_link(config_root)?;
@@ -42,11 +43,17 @@ fn sync_directory(
         FfiError::InvalidInput(format!("failed to read `{}`: {error}", source_root.display()))
     })? {
         let entry = entry.map_err(|error| {
-            FfiError::InvalidInput(format!("failed to inspect `{}`: {error}", source_root.display()))
+            FfiError::InvalidInput(format!(
+                "failed to inspect `{}`: {error}",
+                source_root.display()
+            ))
         })?;
         let source_path = entry.path();
         let file_type = entry.file_type().map_err(|error| {
-            FfiError::InvalidInput(format!("failed to inspect `{}`: {error}", source_path.display()))
+            FfiError::InvalidInput(format!(
+                "failed to inspect `{}`: {error}",
+                source_path.display()
+            ))
         })?;
         let name = entry.file_name();
         let destination_path = destination_root.join(name);
@@ -81,12 +88,14 @@ fn write_if_changed(path: &Path, contents: &str) -> Result<bool, FfiError> {
     }
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| FfiError::InvalidInput(format!("failed to create `{}`: {error}", parent.display())))?;
+        std::fs::create_dir_all(parent).map_err(|error| {
+            FfiError::InvalidInput(format!("failed to create `{}`: {error}", parent.display()))
+        })?;
     }
 
-    std::fs::write(path, contents)
-        .map_err(|error| FfiError::InvalidInput(format!("failed to write `{}`: {error}", path.display())))?;
+    std::fs::write(path, contents).map_err(|error| {
+        FfiError::InvalidInput(format!("failed to write `{}`: {error}", path.display()))
+    })?;
     Ok(true)
 }
 
@@ -99,9 +108,9 @@ fn prune_stale_files(
         return Ok(());
     }
 
-    for entry in std::fs::read_dir(root)
-        .map_err(|error| FfiError::InvalidInput(format!("failed to read `{}`: {error}", root.display())))?
-    {
+    for entry in std::fs::read_dir(root).map_err(|error| {
+        FfiError::InvalidInput(format!("failed to read `{}`: {error}", root.display()))
+    })? {
         let entry = entry.map_err(|error| {
             FfiError::InvalidInput(format!("failed to inspect `{}`: {error}", root.display()))
         })?;
@@ -120,7 +129,10 @@ fn prune_stale_files(
                 .is_none()
             {
                 std::fs::remove_dir(&path).map_err(|error| {
-                    FfiError::InvalidInput(format!("failed to remove `{}`: {error}", path.display()))
+                    FfiError::InvalidInput(format!(
+                        "failed to remove `{}`: {error}",
+                        path.display()
+                    ))
                 })?;
                 *changed = true;
             }
@@ -147,7 +159,10 @@ fn remove_legacy_node_modules_link(config_root: &Path) -> Result<bool, FfiError>
     if let Ok(metadata) = std::fs::symlink_metadata(&legacy_sdk) {
         if metadata.file_type().is_symlink() || metadata.is_file() {
             std::fs::remove_file(&legacy_sdk).map_err(|error| {
-                FfiError::InvalidInput(format!("failed to remove `{}`: {error}", legacy_sdk.display()))
+                FfiError::InvalidInput(format!(
+                    "failed to remove `{}`: {error}",
+                    legacy_sdk.display()
+                ))
             })?;
             changed = true;
         }
@@ -156,13 +171,19 @@ fn remove_legacy_node_modules_link(config_root: &Path) -> Result<bool, FfiError>
     if legacy_scope.exists()
         && std::fs::read_dir(&legacy_scope)
             .map_err(|error| {
-                FfiError::InvalidInput(format!("failed to read `{}`: {error}", legacy_scope.display()))
+                FfiError::InvalidInput(format!(
+                    "failed to read `{}`: {error}",
+                    legacy_scope.display()
+                ))
             })?
             .next()
             .is_none()
     {
         std::fs::remove_dir(&legacy_scope).map_err(|error| {
-            FfiError::InvalidInput(format!("failed to remove `{}`: {error}", legacy_scope.display()))
+            FfiError::InvalidInput(format!(
+                "failed to remove `{}`: {error}",
+                legacy_scope.display()
+            ))
         })?;
         changed = true;
     }
@@ -170,7 +191,10 @@ fn remove_legacy_node_modules_link(config_root: &Path) -> Result<bool, FfiError>
     if legacy_root.exists()
         && std::fs::read_dir(&legacy_root)
             .map_err(|error| {
-                FfiError::InvalidInput(format!("failed to read `{}`: {error}", legacy_root.display()))
+                FfiError::InvalidInput(format!(
+                    "failed to read `{}`: {error}",
+                    legacy_root.display()
+                ))
             })?
             .next()
             .is_none()
@@ -192,10 +216,7 @@ mod tests {
     fn sync_sdk_support_writes_managed_sdk_files() {
         let root = std::env::temp_dir().join(format!(
             "hypreact-sdk-sync-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
 
         let changed = sync_sdk_support(&root).expect("sync sdk support");

@@ -376,7 +376,10 @@ impl WmModel {
             return self.ordered_window_ids_for_workspace_with_hints(None, hinted_window_ids);
         };
 
-        self.ordered_window_ids_for_workspace_with_hints(Some(current_workspace_id), hinted_window_ids)
+        self.ordered_window_ids_for_workspace_with_hints(
+            Some(current_workspace_id),
+            hinted_window_ids,
+        )
     }
 
     pub fn ordered_window_ids_for_workspace(&self, workspace_id: &WorkspaceId) -> Vec<WindowId> {
@@ -399,9 +402,10 @@ impl WmModel {
         {
             for window_id in window_order {
                 if self.has_window(window_id)
-                    && self.windows.get(window_id).is_some_and(|window| {
-                        window.workspace_id.as_ref() == Some(workspace_id)
-                    })
+                    && self
+                        .windows
+                        .get(window_id)
+                        .is_some_and(|window| window.workspace_id.as_ref() == Some(workspace_id))
                     && seen_window_ids.insert(window_id.clone())
                 {
                     ordered_window_ids.push(window_id.clone());
@@ -427,9 +431,9 @@ impl WmModel {
         for window_id in hinted_window_ids {
             if self.has_window(&window_id)
                 && workspace_id.is_none_or(|workspace_id| {
-                    self.windows.get(&window_id).is_some_and(|window| {
-                        window.workspace_id.as_ref() == Some(workspace_id)
-                    })
+                    self.windows
+                        .get(&window_id)
+                        .is_some_and(|window| window.workspace_id.as_ref() == Some(workspace_id))
                 })
                 && seen_window_ids.insert(window_id.clone())
             {
@@ -439,11 +443,10 @@ impl WmModel {
 
         for window_id in self.windows.keys() {
             if workspace_id.is_none_or(|workspace_id| {
-                self.windows.get(window_id).is_some_and(|window| {
-                    window.workspace_id.as_ref() == Some(workspace_id)
-                })
-            })
-                && seen_window_ids.insert(window_id.clone())
+                self.windows
+                    .get(window_id)
+                    .is_some_and(|window| window.workspace_id.as_ref() == Some(workspace_id))
+            }) && seen_window_ids.insert(window_id.clone())
             {
                 ordered_window_ids.push(window_id.clone());
             }
@@ -518,7 +521,8 @@ impl WmModel {
     }
 
     pub fn set_window_workspace(&mut self, id: WindowId, workspace_id: Option<WorkspaceId>) {
-        let previous_workspace_id = self.windows.get(&id).and_then(|window| window.workspace_id.clone());
+        let previous_workspace_id =
+            self.windows.get(&id).and_then(|window| window.workspace_id.clone());
 
         if let Some(window) = self.windows.get_mut(&id) {
             window.workspace_id = workspace_id.clone();
@@ -572,21 +576,14 @@ impl WmModel {
     }
 
     pub fn workspace_resize_state(&self, workspace_id: &WorkspaceId) -> WorkspaceResizeState {
-        self.resize_state
-            .by_workspace_id
-            .get(workspace_id)
-            .cloned()
-            .unwrap_or_default()
+        self.resize_state.by_workspace_id.get(workspace_id).cloned().unwrap_or_default()
     }
 
     pub fn workspace_resize_state_mut(
         &mut self,
         workspace_id: &WorkspaceId,
     ) -> &mut WorkspaceResizeState {
-        self.resize_state
-            .by_workspace_id
-            .entry(workspace_id.clone())
-            .or_default()
+        self.resize_state.by_workspace_id.entry(workspace_id.clone()).or_default()
     }
 
     pub fn gc_resize_state_for_known_workspaces(&mut self) {
@@ -647,7 +644,11 @@ impl WmModel {
         self.prune_focus_memory();
     }
 
-    pub fn move_tiled_window(&mut self, first_window_id: &WindowId, second_window_id: &WindowId) -> bool {
+    pub fn move_tiled_window(
+        &mut self,
+        first_window_id: &WindowId,
+        second_window_id: &WindowId,
+    ) -> bool {
         let Some(first_window) = self.windows.get(first_window_id) else {
             return false;
         };
@@ -655,7 +656,9 @@ impl WmModel {
             return false;
         };
 
-        if !self.window_is_layout_eligible(first_window_id) || !self.window_is_layout_eligible(second_window_id) {
+        if !self.window_is_layout_eligible(first_window_id)
+            || !self.window_is_layout_eligible(second_window_id)
+        {
             return false;
         }
 
@@ -716,7 +719,9 @@ impl WmModel {
     }
 
     fn sync_tiled_window_order_for_window(&mut self, window_id: &WindowId) {
-        let Some(workspace_id) = self.windows.get(window_id).and_then(|window| window.workspace_id.clone()) else {
+        let Some(workspace_id) =
+            self.windows.get(window_id).and_then(|window| window.workspace_id.clone())
+        else {
             return;
         };
 

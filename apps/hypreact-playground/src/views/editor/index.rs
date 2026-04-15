@@ -39,36 +39,51 @@ pub fn EditorView() -> impl IntoView {
                         {WORKSPACE_ROOT}
                     </div>
                     <div class="border-terminal-border border-b px-2 py-2">
-                        <div class="grid grid-cols-2 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <div class="grid grid-cols-3 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::JavaScript {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
                                     } else {
-                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
+                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
                                 }
                                 on:click=move |_| {
                                     app_state.set_authoring_language(AuthoringLanguage::JavaScript);
                                 }
                             >
-                                <span class="text-[#519aba]">"󰛦"</span>
-                                <span>"JS / TS"</span>
+                                <span class="text-xl leading-none text-[#519aba]">"󰛦"</span>
+                                <span class="text-center text-xs leading-tight">"JS/TS"</span>
                             </button>
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::Lua {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
                                     } else {
-                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
+                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
                                 }
                                 on:click=move |_| {
                                     app_state.set_authoring_language(AuthoringLanguage::Lua);
                                 }
                             >
-                                <span class="text-[#51a0cf]">""</span>
-                                <span>"Lua"</span>
+                                <span class="text-xl leading-none text-[#51a0cf]">""</span>
+                                <span class="text-center text-xs leading-tight">"Lua"</span>
+                            </button>
+                            <button
+                                class=move || {
+                                    if app_state.authoring_language.get() == AuthoringLanguage::Fennel {
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                    } else {
+                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
+                                    }
+                                }
+                                on:click=move |_| {
+                                    app_state.set_authoring_language(AuthoringLanguage::Fennel);
+                                }
+                            >
+                                <span class="text-xl leading-none text-[#8fbf57]">"󱘎"</span>
+                                <span class="text-center text-xs leading-tight">"Fennel"</span>
                             </button>
                         </div>
                     </div>

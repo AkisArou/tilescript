@@ -72,12 +72,7 @@ impl AuthoringLayoutService {
         layout_runtime: Box<dyn PreparedLayoutRuntime<Config = Config>>,
         paths: ConfigPaths,
     ) -> Self {
-        Self {
-            config_runtime,
-            layout_runtime,
-            cache: BTreeMap::new(),
-            paths: Some(paths),
-        }
+        Self { config_runtime, layout_runtime, cache: BTreeMap::new(), paths: Some(paths) }
     }
 
     pub fn discover_config_paths(
@@ -96,10 +91,7 @@ impl AuthoringLayoutService {
         &self,
         paths: &ConfigPaths,
     ) -> Result<
-        (
-            Config,
-            Option<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary>,
-        ),
+        (Config, Option<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary>),
         AuthoringLayoutServiceError,
     > {
         prepared_cache::load_config_with_cache_update(self.config_runtime.as_ref(), paths)
@@ -136,10 +128,7 @@ impl AuthoringLayoutService {
         &self,
         config: &Config,
     ) -> Result<Vec<String>, AuthoringLayoutServiceError> {
-        debug!(
-            layout_count = config.layouts.len(),
-            "validating layout modules"
-        );
+        debug!(layout_count = config.layouts.len(), "validating layout modules");
         let mut errors = Vec::new();
 
         for layout in &config.layouts {
@@ -181,9 +170,7 @@ impl AuthoringLayoutService {
         let Some(loaded) = self.prepare_for_workspace(config, workspace)?.cloned() else {
             return Ok(None);
         };
-        let context = self
-            .layout_runtime
-            .build_context(state, workspace, Some(&loaded));
+        let context = self.layout_runtime.build_context(state, workspace, Some(&loaded));
         let layout = self.layout_runtime.evaluate_layout(&loaded, &context)?;
 
         debug!(workspace_id = %workspace.id, workspace_name = %workspace.name, layout = %loaded.selected.name, "evaluated prepared layout");
@@ -210,8 +197,6 @@ fn validation_workspace(layout_name: &str) -> WorkspaceSnapshot {
         active_workspaces: vec![],
         focused: true,
         visible: true,
-        effective_layout: Some(LayoutRef {
-            name: layout_name.into(),
-        }),
+        effective_layout: Some(LayoutRef { name: layout_name.into() }),
     }
 }

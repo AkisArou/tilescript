@@ -19,6 +19,7 @@ type LayoutEvaluationResult = {
 };
 
 const factory = new LuaFactory();
+let fennelCompilerSourcePromise: Promise<string> | null = null;
 
 function defaultDependencies(): LayoutDependencies {
   return {
@@ -149,6 +150,35 @@ async function withLuaEngine<T>(
   }
 }
 
+async function loadFennelCompilerSource(fallbackSource: string): Promise<string> {
+  if (!fennelCompilerSourcePromise) {
+    fennelCompilerSourcePromise = import("./fennel-compiler-source.js")
+      .then((module) => module.getFennelCompilerSource())
+      .catch(() => fallbackSource);
+  }
+
+  return await fennelCompilerSourcePromise;
+}
+
+async function compileFennelToLua(
+  source: string,
+  chunkName: string,
+  compilerSource: string,
+): Promise<string> {
+  return withLuaEngine("", async (engine) => {
+    engine.global.set("__hypreact_fennel_compiler_source", compilerSource);
+    engine.global.set("__hypreact_fennel_source", source);
+    engine.global.set("__hypreact_fennel_chunk_name", chunkName);
+
+    return await engine.doString(`
+      local fennel = assert(load(__hypreact_fennel_compiler_source, "@fennel-compiler"))()
+      return fennel.compileString(__hypreact_fennel_source, {
+        filename = __hypreact_fennel_chunk_name,
+      })
+    `);
+  });
+}
+
 export async function evaluateLuaConfig(
   source: string,
   chunkName: string,
@@ -181,4 +211,35 @@ export async function evaluateLuaLayout(
       dependencies: tracked.dependencies,
     };
   });
+}
+
+export async function evaluateFennelConfig(
+  source: string,
+  chunkName: string,
+  sdkSource: string,
+  compilerSource: string,
+) {
+  const resolvedCompilerSource = await loadFennelCompilerSource(compilerSource);
+  const luaSource = await compileFennelToLua(
+    source,
+    chunkName,
+    resolvedCompilerSource,
+  );
+  return evaluateLuaConfig(luaSource, chunkName, sdkSource);
+}
+
+export async function evaluateFennelLayout(
+  source: string,
+  chunkName: string,
+  sdkSource: string,
+  compilerSource: string,
+  context: unknown,
+): Promise<LayoutEvaluationResult> {
+  const resolvedCompilerSource = await loadFennelCompilerSource(compilerSource);
+  const luaSource = await compileFennelToLua(
+    source,
+    chunkName,
+    resolvedCompilerSource,
+  );
+  return evaluateLuaLayout(luaSource, chunkName, sdkSource, context);
 }

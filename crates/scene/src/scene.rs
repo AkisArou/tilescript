@@ -98,9 +98,7 @@ impl LayoutSnapshotNode {
             return Some(self);
         }
 
-        self.children()
-            .iter()
-            .find_map(|child| child.find_by_node_id(node_id))
+        self.children().iter().find_map(|child| child.find_by_node_id(node_id))
     }
 
     pub fn find_by_window_id(&self, window_id: &WindowId) -> Option<&LayoutSnapshotNode> {
@@ -108,9 +106,7 @@ impl LayoutSnapshotNode {
             return Some(self);
         }
 
-        self.children()
-            .iter()
-            .find_map(|child| child.find_by_window_id(window_id))
+        self.children().iter().find_map(|child| child.find_by_window_id(window_id))
     }
 
     pub fn collect_windows<'a>(&'a self, windows: &mut Vec<&'a LayoutSnapshotNode>) {

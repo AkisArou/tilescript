@@ -6,15 +6,17 @@ use std::path::{Path, PathBuf};
 enum AuthoringLanguage {
     JavaScript,
     Lua,
+    Fennel,
 }
 
 impl AuthoringLanguage {
-    const ALL: [Self; 2] = [Self::JavaScript, Self::Lua];
+    const ALL: [Self; 3] = [Self::JavaScript, Self::Lua, Self::Fennel];
 
     const fn manifest_name(self) -> &'static str {
         match self {
             Self::JavaScript => "JavaScript",
             Self::Lua => "Lua",
+            Self::Fennel => "Fennel",
         }
     }
 
@@ -22,6 +24,7 @@ impl AuthoringLanguage {
         match self {
             Self::JavaScript => "examples/js",
             Self::Lua => "examples/lua",
+            Self::Fennel => "examples/fennel",
         }
     }
 
@@ -29,6 +32,7 @@ impl AuthoringLanguage {
         match self {
             Self::JavaScript => &["config.ts", "config.tsx"],
             Self::Lua => &["config.lua"],
+            Self::Fennel => &["config.fnl"],
         }
     }
 }
@@ -79,7 +83,7 @@ fn collect_specs(language: AuthoringLanguage, template_root: &Path) -> Vec<FileS
         specs.push(build_spec(template_root, "index.css"));
     }
 
-    if language == AuthoringLanguage::Lua {
+    if matches!(language, AuthoringLanguage::Lua | AuthoringLanguage::Fennel) {
         specs.push(FileSpec {
             variant: "SdkLuaHypreact".to_string(),
             label: "hypreact.lua".to_string(),
@@ -162,7 +166,7 @@ fn build_spec_with_language(
         include_path,
         language,
         is_layout_source: relative.starts_with("layouts/")
-            && matches!(language, "typescript" | "typescriptreact" | "lua"),
+            && matches!(language, "typescript" | "typescriptreact" | "lua" | "fennel"),
         is_reference_only: false,
     }
 }
@@ -193,7 +197,7 @@ fn layout_sort_key(left: &FileSpec, right: &FileSpec) -> std::cmp::Ordering {
 
 fn file_name_priority(label: &str) -> u8 {
     match label {
-        "index.tsx" | "index.ts" | "index.lua" => 0,
+        "index.tsx" | "index.ts" | "index.lua" | "index.fnl" => 0,
         "index.css" => 1,
         _ => 2,
     }
@@ -208,6 +212,8 @@ fn language_for_path(relative: &str) -> Option<&'static str> {
         Some("css")
     } else if relative.ends_with(".lua") {
         Some("lua")
+    } else if relative.ends_with(".fnl") {
+        Some("fennel")
     } else {
         None
     }

@@ -12,6 +12,7 @@ members = [
   "crates/runtimes/js/core",
   "crates/runtimes/js/native",
   "crates/runtimes/js/browser",
+  "crates/runtimes/fennel/core",
   "crates/runtimes/lua/core",
   "crates/runtimes/lua/native",
   "crates/runtimes/lua/browser",

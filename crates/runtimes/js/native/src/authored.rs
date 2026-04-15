@@ -9,11 +9,11 @@ use tracing::debug;
 use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
 use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_runtime_js_core::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
-use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
+use hypreact_runtime_js_core::encode_runtime_graph_payload;
 use hypreact_runtime_js_core::graph::{
     DiscoveredApp, ModuleGraph, ModuleGraphBuilder, discover_project_apps,
 };
-use hypreact_runtime_js_core::encode_runtime_graph_payload;
+use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
 
 use crate::evaluate_entry_export_to_json;
 
@@ -107,7 +107,12 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
         );
     }
 
-    validate_layout_selection(path, config.default_layout.as_deref(), &config.layout_rules, &layout_defs)?;
+    validate_layout_selection(
+        path,
+        config.default_layout.as_deref(),
+        &config.layout_rules,
+        &layout_defs,
+    )?;
     config.layouts = layout_defs;
     Ok(config)
 }

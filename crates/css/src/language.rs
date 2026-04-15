@@ -48,25 +48,16 @@ pub struct PseudoElementSpec {
     pub hover: &'static str,
 }
 
-pub const SELECTOR_TARGETS: &[SelectorTarget] = &[
-    SelectorTarget::Workspace,
-    SelectorTarget::Group,
-    SelectorTarget::Window,
-];
+pub const SELECTOR_TARGETS: &[SelectorTarget] =
+    &[SelectorTarget::Workspace, SelectorTarget::Group, SelectorTarget::Window];
 
 pub const INVALID_SELECTOR_TARGET_NAMES: &[&str] = &["slot"];
 
-const ALL_STYLE_TARGETS: &[StyleTarget] = &[
-    StyleTarget::Workspace,
-    StyleTarget::Group,
-    StyleTarget::Window,
-];
+const ALL_STYLE_TARGETS: &[StyleTarget] =
+    &[StyleTarget::Workspace, StyleTarget::Group, StyleTarget::Window];
 
-const ALL_ELEMENT_TARGETS: &[StyleTarget] = &[
-    StyleTarget::Workspace,
-    StyleTarget::Group,
-    StyleTarget::Window,
-];
+const ALL_ELEMENT_TARGETS: &[StyleTarget] =
+    &[StyleTarget::Workspace, StyleTarget::Group, StyleTarget::Window];
 
 const WINDOW_ONLY_TARGETS: &[StyleTarget] = &[StyleTarget::Window];
 
@@ -85,23 +76,10 @@ const FLEX_DIRECTION_KEYWORDS: &[&str] = &["row", "row-reverse", "column", "colu
 const FLEX_WRAP_KEYWORDS: &[&str] = &["nowrap", "wrap", "wrap-reverse"];
 const POSITION_KEYWORDS: &[&str] = &["relative", "absolute"];
 const OVERFLOW_KEYWORDS: &[&str] = &["visible", "hidden", "scroll", "clip"];
-const ALIGN_ITEMS_KEYWORDS: &[&str] = &[
-    "stretch",
-    "start",
-    "end",
-    "center",
-    "flex-start",
-    "flex-end",
-];
-const ALIGN_SELF_KEYWORDS: &[&str] = &[
-    "auto",
-    "stretch",
-    "start",
-    "end",
-    "center",
-    "flex-start",
-    "flex-end",
-];
+const ALIGN_ITEMS_KEYWORDS: &[&str] =
+    &["stretch", "start", "end", "center", "flex-start", "flex-end"];
+const ALIGN_SELF_KEYWORDS: &[&str] =
+    &["auto", "stretch", "start", "end", "center", "flex-start", "flex-end"];
 const JUSTIFY_ITEMS_KEYWORDS: &[&str] = &["stretch", "start", "end", "center"];
 const JUSTIFY_SELF_KEYWORDS: &[&str] = &["auto", "stretch", "start", "end", "center"];
 const ALIGN_CONTENT_KEYWORDS: &[&str] = &[
@@ -171,18 +149,9 @@ pub const PSEUDO_CLASS_SPECS: &[PseudoClassSpec] = &[
         name: "focused",
         hover: "Matches the currently focused runtime window state.",
     },
-    PseudoClassSpec {
-        name: "floating",
-        hover: "Matches floating windows.",
-    },
-    PseudoClassSpec {
-        name: "fullscreen",
-        hover: "Matches fullscreen windows.",
-    },
-    PseudoClassSpec {
-        name: "urgent",
-        hover: "Matches urgent windows.",
-    },
+    PseudoClassSpec { name: "floating", hover: "Matches floating windows." },
+    PseudoClassSpec { name: "fullscreen", hover: "Matches fullscreen windows." },
+    PseudoClassSpec { name: "urgent", hover: "Matches urgent windows." },
     PseudoClassSpec {
         name: "closing",
         hover: "Matches windows that are in the wm-managed closing phase.",

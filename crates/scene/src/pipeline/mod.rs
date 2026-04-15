@@ -3,8 +3,8 @@ use crate::css::{CssParseError, CssValueError, StyledLayoutTree, parse_styleshee
 pub use crate::layout_calc::{LaidOutNode, LaidOutTree};
 use crate::scene::{SceneRequest, SceneResponse};
 use crate::style_tree::build_styled_layout_tree_from_sheet_with_resize_state;
-use serde::Serialize;
 use hypreact_core::ResolvedLayoutNode;
+use serde::Serialize;
 use std::collections::HashMap;
 use tracing::debug;
 
