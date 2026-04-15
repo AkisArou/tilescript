@@ -14,7 +14,7 @@ pub fn pane_style(
     let height = geometry.height as f32 / canvas_height as f32 * 100.0;
 
     format!(
-        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {};",
+        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {}; will-change: left, top, width, height, transform, opacity; transition-property: left, top, width, height, transform, opacity, box-shadow, filter; transition-duration: 220ms, 220ms, 220ms, 220ms, 180ms, 170ms, 170ms, 190ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.5, 0.5, 0.75, 1), cubic-bezier(0.15, 0, 0.1, 1), cubic-bezier(0.5, 0.5, 0.75, 1);",
         accent,
     )
 }
@@ -83,22 +83,28 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
                 radius.top_left, radius.top_right, radius.bottom_right, radius.bottom_left
             )
         })
-        .unwrap_or_default();
-    let border_css = if matches!(border_style.map(|edges| edges.top), Some(BorderStyleValue::None))
+        .unwrap_or_else(|| "border-radius: 7px;".to_string());
+    if matches!(border_style.map(|edges| edges.top), Some(BorderStyleValue::None))
         || border_width == 0
     {
-        "border: none;".to_string()
-    } else if focused {
-        format!(
-            "border: {}px solid transparent; border-image: {} 1;",
-            border_width.max(1),
-            border_color
-        )
-    } else {
-        format!("border: {}px solid {};", border_width.max(1), border_color)
-    };
+        return format!(
+            "background: {background}; {radius_css} box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);"
+        );
+    }
 
-    format!("background: {background}; {border_css} {radius_css}")
+    if focused {
+        return format!(
+            "border: {}px solid transparent; {radius_css} background: linear-gradient({background}, {background}) padding-box, {} border-box; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);",
+            border_width.max(1),
+            border_color,
+        );
+    }
+
+    format!(
+        "background: {background}; border: {}px solid {}; {radius_css} box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);",
+        border_width.max(1),
+        border_color,
+    )
 }
 
 fn css_color(color: ColorValue) -> String {

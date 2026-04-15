@@ -266,7 +266,7 @@ pub fn PreviewView() -> impl IntoView {
                                     .collect_view()
                             }}
                             <Show when=move || surface_mode.get() == PreviewSurfaceMode::Preview>
-                                <span class="ml-1 min-w-0 truncate text-[12px] text-[#6f7277]">
+                                <span class="ml-2 min-w-0 truncate text-[12px] text-[#6f7277]">
                                     {move || focused_window_chip_label(app_state)}
                                 </span>
                             </Show>
@@ -471,7 +471,7 @@ pub fn PreviewView() -> impl IntoView {
 
                                                                 Some(view! {
                                                                     <div
-                                                                        class="text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
+                                                                        class="preview-window text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
                                                                         attr:data-focused=move || {
                                                                             if app_state.session.get().focused_window_id().as_ref()
                                                                                 == Some(&focused_attr_id)
@@ -574,7 +574,7 @@ fn OverlaySurface(children: Children) -> impl IntoView {
             class="relative h-full min-h-72 w-full overflow-hidden bg-terminal-bg"
             style="background-image: linear-gradient(rgba(10, 10, 10, 0.4), rgba(10, 10, 10, 0.58)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
         >
-            <div class="absolute inset-[2.25rem] border border-terminal-border-strong bg-terminal-bg shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
+            <div class="preview-layer absolute inset-[2.25rem] border border-terminal-border-strong bg-terminal-bg shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
                 <div class="h-full overflow-hidden">{children()}</div>
             </div>
         </div>
