@@ -3,7 +3,10 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::app_state::AppState;
 use crate::components::tooltip::Tooltip;
-use crate::editor_files::{file_by_key, file_color_class, file_icon, make_dynamic_layout};
+use crate::editor_files::{
+    file_by_key, file_display_badge, file_display_color_class, file_display_icon,
+    make_dynamic_layout,
+};
 use crate::editor_host::download_directory;
 use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
 
@@ -17,25 +20,19 @@ fn branch_indent(depth: usize, is_root: bool) -> String {
     }
 }
 
-fn branch_guide(depth: usize, elbow: bool) -> String {
+fn branch_guide(depth: usize) -> String {
     if depth == 0 {
         return String::new();
     }
 
     let offset = depth * 14 - 6;
-    if elbow {
-        format!(
-            "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)), linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%, 9px 1px; background-position: {offset}px 0, {offset}px 50%; background-repeat: no-repeat;"
-        )
-    } else {
-        format!(
-            "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%; background-position: {offset}px 0; background-repeat: no-repeat;"
-        )
-    }
+    format!(
+        "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)), linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%, 9px 1px; background-position: {offset}px 0, {offset}px 50%; background-repeat: no-repeat;"
+    )
 }
 
-fn tree_row_style(depth: usize, elbow: bool, is_root: bool) -> String {
-    format!("{}; {}", branch_indent(depth, is_root), branch_guide(depth, elbow))
+fn tree_row_style(depth: usize, is_root: bool) -> String {
+    format!("{}; {}", branch_indent(depth, is_root), branch_guide(depth))
 }
 
 fn is_directory_open(app_state: AppState, path: &str, default_open: bool, is_root: bool) -> bool {
@@ -60,10 +57,10 @@ pub fn FileTreeDirectoryView(
         <div class="grid">
             {if !is_root {
                     view! {
-                        <div class="group/layout-subtree flex items-center gap-1">
+                        <div class="group/layout-subtree pr-2 flex items-center gap-1">
                             <button
                                 class="text-terminal-dim flex flex-1 items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] hover:text-terminal-fg"
-                                style=tree_row_style(depth, true, is_root)
+                                style=tree_row_style(depth, is_root)
                                 on:click=move |_| {
                                     let current = directory.get();
                                     app_state.toggle_directory(
@@ -72,7 +69,6 @@ pub fn FileTreeDirectoryView(
                                     )
                                 }
                             >
-                                <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                                 <span class="w-2 text-terminal-faint">
                                     {move || {
                                         let current = directory.get();
@@ -126,7 +122,7 @@ pub fn FileTreeDirectoryView(
                                     class="ml-auto"
                                 >
                                     <button
-                                        class="px-1 py-0 text-terminal-faint hover:text-terminal-fg"
+                                        class="px-0.5 py-0 text-[11px] text-terminal-faint hover:text-terminal-fg"
                                         aria-label=move || download_directory_title(&directory.get())
                                         on:click=move |event| {
                                             event.stop_propagation();
@@ -191,6 +187,10 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
             EditorFileTreeNode::File(file_id) => {
                 let file = file_by_key(&file_id, &app_state.dynamic_layouts.get_untracked());
                 let label = file.label.clone();
+                let icon = file_display_icon(&file.language, file.is_reference_only).to_string();
+                let color_class =
+                    file_display_color_class(&file.language, file.is_reference_only).to_string();
+                let badge = file_display_badge(&file.language, file.is_reference_only).to_string();
                 let file_key_active = file_id.clone();
                 let file_key_open = file_id.clone();
 
@@ -203,20 +203,16 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                                 "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
                             }
                         }
-                        style=tree_row_style(depth, true, false)
+                        style=tree_row_style(depth, false)
                         on:click=move |_| app_state.select_editor_file(file_key_open.clone())
                     >
-                        <span class="w-2 shrink-0 text-terminal-faint">"╰"</span>
                         <span
-                            class=move || {
-                                if file.is_reference_only {
-                                    "shrink-0 text-terminal-faint".to_string()
-                                } else {
-                                    format!("shrink-0 {}", file_color_class(&file.language))
-                                }
+                            class={
+                                let color_class = color_class.clone();
+                                move || format!("shrink-0 {}", color_class)
                             }
                         >
-                            {if file.is_reference_only { "󰘦" } else { file_icon(&file.language) }}
+                            {icon.clone()}
                         </span>
                         <span
                             class=move || {
@@ -227,11 +223,11 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                                 }
                             }
                         >
-                            {label}
+                            {label.clone()}
                         </span>
                         <Show when=move || file.is_reference_only>
                             <span class="shrink-0 rounded border border-terminal-border px-1 text-[9px] uppercase tracking-[0.14em] text-terminal-faint">
-                                "sdk"
+                                {badge.clone()}
                             </span>
                         </Show>
 

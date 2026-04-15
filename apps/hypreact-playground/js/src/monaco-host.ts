@@ -40,7 +40,7 @@ interface MonacoHostHandle {
   openerDisposable?: monaco.IDisposable;
 }
 
-const FONT_SIZE = 12;
+const FONT_SIZE = 13;
 const LINE_HEIGHT = 20;
 
 const monacoTheme = "hypreact-terminal";

@@ -4,16 +4,13 @@ use leptos::prelude::*;
 use crate::app_state::AppState;
 use crate::components::context_menu::{ContextMenu, ContextMenuItem, ContextMenuPosition};
 use crate::editor_files::{
-    AuthoringLanguage, EditorFileKey, WORKSPACE_ROOT, file_by_key, file_color_class,
+    AuthoringLanguage, EditorFileKey, WORKSPACE_ROOT, file_by_key, file_display_badge,
+    file_display_color_class, file_display_icon,
 };
 use crate::workspace::workspace_file_tree;
 
-use super::buffers::active_file_path;
-use super::clipboard::{CopyFeedback, copy_buffer_to_clipboard};
 use super::file_tree::FileTreeDirectoryView;
 use super::monaco::MonacoEditorPane;
-
-const ACTION_BUTTON_CLASS: &str = "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-40";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TabContextMenuState {
@@ -24,7 +21,6 @@ struct TabContextMenuState {
 #[component]
 pub fn EditorView() -> impl IntoView {
     let app_state = expect_context::<AppState>();
-    let copy_feedback = RwSignal::new(CopyFeedback::Idle);
     let tab_context_menu = RwSignal::new(None::<TabContextMenuState>);
 
     let close_tab_context_menu = Callback::new(move |_| tab_context_menu.set(None));
@@ -43,37 +39,36 @@ pub fn EditorView() -> impl IntoView {
                         {WORKSPACE_ROOT}
                     </div>
                     <div class="border-terminal-border border-b px-2 py-2">
-                        <label class="mb-1 block text-[11px] font-medium tracking-[0.08em] text-terminal-faint uppercase">
-                            "Authoring language"
-                        </label>
-                        <div class="grid grid-cols-2 gap-1">
+                        <div class="grid grid-cols-2 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::JavaScript {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg border px-2 py-1.5 text-sm font-medium"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
                                     } else {
-                                        "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-1.5 text-sm"
+                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
                                 }
                                 on:click=move |_| {
                                     app_state.set_authoring_language(AuthoringLanguage::JavaScript);
                                 }
                             >
-                                "JS / TS"
+                                <span class="text-[#519aba]">"󰛦"</span>
+                                <span>"JS / TS"</span>
                             </button>
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::Lua {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg border px-2 py-1.5 text-sm font-medium"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
                                     } else {
-                                        "border-terminal-border bg-terminal-bg-panel text-terminal-dim hover:text-terminal-fg border px-2 py-1.5 text-sm"
+                                        "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
                                 }
                                 on:click=move |_| {
                                     app_state.set_authoring_language(AuthoringLanguage::Lua);
                                 }
                             >
-                                "Lua"
+                                <span class="text-[#51a0cf]">""</span>
+                                <span>"Lua"</span>
                             </button>
                         </div>
                     </div>
@@ -92,7 +87,7 @@ pub fn EditorView() -> impl IntoView {
                 </aside>
 
                 <div class="flex min-h-0 min-w-0 flex-col overflow-hidden">
-                    <div class="border-terminal-border bg-terminal-bg-bar flex items-center gap-px border-b px-1 pt-1 text-xs">
+                    <div class="border-terminal-border bg-terminal-bg-bar flex items-center border-b text-xs">
                         <div class="flex min-w-0 flex-1 gap-px overflow-x-auto">
                             <Show
                                 when=move || !app_state.open_file_ids.get().is_empty()
@@ -116,9 +111,18 @@ pub fn EditorView() -> impl IntoView {
                                                 let tab_file_id_context = file_id.clone();
                                                 let tab_file_id_select = file_id.clone();
                                                 let tab_file_id_close = file_id.clone();
-                                                let badge =
-                                                    super::buffers::editor_file_badge(&file.language).to_string();
                                                 let label = file.label.clone();
+                                                let icon = file_display_icon(&file.language, file.is_reference_only).to_string();
+                                                let color_class = file_display_color_class(
+                                                    &file.language,
+                                                    file.is_reference_only,
+                                                )
+                                                .to_string();
+                                                let badge = file_display_badge(
+                                                    &file.language,
+                                                    file.is_reference_only,
+                                                )
+                                                .to_string();
 
                                                 view! {
                                                     <div
@@ -126,9 +130,9 @@ pub fn EditorView() -> impl IntoView {
                                                             if app_state.active_file_id.get()
                                                                 == Some(tab_file_id_active.clone())
                                                             {
-                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-[12px]"
+                                                                "flex min-w-0 items-center border-r border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-[12px]"
                                                             } else {
-                                                                "flex min-w-0 items-center border border-b-0 border-terminal-border bg-terminal-bg-panel text-terminal-dim text-[12px] hover:text-terminal-fg"
+                                                                "flex min-w-0 items-center border-r border-terminal-border bg-terminal-bg-panel/75 text-terminal-dim text-[12px] opacity-70 hover:bg-terminal-bg-hover hover:text-terminal-fg hover:opacity-100"
                                                             }
                                                         }
                                                         on:contextmenu=move |event: MouseEvent| {
@@ -144,30 +148,35 @@ pub fn EditorView() -> impl IntoView {
                                                         }
                                                     >
                                                         <button
-                                                            class="flex min-w-0 items-center gap-1 px-2 py-0.5"
+                                                            class="flex min-w-0 items-center gap-2 px-3 py-1 font-mono"
                                                             on:click=move |_| {
                                                                 tab_context_menu.set(None);
                                                                 app_state.select_editor_file(tab_file_id_select.clone());
                                                             }
                                                         >
                                                             <span
-                                                                class=move || file_color_class(&file.language)
+                                                                class=format!("text-[11px] {}", color_class)
                                                             >
-                                                                {badge.clone()}
+                                                                {icon.clone()}
                                                             </span>
                                                             <span class="truncate">{label.clone()}</span>
+                                                            <Show when=move || file.is_reference_only>
+                                                                <span class="rounded border border-terminal-border px-1 text-[9px] uppercase tracking-[0.14em] text-terminal-faint">
+                                                                    {badge.clone()}
+                                                                </span>
+                                                            </Show>
 
                                                         </button>
 
                                                         <button
-                                                            class="text-terminal-faint hover:text-terminal-fg px-1.5 py-1"
+                                                            class="px-2 py-1 text-[9px] text-terminal-faint hover:text-terminal-fg"
                                                             on:click=move |event| {
                                                                 event.stop_propagation();
                                                                 tab_context_menu.set(None);
                                                                 app_state.close_editor_file(tab_file_id_close.clone());
                                                             }
                                                         >
-                                                            "x"
+                                                            "󰅖"
                                                         </button>
                                                     </div>
                                                 }
@@ -178,22 +187,6 @@ pub fn EditorView() -> impl IntoView {
                             </Show>
                         </div>
 
-                        <div class="mr-1 ml-auto flex items-center gap-1">
-                            <button
-                                class=ACTION_BUTTON_CLASS
-                                disabled=move || app_state.active_file_id.get().is_none()
-                                on:click=move |_| {
-                                    let Some(_) = app_state.active_file_id.get_untracked() else {
-                                        return;
-                                    };
-
-                                    let contents = super::buffers::active_buffer_text(app_state);
-                                    copy_buffer_to_clipboard(contents, copy_feedback);
-                                }
-                            >
-                                {move || copy_feedback.get().label()}
-                            </button>
-                        </div>
                     </div>
 
                     <ContextMenu
@@ -225,7 +218,6 @@ pub fn EditorView() -> impl IntoView {
                                 };
 
                                 app_state.close_other_editor_files(file_id);
-                                copy_feedback.set(CopyFeedback::Idle);
                             })
                             on_close=close_tab_context_menu
                         />
@@ -234,14 +226,21 @@ pub fn EditorView() -> impl IntoView {
                             disabled=Signal::derive(move || app_state.open_file_ids.get().is_empty())
                             on_select=Callback::new(move |_| {
                                 app_state.close_all_editor_files();
-                                copy_feedback.set(CopyFeedback::Idle);
                             })
                             on_close=close_tab_context_menu
                         />
                     </ContextMenu>
 
                     <div class="border-terminal-border bg-terminal-bg-panel text-terminal-faint flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
-                        <span class="min-w-0 flex-1 truncate">{move || active_file_path(app_state)}</span>
+                        <span class="min-w-0 flex-1 truncate">
+                            {move || {
+                                app_state
+                                    .active_file_id
+                                    .get()
+                                    .map(|file_id| file_by_key(&file_id, &app_state.dynamic_layouts.get_untracked()).path)
+                                    .unwrap_or_default()
+                            }}
+                        </span>
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-hidden">

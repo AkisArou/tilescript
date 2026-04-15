@@ -118,6 +118,18 @@ pub fn file_color_class(language: &str) -> &'static str {
     }
 }
 
+pub fn file_display_icon(language: &str, is_reference_only: bool) -> &'static str {
+    if is_reference_only { "󰘦" } else { file_icon(language) }
+}
+
+pub fn file_display_color_class(language: &str, is_reference_only: bool) -> &'static str {
+    if is_reference_only { "text-terminal-faint" } else { file_color_class(language) }
+}
+
+pub fn file_display_badge(language: &str, is_reference_only: bool) -> &'static str {
+    if is_reference_only { "sdk" } else { file_badge(language) }
+}
+
 pub fn initial_editor_buffers(language: AuthoringLanguage) -> BTreeMap<EditorFileKey, String> {
     static_files(language)
         .iter()

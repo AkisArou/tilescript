@@ -272,18 +272,7 @@ pub fn PreviewView() -> impl IntoView {
                             </Show>
                         </div>
 
-                        <div class="min-w-0 truncate px-2 text-center text-terminal-fg-strong">
-                            {move || {
-                                match surface_mode.get() {
-                                    PreviewSurfaceMode::Preview => String::new(),
-                                    PreviewSurfaceMode::Editor => "editor://workspace".to_string(),
-                                    PreviewSurfaceMode::Diagnostics => {
-                                        "diagnostics://journal".to_string()
-                                    }
-                                    PreviewSurfaceMode::Binds => "binds://hyprland".to_string(),
-                                }
-                            }}
-                        </div>
+                        <div class="min-w-0 truncate px-2 text-center text-terminal-fg-strong"></div>
 
                         <div class="flex items-center gap-2 justify-self-end">
                             <div class="ui-select-wrap mr-1">
@@ -336,7 +325,13 @@ pub fn PreviewView() -> impl IntoView {
                                 }
                                 on:click=move |_| surface_mode.set(PreviewSurfaceMode::Preview)
                             >
-                                "Preview"
+                                {move || {
+                                    if app_state.session.get().scene.is_some() {
+                                        "Preview"
+                                    } else {
+                                        ""
+                                    }
+                                }}
                             </button>
 
                             <button
