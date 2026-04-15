@@ -29,6 +29,8 @@ const RANDOM_WINDOW_APPS: [(&str, &str, &str); 3] = [
     ("random-nvim", "Editor", "nvim"),
 ];
 
+const DEFAULT_PREVIEW_WORKSPACE: &str = "1";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreviewDiagnostic {
     pub path: String,
@@ -152,12 +154,18 @@ impl PreviewSessionState {
     pub fn apply_command(&mut self, command: WmCommand, config: Option<&Config>) {
         let label = display_command_label(&command);
         let actions = dispatch_wm_command(command.clone());
+        let previous_workspace_id = self.model.current_workspace_id().cloned();
 
         self.actions = actions.clone();
         self.last_action = label.clone();
 
         for action in actions {
             apply_host_action(&mut self.model, action, config);
+        }
+
+        let current_workspace_id = self.model.current_workspace_id().cloned();
+        if current_workspace_id != previous_workspace_id {
+            prune_empty_preview_workspaces(&mut self.model, previous_workspace_id.as_ref());
         }
 
         self.push_log(format!(
@@ -346,7 +354,12 @@ fn activate_workspace(model: &mut WmModel, workspace_id: &str) {
     match workspace_id {
         "e+1" => cycle_workspace(model, 1),
         "e-1" => cycle_workspace(model, -1),
-        other => model.set_current_workspace(WorkspaceId::from(other)),
+        other => {
+            let target = ensure_preview_workspace(model, other);
+            model.set_current_workspace(target);
+            let preferred_focus = model.preferred_focus_window_on_current_workspace(Vec::new());
+            model.set_window_focused(preferred_focus);
+        }
     }
 }
 
@@ -363,6 +376,8 @@ fn cycle_workspace(model: &mut WmModel, delta: isize) {
     let len = workspace_ids.len() as isize;
     let next_index = (current_index + delta).rem_euclid(len) as usize;
     model.set_current_workspace(workspace_ids[next_index].clone());
+    let preferred_focus = model.preferred_focus_window_on_current_workspace(Vec::new());
+    model.set_window_focused(preferred_focus);
 }
 
 fn focus_window_by_offset(model: &mut WmModel, delta: isize) {
@@ -563,6 +578,59 @@ fn spawn_random_window(model: &mut WmModel) {
         false,
     );
     model.set_window_focused(Some(window_id));
+}
+
+fn ensure_preview_workspace(model: &mut WmModel, workspace_name: &str) -> WorkspaceId {
+    let workspace_id = WorkspaceId::from(workspace_name);
+    if model.workspaces.contains_key(&workspace_id) {
+        return workspace_id;
+    }
+
+    let layout_template = model
+        .current_workspace_id()
+        .and_then(|workspace_id| model.workspaces.get(workspace_id))
+        .cloned()
+        .or_else(|| model.workspaces.get(&WorkspaceId::from(DEFAULT_PREVIEW_WORKSPACE)).cloned());
+
+    let workspace_id = ensure_workspace(model, workspace_name.to_string());
+
+    if let Some(output_id) = model.current_output_id().cloned() {
+        model.attach_workspace_to_output(workspace_id.clone(), output_id);
+    }
+
+    if let Some(template) = layout_template {
+        model.set_workspace_layout_space(workspace_id.clone(), template.layout_space);
+        model.set_workspace_effective_layout(workspace_id.clone(), template.effective_layout);
+    }
+
+    workspace_id
+}
+
+fn prune_empty_preview_workspaces(
+    model: &mut WmModel,
+    previous_workspace_id: Option<&WorkspaceId>,
+) {
+    ensure_preview_workspace(model, DEFAULT_PREVIEW_WORKSPACE);
+
+    let empty_workspace_ids = model
+        .workspaces
+        .keys()
+        .filter(|workspace_id| workspace_id.as_str() != DEFAULT_PREVIEW_WORKSPACE)
+        .filter(|workspace_id| Some(*workspace_id) == previous_workspace_id)
+        .filter(|workspace_id| {
+            !model
+                .windows
+                .values()
+                .any(|window| window.workspace_id.as_ref() == Some(*workspace_id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    for workspace_id in empty_workspace_ids {
+        model.workspaces.remove(&workspace_id);
+        model.tiled_window_order_by_workspace.remove(&workspace_id);
+        model.gc_resize_state_for_known_workspaces();
+    }
 }
 
 fn next_random_window_index(model: &WmModel, prefix: &str) -> usize {
