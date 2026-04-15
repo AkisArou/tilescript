@@ -245,10 +245,7 @@ impl LayoutRuntimeService {
                 Ok(Some(layout_workspace_scene(config, Some(evaluation), scene, Vec::new(), None)))
             }
             Err(error) => {
-                let diagnostic = layout_failure_diagnostic(
-                    Some(std::path::Path::new(&evaluation.artifact.selected.module)),
-                    error.to_string(),
-                );
+                let diagnostic = scene_failure_diagnostic(&evaluation.artifact, &error);
                 let scene = build_fallback_scene(
                     config,
                     state,
@@ -570,6 +567,68 @@ fn layout_failure_diagnostic(path: Option<&Path>, message: String) -> LayoutDiag
         path: path.map(|path| path.display().to_string()),
         range: LayoutDiagnosticRange { start_line: 1, start_column: 1, end_line: 1, end_column: 1 },
     }
+}
+
+fn scene_failure_diagnostic(
+    artifact: &PreparedLayout,
+    error: &LayoutConfigError,
+) -> LayoutDiagnostic {
+    if let LayoutConfigError::EvaluateAuthoredConfig { message, .. } = error {
+        if let Some(diagnostic) = css_scene_failure_diagnostic(artifact, message) {
+            return diagnostic;
+        }
+    }
+
+    layout_failure_diagnostic(
+        Some(std::path::Path::new(&artifact.selected.module)),
+        error.to_string(),
+    )
+}
+
+fn css_scene_failure_diagnostic(
+    artifact: &PreparedLayout,
+    scene_error_message: &str,
+) -> Option<LayoutDiagnostic> {
+    let stylesheet = artifact.stylesheets.layout.as_ref()?;
+    let diagnostic = analyze_stylesheet(&stylesheet.source)
+        .diagnostics
+        .into_iter()
+        .find(|diagnostic| matches!(diagnostic.severity, CssDiagnosticSeverity::Error))?;
+
+    let message = if scene_error_message.contains(&diagnostic.message) {
+        format!("{scene_error_message}; using fallback layout")
+    } else {
+        format!("{}; using fallback layout", diagnostic.message)
+    };
+
+    Some(LayoutDiagnostic {
+        source: "css".into(),
+        severity: match diagnostic.severity {
+            CssDiagnosticSeverity::Error => "error",
+            CssDiagnosticSeverity::Warning => "warning",
+            CssDiagnosticSeverity::Information => "information",
+        }
+        .into(),
+        code: match diagnostic.code {
+            CssDiagnosticCode::UnsupportedAtRule => "unsupportedAtRule",
+            CssDiagnosticCode::UnsupportedSelector => "unsupportedSelector",
+            CssDiagnosticCode::UnsupportedProperty => "unsupportedProperty",
+            CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
+            CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
+            CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
+            CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
+            CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
+        }
+        .into(),
+        message,
+        path: Some(stylesheet.path.clone()),
+        range: LayoutDiagnosticRange {
+            start_line: diagnostic.range.start_line,
+            start_column: diagnostic.range.start_column,
+            end_line: diagnostic.range.end_line,
+            end_column: diagnostic.range.end_column,
+        },
+    })
 }
 
 fn diagnostics_for_stylesheets(
@@ -1411,6 +1470,33 @@ mod tests {
             diagnostic.range,
             LayoutDiagnosticRange { start_line: 1, start_column: 1, end_line: 1, end_column: 1 }
         );
+    }
+
+    #[test]
+    fn css_failure_diagnostic_is_classified_as_css() {
+        let diagnostic = css_scene_failure_diagnostic(
+            &PreparedLayout {
+                selected: SelectedLayout {
+                    name: "test".into(),
+                    directory: "layouts/test".into(),
+                    module: "layouts/test/index.tsx".into(),
+                },
+                runtime_payload: serde_json::Value::Null,
+                stylesheets: PreparedStylesheets {
+                    global: None,
+                    layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                        path: "layouts/test/index.css".into(),
+                        source: "slot { display: flex; }".into(),
+                    }),
+                },
+            },
+            "unsupported selector `slot`",
+        )
+        .expect("css diagnostic");
+
+        assert_eq!(diagnostic.source, "css");
+        assert_eq!(diagnostic.code, "unsupportedSelector");
+        assert!(diagnostic.message.contains("using fallback layout"));
     }
 
     #[test]
