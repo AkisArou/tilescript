@@ -122,12 +122,16 @@ enum JsAuthoredLayoutNode {
         props: Option<JsAuthoredNodeProps>,
         #[serde(flatten)]
         legacy: JsAuthoredNodeProps,
+        #[serde(default)]
+        children: Vec<JsAuthoredLayoutNode>,
     },
     Slot {
         #[serde(default)]
         props: Option<JsAuthoredNodeProps>,
         #[serde(flatten)]
         legacy: JsAuthoredNodeProps,
+        #[serde(default)]
+        children: Vec<JsAuthoredLayoutNode>,
     },
 }
 
@@ -178,14 +182,16 @@ fn decode_authored_layout_node_from_node(
                 children: decode_children(children, &path.field("children"))?,
             }
         }
-        JsAuthoredLayoutNode::Window { props, legacy } => {
+        JsAuthoredLayoutNode::Window { props, legacy, children } => {
+            ensure_childless_node("window", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Window {
                 meta: decode_meta(props.meta),
                 match_expr: props.match_expr,
             }
         }
-        JsAuthoredLayoutNode::Slot { props, legacy } => {
+        JsAuthoredLayoutNode::Slot { props, legacy, children } => {
+            ensure_childless_node("slot", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Slot {
                 meta: decode_meta(props.meta),
@@ -194,6 +200,18 @@ fn decode_authored_layout_node_from_node(
             }
         }
     })
+}
+
+fn ensure_childless_node(
+    node_type: &str,
+    children: &[JsAuthoredLayoutNode],
+    path: &DecodePath,
+) -> Result<(), String> {
+    if children.is_empty() {
+        return Ok(());
+    }
+
+    Err(format!("{}: `{node_type}` cannot have children", path.field("children").display()))
 }
 
 fn merge_node_props(
@@ -249,5 +267,35 @@ mod tests {
         assert_eq!(meta.id.as_deref(), Some("master"));
         assert_eq!(meta.class, vec!["master-slot".to_owned()]);
         assert_eq!(*take, SlotTake::Count(1));
+    }
+
+    #[test]
+    fn rejects_window_children_from_js_value() {
+        let value = serde_json::json!({
+            "type": "workspace",
+            "children": [{
+                "type": "window",
+                "children": [{ "type": "slot" }]
+            }]
+        });
+
+        let error = decode_js_layout_value(&value).unwrap_err();
+
+        assert_eq!(error, "root.children.[0].children: `window` cannot have children");
+    }
+
+    #[test]
+    fn rejects_slot_children_from_js_value() {
+        let value = serde_json::json!({
+            "type": "workspace",
+            "children": [{
+                "type": "slot",
+                "children": [{ "type": "window" }]
+            }]
+        });
+
+        let error = decode_js_layout_value(&value).unwrap_err();
+
+        assert_eq!(error, "root.children.[0].children: `slot` cannot have children");
     }
 }

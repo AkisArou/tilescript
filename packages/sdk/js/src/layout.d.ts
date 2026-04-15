@@ -17,40 +17,44 @@ export interface LayoutComponentProps {
   children?: LayoutChildren;
 }
 
-export interface WorkspaceProps extends LayoutBaseProps, LayoutComponentProps {}
+export interface WorkspaceProps extends LayoutBaseProps {}
 
-export interface GroupProps extends LayoutBaseProps, LayoutComponentProps {}
+export interface GroupProps extends LayoutBaseProps {}
 
-export interface SlotProps extends LayoutBaseProps, LayoutComponentProps {
+export interface SlotProps extends LayoutBaseProps {
   take?: number;
 }
 
-export interface WindowProps extends LayoutBaseProps, LayoutComponentProps {
+export interface WindowProps extends LayoutBaseProps {
   match?: string;
 }
+
+export type LayoutNodeChild = LayoutNode | null;
+export type WorkspaceChild = LayoutNodeChild;
+export type GroupChild = LayoutNodeChild;
 
 export interface WorkspaceNode {
   type: "workspace";
   props?: WorkspaceProps;
-  children?: LayoutChild[];
+  children?: WorkspaceChild[];
 }
 
 export interface GroupNode {
   type: "group";
   props?: GroupProps;
-  children?: LayoutChild[];
+  children?: GroupChild[];
 }
 
 export interface SlotNode {
   type: "slot";
   props?: SlotProps;
-  children?: LayoutChild[];
+  children?: never;
 }
 
 export interface WindowNode {
   type: "window";
   props?: WindowProps;
-  children?: LayoutChild[];
+  children?: never;
 }
 
 export type LayoutNode = WorkspaceNode | GroupNode | SlotNode | WindowNode;
