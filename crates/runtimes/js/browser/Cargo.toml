@@ -1,0 +1,20 @@
+[package]
+name = "hypreact-runtime-js-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+js-sys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde-wasm-bindgen.workspace = true
+hypreact-config = { path = "../../../config" }
+hypreact-core = { path = "../../../core" }
+hypreact-runtime-js-core = { path = "../core" }
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web-sys = { workspace = true, features = ["Blob", "BlobPropertyBag", "Url"] }
+
+[dev-dependencies]

@@ -1,10 +1,12 @@
 packages:
+  - apps/**
   - packages/**
 autoInstallPeers: true
 catalog:
   typescript: 6.0.2
   oxfmt: 0.36.0
   oxlint: 1.47.0
+  tailwindcss: 4.2.2
   "@types/node": ^24.6.0
   "@types/vscode": ^1.95.0
   "@vscode/vsce": ^3.6.2

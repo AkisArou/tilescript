@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use rquickjs::{
-    loader::{Loader, Resolver},
     Context as JsContext, Ctx, Function, Module, Object, Runtime as JsRuntime, String as JsString,
     Value,
+    loader::{Loader, Resolver},
 };
 
-use crate::JavaScriptModuleGraph;
+use hypreact_runtime_js_core::JavaScriptModuleGraph;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModuleGraphRuntimeError {
@@ -38,21 +38,14 @@ pub fn call_entry_export_with_json_arg(
 ) -> Result<Option<serde_json::Value>, ModuleGraphRuntimeError> {
     with_entry_namespace(graph, |ctx, namespace| {
         let function = namespace_function(ctx.clone(), &namespace, module_name, export_name)?;
-        let arg_source = format!(
-            "JSON.parse({})",
-            serde_json::to_string(&arg.to_string()).unwrap()
-        );
-        let arg: Value =
-            ctx.eval(arg_source)
-                .map_err(|error| ModuleGraphRuntimeError::JavaScript {
-                    message: format_js_error(ctx.clone(), error),
-                })?;
-        let value: Value =
-            function
-                .call((arg,))
-                .map_err(|error| ModuleGraphRuntimeError::JavaScript {
-                    message: format_js_error(ctx.clone(), error),
-                })?;
+        let arg_source =
+            format!("JSON.parse({})", serde_json::to_string(&arg.to_string()).unwrap());
+        let arg: Value = ctx.eval(arg_source).map_err(|error| {
+            ModuleGraphRuntimeError::JavaScript { message: format_js_error(ctx.clone(), error) }
+        })?;
+        let value: Value = function.call((arg,)).map_err(|error| {
+            ModuleGraphRuntimeError::JavaScript { message: format_js_error(ctx.clone(), error) }
+        })?;
         js_value_to_json(ctx, value)
             .map_err(|message| ModuleGraphRuntimeError::JavaScript { message })
     })
@@ -65,14 +58,11 @@ fn with_entry_namespace<T, F>(
 where
     F: for<'js> FnOnce(Ctx<'js>, Object<'js>) -> Result<T, ModuleGraphRuntimeError>,
 {
-    let runtime = JsRuntime::new().map_err(|error| ModuleGraphRuntimeError::JavaScript {
-        message: error.to_string(),
-    })?;
+    let runtime = JsRuntime::new()
+        .map_err(|error| ModuleGraphRuntimeError::JavaScript { message: error.to_string() })?;
     runtime.set_loader(GraphResolver::new(graph), GraphLoader::new(graph));
-    let context =
-        JsContext::full(&runtime).map_err(|error| ModuleGraphRuntimeError::JavaScript {
-            message: error.to_string(),
-        })?;
+    let context = JsContext::full(&runtime)
+        .map_err(|error| ModuleGraphRuntimeError::JavaScript { message: error.to_string() })?;
 
     context.with(|ctx| {
         let namespace = Module::import(&ctx, graph.entry.as_str())
@@ -116,12 +106,12 @@ fn namespace_function<'js>(
     module_name: &str,
     export_name: &str,
 ) -> Result<Function<'js>, ModuleGraphRuntimeError> {
-    namespace_export(ctx.clone(), namespace, module_name, export_name)?
-        .into_function()
-        .ok_or_else(|| ModuleGraphRuntimeError::NonCallableExport {
+    namespace_export(ctx.clone(), namespace, module_name, export_name)?.into_function().ok_or_else(
+        || ModuleGraphRuntimeError::NonCallableExport {
             name: module_name.to_owned(),
             export: export_name.to_owned(),
-        })
+        },
+    )
 }
 
 fn js_value_to_json<'js>(
@@ -129,9 +119,7 @@ fn js_value_to_json<'js>(
     value: Value<'js>,
 ) -> Result<Option<serde_json::Value>, String> {
     let globals = ctx.globals();
-    globals
-        .set("__spiders_tmp", value)
-        .map_err(|error| format_js_error(ctx.clone(), error))?;
+    globals.set("__spiders_tmp", value).map_err(|error| format_js_error(ctx.clone(), error))?;
 
     let json_result = (|| {
         let json_text: Value = ctx
@@ -234,11 +222,8 @@ impl GraphLoader {
 
 impl Loader for GraphLoader {
     fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> rquickjs::Result<Module<'js>> {
-        let source = self
-            .modules
-            .get(name)
-            .ok_or_else(|| rquickjs::Error::new_loading(name))?
-            .clone();
+        let source =
+            self.modules.get(name).ok_or_else(|| rquickjs::Error::new_loading(name))?.clone();
         Module::declare(ctx.clone(), name, source)
     }
 }

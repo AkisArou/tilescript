@@ -5,9 +5,11 @@
 - `crates/core` - shared WM model, resize, focus, and query logic
 - `crates/css` - CSS parser, compiler, metadata, and analysis
 - `crates/scene` - style matching and layout/scene computation
-- `crates/runtimes/js` - authored config and layout JS/TSX pipeline
+- `crates/runtimes/js/core` - shared JS graph, compile, payload, and loader logic
+- `crates/runtimes/js/native` - native QuickJS authored config and layout runtime
 - `crates/layout-runtime` - end-to-end workspace evaluation and placement logic
 - `crates/hypr-ffi` - Rust bridge exposed to the Hyprland plugin
+- `apps/hypreact-playground` - browser playground modeled on `spiders-wm-www` preview/editor/system flow
 - `plugin/hyprland/src/plugin.cpp` - Hyprland-side plugin adapter
 - `packages/sdk/js` - authored config/layout SDK surface
 - `packages/lsp/vscode` - VS Code client for `hypreact-css-lsp`
@@ -20,6 +22,7 @@ Recommended entrypoints:
 
 ```sh
 make plugin
+make playground
 make test
 make live
 ```
@@ -29,7 +32,8 @@ Rust:
 ```sh
 cargo test -p hypreact-scene
 cargo test -p hypreact-layout-runtime
-cargo test -p hypreact-runtime-js
+cargo test -p hypreact-runtime-js-core
+cargo test -p hypreact-runtime-js-native
 cargo build --release -p hypreact-hypr-ffi
 ```
 
@@ -50,6 +54,20 @@ pnpm fmt
 pnpm lint
 pnpm --filter hypreact-css-lsp-vscode run check
 ```
+
+Playground:
+
+```sh
+make playground
+```
+
+`apps/hypreact-playground` intentionally follows the `spiders-wm-www` shape for the applicable browser features:
+
+- preview route
+- editor route with workspace file tree and live buffers
+- system route with state/diagnostics
+
+It does not carry over old `spiders-wm-www` pieces that do not apply in `hypreact` yet, such as the CLI route and the Monaco/browser IPC stack.
 
 ## Hyprland Development Loop
 

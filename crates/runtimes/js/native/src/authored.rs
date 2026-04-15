@@ -6,17 +6,15 @@ use oxc::span::SourceType;
 use serde_json::Value;
 use tracing::debug;
 
-use crate::module_graph_runtime::evaluate_entry_export_to_json;
-use hypreact_config::model::{
-    Config, LayoutConfigError, LayoutDefinition, LayoutRule, ResizeConfig,
-};
-use crate::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
-use crate::graph::{
+use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
+use hypreact_runtime_js_core::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
+use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
+use hypreact_runtime_js_core::graph::{
     DiscoveredApp, ModuleGraph, ModuleGraphBuilder, discover_project_apps,
 };
-use crate::{
-    JavaScriptModule, JavaScriptModuleGraph, encode_runtime_graph_payload,
-};
+use hypreact_runtime_js_core::encode_runtime_graph_payload;
+
+use crate::evaluate_entry_export_to_json;
 
 pub fn load_authored_config(path: impl AsRef<Path>) -> Result<Config, LayoutConfigError> {
     debug!(path = %path.as_ref().display(), "loading authored project config");
@@ -167,7 +165,7 @@ fn write_runtime_cache(
 
 fn evaluate_compiled_config(
     path: &Path,
-    graph: &JavaScriptModuleGraph,
+    graph: &hypreact_runtime_js_core::JavaScriptModuleGraph,
 ) -> Result<Value, LayoutConfigError> {
     evaluate_entry_export_to_json(graph, &graph.entry, "default")
         .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
@@ -196,18 +194,18 @@ fn write_compiled_app(
         .modules
         .values()
         .filter_map(|record| match &record.id {
-            crate::graph::ModuleId::File(path) => match record.kind {
-                crate::graph::ModuleKind::Script => {
+            hypreact_runtime_js_core::graph::ModuleId::File(path) => match record.kind {
+                hypreact_runtime_js_core::graph::ModuleKind::Script => {
                     Some(runtime_root.join(runtime_relative_path(
                         path,
                         &graph.app.root_dir,
                         runtime_entry_path.file_name().and_then(|name| name.to_str()),
                     )))
                 }
-                crate::graph::ModuleKind::Stylesheet => {
+                hypreact_runtime_js_core::graph::ModuleKind::Stylesheet => {
                     Some(runtime_root.join(runtime_static_relative_path(path, &graph.app.root_dir)))
                 }
-                crate::graph::ModuleKind::Virtual => None,
+                hypreact_runtime_js_core::graph::ModuleKind::Virtual => None,
             },
             _ => None,
         })
@@ -240,7 +238,7 @@ fn write_compiled_app(
             &graph.app.root_dir,
         );
         let rewritten = rewrite_module_for_runtime(
-            &module,
+            module,
             &destination,
             runtime_root,
             runtime_entry_path,
@@ -291,11 +289,11 @@ fn app_cache_is_fresh(graph: &ModuleGraph, runtime_root: &Path, runtime_entry_pa
         .modules
         .values()
         .filter_map(|record| match &record.id {
-            crate::graph::ModuleId::File(path)
+            hypreact_runtime_js_core::graph::ModuleId::File(path)
                 if matches!(
                     record.kind,
-                    crate::graph::ModuleKind::Script
-                        | crate::graph::ModuleKind::Stylesheet
+                    hypreact_runtime_js_core::graph::ModuleKind::Script
+                        | hypreact_runtime_js_core::graph::ModuleKind::Stylesheet
                 ) =>
             {
                 Some(path)
@@ -408,7 +406,7 @@ fn external_runtime_relative_path(source_path: &Path, extension: &str) -> PathBu
 }
 
 fn rewrite_module_for_runtime(
-    module: &JavaScriptModule,
+    module: &hypreact_runtime_js_core::JavaScriptModule,
     destination: &Path,
     runtime_root: &Path,
     runtime_entry_path: &Path,
@@ -616,363 +614,4 @@ pub struct JsRuntimeCacheUpdate {
     pub rebuilt_files: usize,
     pub copied_stylesheets: usize,
     pub pruned_files: usize,
-}
-
-fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutConfigError> {
-    let root = expect_object(path, value, "root")?;
-
-    Ok(Config {
-        layouts: Vec::new(),
-        global_stylesheet_path: None,
-        default_layout: decode_optional_string(root.get("defaultLayout"), path, "root.defaultLayout")?,
-        layout_rules: decode_layout_rules(root.get("layoutRules"), path)?,
-        resize: decode_resize_config(root.get("resize"), path)?,
-    })
-}
-
-fn validate_layout_selection(
-    path: &Path,
-    default_layout: Option<&str>,
-    layout_rules: &[LayoutRule],
-    layouts: &[LayoutDefinition],
-) -> Result<(), LayoutConfigError> {
-    let known = layouts.iter().map(|layout| layout.name.as_str()).collect::<Vec<_>>();
-    let is_known = |name: &str| known.iter().any(|known_name| *known_name == name);
-
-    if let Some(default) = default_layout {
-        if !is_known(default) {
-            return Err(LayoutConfigError::DecodeAuthoredConfig {
-                path: path.to_path_buf(),
-                message: format!(
-                    "selected layout `{default}` is not defined by discovered layout modules"
-                ),
-            });
-        }
-    }
-
-    for rule in layout_rules {
-        if !is_known(&rule.layout) {
-            return Err(LayoutConfigError::DecodeAuthoredConfig {
-                path: path.to_path_buf(),
-                message: format!(
-                    "selected layout `{}` is not defined by discovered layout modules",
-                    rule.layout
-                ),
-            });
-        }
-    }
-
-    Ok(())
-}
-
-fn decode_layout_rules(
-    value: Option<&Value>,
-    path: &Path,
-) -> Result<Vec<LayoutRule>, LayoutConfigError> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    let items = expect_array(path, value, "root.layoutRules")?;
-
-    items.iter()
-        .enumerate()
-        .map(|(index, value)| decode_layout_rule(value, path, &format!("root.layoutRules[{index}]")))
-        .collect()
-}
-
-fn decode_layout_rule(
-    value: &Value,
-    path: &Path,
-    field: &str,
-) -> Result<LayoutRule, LayoutConfigError> {
-    let object = expect_object(path, value, field)?;
-
-    Ok(LayoutRule {
-        layout: expect_string(path, object.get("layout").ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-            path: path.to_path_buf(),
-            message: format!("expected string at {field}.layout"),
-        })?, &format!("{field}.layout"))?.to_owned(),
-        index: decode_optional_usize(object.get("index"), path, &format!("{field}.index"))?,
-        name: decode_optional_string(object.get("name"), path, &format!("{field}.name"))?,
-        monitor: decode_optional_string(object.get("monitor"), path, &format!("{field}.monitor"))?,
-    })
-}
-
-fn decode_resize_config(
-    value: Option<&Value>,
-    path: &Path,
-) -> Result<ResizeConfig, LayoutConfigError> {
-    let Some(value) = value else {
-        return Ok(ResizeConfig::default());
-    };
-    let object = expect_object(path, value, "root.resize")?;
-
-    Ok(ResizeConfig {
-        step_px: decode_optional_f32(object.get("stepPx"), path, "root.resize.stepPx")?,
-        min_branch_size_px: decode_optional_f32(
-            object.get("minBranchSizePx"),
-            path,
-            "root.resize.minBranchSizePx",
-        )?,
-    })
-}
-
-
-fn decode_optional_string(
-    value: Option<&Value>,
-    path: &Path,
-    field: &str,
-) -> Result<Option<String>, LayoutConfigError> {
-    value.map(|value| expect_string(path, value, field).map(str::to_owned)).transpose()
-}
-
-fn decode_optional_usize(
-    value: Option<&Value>,
-    path: &Path,
-    field: &str,
-) -> Result<Option<usize>, LayoutConfigError> {
-    value.map(|value| expect_usize(path, value, field)).transpose()
-}
-
-fn decode_optional_f32(
-    value: Option<&Value>,
-    path: &Path,
-    field: &str,
-) -> Result<Option<f32>, LayoutConfigError> {
-    value.map(|value| expect_f32(path, value, field)).transpose()
-}
-
-fn expect_object<'a>(
-    path: &Path,
-    value: &'a Value,
-    field: &str,
-) -> Result<&'a serde_json::Map<String, Value>, LayoutConfigError> {
-    value.as_object().ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-        path: path.to_path_buf(),
-        message: format!("expected object at {field}"),
-    })
-}
-
-fn expect_array<'a>(
-    path: &Path,
-    value: &'a Value,
-    field: &str,
-) -> Result<&'a Vec<Value>, LayoutConfigError> {
-    value.as_array().ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-        path: path.to_path_buf(),
-        message: format!("expected array at {field}"),
-    })
-}
-
-fn expect_string<'a>(
-    path: &Path,
-    value: &'a Value,
-    field: &str,
-) -> Result<&'a str, LayoutConfigError> {
-    value.as_str().ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-        path: path.to_path_buf(),
-        message: format!("expected string at {field}"),
-    })
-}
-
-fn expect_f32(path: &Path, value: &Value, field: &str) -> Result<f32, LayoutConfigError> {
-    value
-        .as_f64()
-        .filter(|value| value.is_finite() && *value >= 0.0)
-        .map(|value| value as f32)
-        .ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-            path: path.to_path_buf(),
-            message: format!("expected non-negative number at {field}"),
-        })
-}
-
-fn expect_usize(path: &Path, value: &Value, field: &str) -> Result<usize, LayoutConfigError> {
-    value
-        .as_u64()
-        .and_then(|value| usize::try_from(value).ok())
-        .ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
-            path: path.to_path_buf(),
-            message: format!("expected non-negative integer at {field}"),
-        })
-}
-
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-
-    use crate::decode_runtime_graph_payload;
-
-    use super::*;
-
-    fn unique_root(name: &str) -> PathBuf {
-        let unique =
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        std::env::temp_dir().join(format!("hypreact-config-authored-{name}-{unique}"))
-    }
-
-    #[test]
-    fn loads_authored_config_and_prepared_layouts() {
-        let root = unique_root("project");
-        fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
-        fs::create_dir_all(root.join("config")).unwrap();
-        fs::write(root.join("index.css"), "window { appearance: none; }").unwrap();
-        fs::write(
-            root.join("config.ts"),
-            r#"
-                import type { HypreactConfig } from "@hypreact/sdk/config";
-
-                export default {
-                  defaultLayout: "master-stack",
-                  layoutRules: [
-                    { index: 0, layout: "master-stack" },
-                    { monitor: "eDP-1", layout: "master-stack" },
-                  ],
-                } satisfies HypreactConfig;
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("layouts/master-stack/index.tsx"),
-            r#"
-                import "./index.css";
-                export default function layout() {
-                  return { type: "workspace", children: [] };
-                }
-            "#,
-        )
-        .unwrap();
-        fs::write(root.join("layouts/master-stack/index.css"), ".master {}").unwrap();
-
-        let config = load_authored_config(root.join("config.ts")).unwrap();
-
-        assert_eq!(config.default_layout.as_deref(), Some("master-stack"));
-        assert_eq!(config.layout_rules.len(), 2);
-        assert_eq!(config.layouts.len(), 1);
-        assert_eq!(config.layouts[0].module, "layouts/master-stack/index.tsx");
-        let runtime_graph =
-            decode_runtime_graph_payload(config.layouts[0].runtime_cache_payload.as_ref().unwrap())
-                .unwrap();
-        assert_eq!(runtime_graph.entry, "layouts/master-stack/index.tsx");
-        assert!(
-            runtime_graph
-                .modules
-                .iter()
-                .any(|module| module.source.contains("export default function layout"))
-        );
-        let stylesheet_path = config.layouts[0].stylesheet_path.clone().unwrap();
-        assert!(stylesheet_path.ends_with("layouts/master-stack/index.css"));
-    }
-
-    #[test]
-    fn decodes_resize_config_from_authored_config() {
-        let root = unique_root("resize-config");
-        fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
-        fs::create_dir_all(root.join("config")).unwrap();
-        fs::write(
-            root.join("config.ts"),
-            r#"
-                import type { HypreactConfig } from "@hypreact/sdk/config";
-
-                export default {
-                  defaultLayout: "master-stack",
-                  resize: {
-                    stepPx: 80,
-                    minBranchSizePx: 144,
-                  },
-                } satisfies HypreactConfig;
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("layouts/master-stack/index.tsx"),
-            r#"
-                export default function layout() {
-                  return { type: "workspace", children: [] };
-                }
-            "#,
-        )
-        .unwrap();
-
-        let config = load_authored_config(root.join("config.ts")).unwrap();
-
-        assert_eq!(config.resize.step_px, Some(80.0));
-        assert_eq!(config.resize.min_branch_size_px, Some(144.0));
-    }
-
-    #[test]
-    fn refresh_prepared_config_skips_rewriting_fresh_outputs() {
-        let root = unique_root("cache-sync");
-        let cache_root = root.join("runtime-cache");
-        fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
-        fs::write(
-            root.join("config.ts"),
-            r#"
-                export default {
-                  defaultLayout: "master-stack",
-                };
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("layouts/master-stack/index.ts"),
-            r#"
-                export default function layout() {
-                  return { type: "workspace", children: [] };
-                }
-            "#,
-        )
-        .unwrap();
-        fs::write(root.join("layouts/master-stack/index.css"), ".master {}").unwrap();
-
-        let runtime_entry = cache_root.join("config.js");
-        rebuild_prepared_config(root.join("config.ts"), &runtime_entry).unwrap();
-        fs::write(cache_root.join("stale.js"), "export default {};").unwrap();
-        fs::write(cache_root.join("stale.css"), ".stale {}").unwrap();
-        let first_modified = fs::metadata(&runtime_entry).unwrap().modified().unwrap();
-
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        refresh_prepared_config(root.join("config.ts"), &runtime_entry).unwrap();
-        let second_modified = fs::metadata(&runtime_entry).unwrap().modified().unwrap();
-
-        assert_eq!(first_modified, second_modified);
-        assert!(cache_root.join("layouts/master-stack/index.js").exists());
-        assert!(!cache_root.join("stale.js").exists());
-        assert!(!cache_root.join("stale.css").exists());
-    }
-
-    #[test]
-    fn load_prepared_config_preserves_virtual_commands_imports() {
-        let root = unique_root("prepared-virtual-commands");
-        let cache_root = root.join("runtime-cache");
-        fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
-        fs::write(
-            root.join("config.ts"),
-            r#"
-                import type { HypreactConfig } from "@hypreact/sdk/config";
-
-                export default {
-                  defaultLayout: "master-stack",
-                } satisfies HypreactConfig;
-            "#,
-        )
-        .unwrap();
-        fs::write(
-            root.join("layouts/master-stack/index.ts"),
-            r#"
-                export default function layout() {
-                  return { type: "workspace", children: [] };
-                }
-            "#,
-        )
-        .unwrap();
-
-        let runtime_entry = cache_root.join("config.js");
-        rebuild_prepared_config(root.join("config.ts"), &runtime_entry).unwrap();
-
-        let config = load_prepared_config(&runtime_entry).unwrap();
-        assert_eq!(config.default_layout.as_deref(), Some("master-stack"));
-    }
-
 }

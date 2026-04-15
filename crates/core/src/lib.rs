@@ -4,6 +4,7 @@ mod layout;
 
 pub mod command;
 pub mod focus;
+pub mod host;
 pub mod navigation;
 pub mod query;
 pub mod resize;

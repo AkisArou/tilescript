@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use hypreact_runtime_js::compile::AppBuildPlan;
-use hypreact_runtime_js::graph::{
+use hypreact_runtime_js_core::compile::AppBuildPlan;
+use hypreact_runtime_js_core::graph::{
     AppKind, DiscoveredApp, ModuleGraphBuilder, discover_project_apps,
 };
 use lsp_types::Url;

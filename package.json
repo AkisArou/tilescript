@@ -12,6 +12,7 @@
   "devDependencies": {
     "oxlint": "catalog:",
     "oxfmt": "catalog:",
+    "tailwindcss": "catalog:",
     "typescript": "catalog:"
   }
 }

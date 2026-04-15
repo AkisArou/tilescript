@@ -20,7 +20,7 @@ use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
 use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
-use hypreact_runtime_js::build_runtime_bundle;
+use hypreact_runtime_js_native::build_runtime_bundle;
 use hypreact_scene::Display;
 use hypreact_scene::FlexDirectionValue;
 use hypreact_scene::ast::ValidatedLayoutTree;

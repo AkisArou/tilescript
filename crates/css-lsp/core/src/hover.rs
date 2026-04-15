@@ -294,11 +294,12 @@ fn selector_targets_label(targets: &[SelectorTarget]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::Url;
 
     #[test]
     fn hovers_property_name() {
         let hover = hover_for(
-            &tower_lsp::lsp_types::Url::parse("file:///test.css").unwrap(),
+            &Url::parse("file:///test.css").unwrap(),
             "window { text-align: center; }",
             Position { line: 0, character: 10 },
             &ProjectIndex::default(),
@@ -309,13 +310,13 @@ mod tests {
             panic!("expected markup hover");
         };
         assert!(markup.value.contains("`text-align`"));
-        assert!(markup.value.contains("Applies to: `window`"));
+        assert!(markup.value.contains("Applies to: `workspace`, `group`, `window`"));
     }
 
     #[test]
     fn hovers_pseudo_class() {
         let hover = hover_for(
-            &tower_lsp::lsp_types::Url::parse("file:///test.css").unwrap(),
+            &Url::parse("file:///test.css").unwrap(),
             "window:focused { display: flex; }",
             Position { line: 0, character: 8 },
             &ProjectIndex::default(),
@@ -331,7 +332,7 @@ mod tests {
     #[test]
     fn hovers_attribute_key() {
         let hover = hover_for(
-            &tower_lsp::lsp_types::Url::parse("file:///test.css").unwrap(),
+            &Url::parse("file:///test.css").unwrap(),
             "window[app_id='foot'] { display: flex; }",
             Position { line: 0, character: 8 },
             &ProjectIndex::default(),
@@ -347,7 +348,7 @@ mod tests {
     #[test]
     fn hovers_animation_name_reference() {
         let hover = hover_for(
-            &tower_lsp::lsp_types::Url::parse("file:///test.css").unwrap(),
+            &Url::parse("file:///test.css").unwrap(),
             "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }",
             Position { line: 1, character: 27 },
             &ProjectIndex::default(),
@@ -362,8 +363,7 @@ mod tests {
 
     #[test]
     fn hovers_project_backed_selector_class() {
-        let uri =
-            tower_lsp::lsp_types::Url::parse("file:///tmp/layouts/example/index.css").unwrap();
+        let uri = Url::parse("file:///tmp/layouts/example/index.css").unwrap();
         let mut project_index = ProjectIndex::default();
         project_index.index_app_scope(
             std::path::PathBuf::from("/tmp/layouts/example/index.tsx"),

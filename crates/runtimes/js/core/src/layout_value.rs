@@ -93,11 +93,7 @@ impl JsAuthoredNodeMeta {
                 other => other,
             },
             name: nested.name.or(self.name),
-            data: if nested.data.is_empty() {
-                self.data
-            } else {
-                nested.data
-            },
+            data: if nested.data.is_empty() { self.data } else { nested.data },
         }
     }
 }
@@ -168,22 +164,14 @@ fn decode_authored_layout_node_from_node(
     path: &DecodePath,
 ) -> Result<AuthoredLayoutNode, String> {
     Ok(match node {
-        JsAuthoredLayoutNode::Workspace {
-            props,
-            legacy,
-            children,
-        } => {
+        JsAuthoredLayoutNode::Workspace { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Workspace {
                 meta: decode_meta(props.meta),
                 children: decode_children(children, &path.field("children"))?,
             }
         }
-        JsAuthoredLayoutNode::Group {
-            props,
-            legacy,
-            children,
-        } => {
+        JsAuthoredLayoutNode::Group { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Group {
                 meta: decode_meta(props.meta),
@@ -219,12 +207,7 @@ fn merge_node_props(
 }
 
 fn decode_meta(meta: JsAuthoredNodeMeta) -> AuthoredNodeMeta {
-    AuthoredNodeMeta {
-        id: meta.id,
-        class: meta.class.into_vec(),
-        name: meta.name,
-        data: meta.data,
-    }
+    AuthoredNodeMeta { id: meta.id, class: meta.class.into_vec(), name: meta.name, data: meta.data }
 }
 
 #[cfg(test)]
@@ -254,10 +237,7 @@ mod tests {
         };
         assert_eq!(meta.id.as_deref(), Some("root"));
 
-        let SourceLayoutNode::Group {
-            meta: group_meta,
-            children: group_children,
-        } = &children[0]
+        let SourceLayoutNode::Group { meta: group_meta, children: group_children } = &children[0]
         else {
             panic!("expected frame group");
         };

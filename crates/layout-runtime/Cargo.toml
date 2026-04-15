@@ -9,7 +9,7 @@ publish.workspace = true
 hypreact-config = { path = "../config" }
 hypreact-core = { path = "../core" }
 hypreact-css = { path = "../css" }
-hypreact-runtime-js = { path = "../runtimes/js" }
+hypreact-runtime-js-native = { path = "../runtimes/js/native" }
 hypreact-scene = { path = "../scene" }
 serde.workspace = true
 serde_json.workspace = true

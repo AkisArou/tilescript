@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "apps/hypreact-playground",
   "crates/core",
   "crates/css",
   "crates/css-lsp/core",
@@ -8,7 +9,9 @@ members = [
   "crates/css-lsp/web",
   "crates/scene",
   "crates/config",
-  "crates/runtimes/js",
+  "crates/runtimes/js/core",
+  "crates/runtimes/js/native",
+  "crates/runtimes/js/browser",
   "crates/layout-runtime",
   "crates/hypr-ffi",
 ]
@@ -21,7 +24,10 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+console_error_panic_hook = "0.1.7"
 cssparser = "0.36"
+leptos = "0.8.17"
+leptos_router = "0.8.8"
 lsp-server = "0.7"
 lsp-types = "0.94"
 oxc = "0.119.0"
@@ -36,3 +42,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "ansi"] }
 js-sys = "0.3"
 wasm-bindgen = "0.2.117"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"

@@ -12,11 +12,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use hypreact_core::query::state_snapshot_for_model;
 use hypreact_core::resize::ResizeDirection;
 use hypreact_core::wm::DrawableSpace;
+use hypreact_core::host::{HostAction, dispatch_wm_command};
 use hypreact_core::OutputId;
 use hypreact_core::WorkspaceId;
 use hypreact_layout_runtime as runtime_facade;
 
-use action::{action_to_ffi, dispatch_wm_command, wm_command_from_ffi};
+use action::{action_to_ffi, wm_command_from_ffi};
 use bootstrap::bootstrap_config_root;
 use ffi_string::{cstr_to_str, optional_cstr_to_string, string_free};
 use layout::{
@@ -737,7 +738,7 @@ fn string_result(value: Option<String>) -> Result<HypreactStringResult, FfiError
     })
 }
 
-fn action_result(actions: Vec<action::HostAction>) -> Result<HypreactActionResult, FfiError> {
+fn action_result(actions: Vec<HostAction>) -> Result<HypreactActionResult, FfiError> {
     let actions = actions
         .into_iter()
         .map(action_to_ffi)
@@ -924,7 +925,6 @@ fn error_status_result(error: FfiError) -> HypreactStatusResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::HostAction;
     use hypreact_core::command::WmCommand;
 
     #[test]

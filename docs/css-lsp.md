@@ -31,7 +31,7 @@ It is not a replacement for TypeScript or TSX language tooling.
 
 The LSP follows the same app graph model as the runtime JS pipeline.
 
-It reuses discovery and graph building from `hypreact-runtime-js`.
+It reuses discovery and graph building from `hypreact-runtime-js-core`.
 
 The relevant scopes are:
 
