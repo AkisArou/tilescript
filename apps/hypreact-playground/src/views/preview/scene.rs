@@ -7,14 +7,21 @@ pub fn pane_style(
     accent: &str,
     canvas_width: i32,
     canvas_height: i32,
+    animations_enabled: bool,
 ) -> String {
     let left = geometry.x as f32 / canvas_width as f32 * 100.0;
     let top = geometry.y as f32 / canvas_height as f32 * 100.0;
     let width = geometry.width as f32 / canvas_width as f32 * 100.0;
     let height = geometry.height as f32 / canvas_height as f32 * 100.0;
 
+    let transition_css = if animations_enabled {
+        "will-change: left, top, width, height, transform, opacity; transition-property: left, top, width, height, transform, opacity, box-shadow, filter; transition-duration: 220ms, 220ms, 220ms, 220ms, 180ms, 170ms, 170ms, 190ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.5, 0.5, 0.75, 1), cubic-bezier(0.15, 0, 0.1, 1), cubic-bezier(0.5, 0.5, 0.75, 1);"
+    } else {
+        "will-change: auto; transition: none;"
+    };
+
     format!(
-        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {}; will-change: left, top, width, height, transform, opacity; transition-property: left, top, width, height, transform, opacity, box-shadow, filter; transition-duration: 220ms, 220ms, 220ms, 220ms, 180ms, 170ms, 170ms, 190ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.5, 0.5, 0.75, 1), cubic-bezier(0.15, 0, 0.1, 1), cubic-bezier(0.5, 0.5, 0.75, 1);",
+        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {}; {transition_css}",
         accent,
     )
 }

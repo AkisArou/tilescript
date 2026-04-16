@@ -82,6 +82,7 @@ fn install_preview_renderer(app_state: AppState) {
         let session = app_state.session.get_untracked();
         let model = session.model.clone();
         let manual_layouts = session.manual_layout_by_workspace.clone();
+        let preserve_last_scene_on_error = session.scene.is_some();
 
         wasm_bindgen_futures::spawn_local(async move {
             match layout_runtime::evaluate_preview_from_buffers(
@@ -91,6 +92,7 @@ fn install_preview_renderer(app_state: AppState) {
                 &config,
                 &model,
                 &manual_layouts,
+                preserve_last_scene_on_error,
             )
             .await
             {

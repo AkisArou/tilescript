@@ -95,6 +95,7 @@ pub async fn evaluate_preview_from_buffers(
     config: &Config,
     model: &WmModel,
     manual_layouts: &BTreeMap<hypreact_core::WorkspaceId, hypreact_core::types::LayoutRef>,
+    preserve_last_scene_on_error: bool,
 ) -> Result<EvaluatedPreview, String> {
     let root_dir = PathBuf::from(ROOT_DIR);
     let entry_path = PathBuf::from(entry_runtime_path(language));
@@ -145,10 +146,22 @@ pub async fn evaluate_preview_from_buffers(
                 ) {
                     Ok(scene) => scene,
                     Err(error) => {
-                        diagnostics.push(layout_error_diagnostic(
+                        let error_message = error.to_string();
+                        diagnostics.push(layout_error_diagnostic_with_fallback(
                             Some(&evaluation.artifact.selected.module),
-                            error.to_string(),
+                            error_message.clone(),
+                            false,
                         ));
+                        if preserve_last_scene_on_error {
+                            return Ok(EvaluatedPreview {
+                                scene: None,
+                                focus_tree: None,
+                                partition_tree: None,
+                                diagnostics,
+                                selected_layout_name: Some(evaluation.artifact.selected.name.clone()),
+                                error: Some(error_message),
+                            });
+                        }
                         build_fallback_scene(
                             language,
                             config,
@@ -175,10 +188,22 @@ pub async fn evaluate_preview_from_buffers(
                 error: None,
             }),
             Err(error) => {
-                diagnostics.push(layout_error_diagnostic(
+                diagnostics.push(layout_error_diagnostic_with_fallback(
                     Some(entry_runtime_path(language)),
                     error.to_string(),
+                    !preserve_last_scene_on_error,
                 ));
+
+                if preserve_last_scene_on_error {
+                    return Ok(EvaluatedPreview {
+                        scene: None,
+                        focus_tree: None,
+                        partition_tree: None,
+                        diagnostics,
+                        selected_layout_name,
+                        error: Some(error.to_string()),
+                    });
+                }
 
                 let workspace_windows = workspace_windows(&state_snapshot, &workspace);
                 let selected_layout = selected_layout_for_workspace(language, &workspace, None);
@@ -410,12 +435,20 @@ fn artifact_style_directory(workspace: &hypreact_core::snapshot::WorkspaceSnapsh
         .unwrap_or_else(|| "layouts/fallback".to_string())
 }
 
-fn layout_error_diagnostic(path: Option<&str>, message: String) -> PreviewDiagnostic {
+fn layout_error_diagnostic_with_fallback(
+    path: Option<&str>,
+    message: String,
+    used_fallback: bool,
+) -> PreviewDiagnostic {
     PreviewDiagnostic {
         path: path.unwrap_or(ROOT_DIR).to_string(),
         severity: "error",
         code: "layoutFallback",
-        message: format!("{message}; using fallback layout"),
+        message: if used_fallback {
+            format!("{message}; using fallback layout")
+        } else {
+            message
+        },
         range: "1:1-1:1".to_string(),
     }
 }

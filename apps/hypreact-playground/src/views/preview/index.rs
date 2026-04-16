@@ -205,6 +205,25 @@ fn preview_diagnostics_tone(session: &PreviewSessionState) -> &'static str {
     }
 }
 
+fn preview_diagnostics_counts(session: &PreviewSessionState) -> (usize, usize) {
+    let mut error_count = 0;
+    let mut warning_count = 0;
+
+    for diagnostic in &session.diagnostics {
+        if diagnostic.severity == "error" {
+            error_count += 1;
+        } else {
+            warning_count += 1;
+        }
+    }
+
+    if error_count == 0 && warning_count == 0 && session.error.is_some() {
+        error_count = 1;
+    }
+
+    (error_count, warning_count)
+}
+
 #[component]
 pub fn PreviewView() -> impl IntoView {
     let app_state = expect_context::<AppState>();
@@ -251,11 +270,9 @@ pub fn PreviewView() -> impl IntoView {
         <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2">
             <div class="grid min-h-0 gap-2">
                 <div class="border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border">
-                    <div
-                        class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-terminal-topbar px-2 text-xs text-terminal-dim"
-                    >
+                    <div class="border-terminal-border grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b bg-terminal-topbar px-2 text-xs text-terminal-dim">
                         <PreviewWorkspaceTabs />
-                        <PreviewDiagnosticsBanner />
+                        <div class="min-w-0" />
                         <PreviewToolbar />
                     </div>
 
@@ -310,37 +327,14 @@ fn PreviewWorkspaceTabs() -> impl IntoView {
 }
 
 #[component]
-fn PreviewDiagnosticsBanner() -> impl IntoView {
-    let app_state = expect_context::<AppState>();
-
-    view! {
-        <div
-            class=move || {
-                let session = app_state.session.get();
-                match preview_diagnostics_tone(&session) {
-                    "error" => "min-w-0 truncate py-1 text-terminal-error",
-                    "warning" => "min-w-0 truncate py-1 text-terminal-warn",
-                    _ => "min-w-0 truncate py-1 text-terminal-faint",
-                }
-            }
-            title=move || preview_diagnostics_summary(&app_state.session.get()).unwrap_or_else(|| {
-                "No diagnostics. Preview keeps showing the last successful scene.".to_string()
-            })
-        >
-            {move || {
-                preview_diagnostics_summary(&app_state.session.get())
-                    .unwrap_or_else(|| "No diagnostics. Preview shows the live scene.".to_string())
-            }}
-        </div>
-    }
-}
-
-#[component]
 fn PreviewToolbar() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     view! {
-        <div class="flex items-center justify-self-end py-1">
+        <div class="flex items-center justify-self-end gap-2 py-1">
+            <Show when=move || preview_diagnostics_summary(&app_state.session.get()).is_some()>
+                <PreviewDiagnosticsWidget />
+            </Show>
             <div class="ui-select-wrap mr-1">
                 <select
                     class="ui-select"
@@ -376,6 +370,57 @@ fn PreviewToolbar() -> impl IntoView {
                     }}
                 </select>
             </div>
+            <a
+                class="border-terminal-border bg-terminal-bg-subtle text-terminal-faint hover:text-terminal-fg gap-1 flex h-[18px] items-center justify-center border transition-colors duration-150"
+                href="https://github.com/AkisArou/hypreact"
+                target="_blank"
+                rel="noreferrer"
+                title="Open GitHub repository"
+            >
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current">
+                    <path d="M12 1.25C6.062 1.25 1.25 6.153 1.25 12.2c0 4.838 3.075 8.942 7.342 10.39.537.102.733-.238.733-.529 0-.262-.01-.956-.015-1.876-2.987.665-3.618-1.474-3.618-1.474-.489-1.268-1.194-1.606-1.194-1.606-.976-.683.074-.669.074-.669 1.08.078 1.648 1.134 1.648 1.134.96 1.684 2.518 1.198 3.131.916.097-.713.376-1.199.684-1.474-2.384-.279-4.892-1.213-4.892-5.401 0-1.193.417-2.169 1.1-2.933-.11-.28-.477-1.404.105-2.926 0 0 .898-.294 2.943 1.12a10.06 10.06 0 0 1 5.36 0c2.043-1.414 2.94-1.12 2.94-1.12.584 1.522.217 2.646.107 2.926.685.764 1.099 1.74 1.099 2.933 0 4.2-2.512 5.119-4.903 5.392.386.34.73 1.01.73 2.036 0 1.469-.013 2.655-.013 3.016 0 .294.193.636.74.528 4.264-1.45 7.336-5.552 7.336-10.389 0-6.047-4.813-10.95-10.75-10.95Z" />
+                </svg>
+                <p>Hypreact</p>
+            </a>
+        </div>
+    }
+}
+
+#[component]
+fn PreviewDiagnosticsWidget() -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+    let error_count =
+        Signal::derive(move || preview_diagnostics_counts(&app_state.session.get()).0);
+    let warning_count =
+        Signal::derive(move || preview_diagnostics_counts(&app_state.session.get()).1);
+
+    view! {
+        <div
+            class="border-terminal-border bg-terminal-bg-subtle flex w-[150px] min-w-[150px] items-center gap-2 border px-2 py-0.5"
+            title=move || preview_diagnostics_summary(&app_state.session.get()).unwrap_or_default()
+        >
+            <div class="flex shrink-0 items-center gap-1">
+                <Show when=move || { error_count.get() > 0 }>
+                    <span class="flex items-center gap-1 text-terminal-error">
+                        <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[0.58rem] font-bold leading-none">"!"</span>
+                        <span class="text-[11px] leading-none">{move || error_count.get()}</span>
+                    </span>
+                </Show>
+                <Show when=move || { warning_count.get() > 0 }>
+                    <span class="flex items-center gap-1 text-terminal-warn">
+                        <span class="inline-flex h-3.5 w-3.5 items-center justify-center text-[0.7rem] leading-none">"▲"</span>
+                        <span class="text-[11px] leading-none">{move || warning_count.get()}</span>
+                    </span>
+                </Show>
+            </div>
+            <span
+                class="min-w-0 truncate"
+                class:text-terminal-error=move || preview_diagnostics_tone(&app_state.session.get()) == "error"
+                class:text-terminal-warn=move || preview_diagnostics_tone(&app_state.session.get()) == "warning"
+                class:text-terminal-faint=move || preview_diagnostics_tone(&app_state.session.get()) == "idle"
+            >
+                {move || preview_diagnostics_summary(&app_state.session.get()).unwrap_or_default()}
+            </span>
         </div>
     }
 }
@@ -389,6 +434,8 @@ fn BindsWindow() -> impl IntoView {
         Var(&'a str),
         Bind { mods: &'a str, key: &'a str, command: &'a str, arg: &'a str },
     }
+
+    let app_state = expect_context::<AppState>();
 
     let lines: &[BindsLine<'_>] = &[
         BindsLine::Comment("####################"),
@@ -475,11 +522,62 @@ fn BindsWindow() -> impl IntoView {
     view! {
         <div class="h-full w-full overflow-auto bg-[#1b1c1d] px-2 py-2 font-mono text-[0.8rem] leading-[1.45] text-[#d6d6d6]">
             <div class="grid auto-rows-min gap-0">
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">1</div>
+                    <div class="text-[#7fb05f]">"#~/dotfiles/hypr/hyprland.conf"</div>
+                </div>
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">2</div>
+                    <div class="h-2.5" />
+                </div>
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">3</div>
+                    <div class="text-[#d7ba7d]">"animations {"</div>
+                </div>
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">4</div>
+                    <div class="flex items-center gap-2 pl-4">
+                        <span>
+                            <span class="text-[#d989d9]">"enabled"</span>
+                            <span class="text-[#d6d6d6]">" = "</span>
+                        </span>
+                        <div class="ui-select-wrap">
+                            <select
+                                class="ui-select min-w-[8.75rem]"
+                                prop:value=move || {
+                                    if app_state.preview_animations_enabled.get() {
+                                        "yes, please :)"
+                                    } else {
+                                        "no"
+                                    }
+                                }
+                                on:click=|event| event.stop_propagation()
+                                on:mousedown=|event| event.stop_propagation()
+                                on:change=move |event| {
+                                    app_state.set_preview_animations_enabled(
+                                        event_target_value(&event) == "yes, please :)"
+                                    );
+                                }
+                            >
+                                <option value="yes, please :)">"yes, please :)"</option>
+                                <option value="no">"no"</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">5</div>
+                    <div class="text-[#d7ba7d]">"}"</div>
+                </div>
+                <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
+                    <div class="pr-2 text-right text-[#5c6370]">6</div>
+                    <div class="h-2.5" />
+                </div>
                 {lines
                     .iter()
                     .enumerate()
                     .map(|(index, line)| {
-                        let line_number = index + 1;
+                        let line_number = index + 7;
                         match *line {
                             BindsLine::Blank => view! {
                                 <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
@@ -577,14 +675,20 @@ fn PreviewWindowFrame(state: PreviewWindowRenderState) -> impl IntoView {
     let is_htop = state.window.app_id.as_deref() == Some("htop");
     let is_nvim = state.window.app_id.as_deref() == Some("nvim");
     let is_playground_editor = state.window.app_id.as_deref() == Some("playground-editor");
-    let is_binds = state.window.app_id.as_deref() == Some("binds");
+    let is_hyprland_config = state.window.app_id.as_deref() == Some("hyprland-config");
     let foot_focus_window_id = state.window.id.clone();
     let focused_attr_id = state.window.id.clone();
     let focused_style_id = state.window.id.clone();
 
     view! {
         <div
-            class="preview-window text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
+            class=move || {
+                if app_state.preview_animations_enabled.get() {
+                    "preview-window text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
+                } else {
+                    "preview-window preview-window--static text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
+                }
+            }
             attr:data-focused=move || {
                 if app_state.session.get().focused_window_id().as_ref() == Some(&focused_attr_id) {
                     "true"
@@ -602,7 +706,13 @@ fn PreviewWindowFrame(state: PreviewWindowRenderState) -> impl IntoView {
                 };
                 format!(
                     "{} {}",
-                    pane_style(render_state.rect, &render_state.accent, 1240, 760),
+                    pane_style(
+                        render_state.rect,
+                        &render_state.accent,
+                        1240,
+                        760,
+                        app_state.preview_animations_enabled.get(),
+                    ),
                     frame_style(render_state.layout_style.as_ref(), focused),
                 )
             }
@@ -637,7 +747,7 @@ fn PreviewWindowFrame(state: PreviewWindowRenderState) -> impl IntoView {
                     view! { <NvimStartupWindow /> }.into_any()
                 } else if is_playground_editor {
                     view! { <PreviewEmbeddedEditorWindow /> }.into_any()
-                } else if is_binds {
+                } else if is_hyprland_config {
                     view! { <BindsWindow /> }.into_any()
                 } else {
                     view! { <WindowSurface window=state.window.clone() /> }.into_any()

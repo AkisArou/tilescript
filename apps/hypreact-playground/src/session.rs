@@ -36,7 +36,11 @@ const PRIORITY_WINDOW_APPS: [PreviewWindowSeed; 2] = [
         title: "Playground Editor",
         app_id: "playground-editor",
     },
-    PreviewWindowSeed { id_prefix: "win-binds", title: "Keybinds", app_id: "binds" },
+    PreviewWindowSeed {
+        id_prefix: "win-hyprland-config",
+        title: "Hyprland Config",
+        app_id: "hyprland-config",
+    },
 ];
 
 const RANDOM_WINDOW_APPS: [PreviewWindowSeed; 3] = [
@@ -94,9 +98,15 @@ impl PreviewSessionState {
     }
 
     pub fn apply_loaded_preview(&mut self, preview: EvaluatedPreview) {
-        self.model.set_focus_tree_value(preview.focus_tree.clone());
-        self.scene = preview.scene;
-        self.partition_tree = preview.partition_tree;
+        if let Some(scene) = preview.scene {
+            self.model.set_focus_tree_value(preview.focus_tree.clone());
+            self.scene = Some(scene);
+            self.partition_tree = preview.partition_tree;
+        } else if preview.error.is_none() {
+            self.model.set_focus_tree_value(None);
+            self.scene = None;
+            self.partition_tree = None;
+        }
         self.diagnostics = preview.diagnostics;
         self.error = preview.error;
         self.rendered_layout_name = preview.selected_layout_name;
@@ -235,7 +245,14 @@ fn build_demo_model() -> WmModel {
         "Playground Editor",
         "playground-editor",
     );
-    insert_demo_window(&mut model, "win-binds", &workspace_one, &output_id, "Keybinds", "binds");
+    insert_demo_window(
+        &mut model,
+        "win-hyprland-config",
+        &workspace_one,
+        &output_id,
+        "Hyprland Config",
+        "hyprland-config",
+    );
     insert_demo_window(
         &mut model,
         "win-secondary-foot",
