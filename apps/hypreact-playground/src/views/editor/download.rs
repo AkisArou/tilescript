@@ -1,6 +1,6 @@
 use crate::editor_files::{AuthoringLanguage, DynamicLayoutFileSet, EditorFileKey, file_by_key};
 use crate::editor_host::DirectoryDownloadItem;
-use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
+use crate::workspace_tree::{EditorFileTreeDirectory, EditorFileTreeNode};
 
 pub fn download_directory_title(directory: &EditorFileTreeDirectory) -> String {
     let Some(root_path) = directory.download_root_path else {

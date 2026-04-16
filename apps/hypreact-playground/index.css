@@ -19,6 +19,74 @@
   --color-terminal-warn: #e2c08d;
   --color-terminal-error: #f85149;
   --color-terminal-wait: #4daafc;
+  --color-terminal-select-border: #5a5a5a;
+  --color-terminal-select-border-focus: #8a8a8a;
+  --color-terminal-select-bg-focus: #242424;
+  --color-terminal-select-fg-focus: #d0d0d0;
+  --color-terminal-select-shadow: rgba(210, 210, 210, 0.12);
+  --color-terminal-select-shadow-focus: rgba(244, 244, 244, 0.18);
+  --color-terminal-overlay-shadow: rgba(0, 0, 0, 0.42);
+  --color-preview-accent-cyan: #7dd3fc;
+  --color-preview-accent-orange: #f97316;
+  --color-preview-accent-green: #34d399;
+  --color-preview-accent-gold: #facc15;
+  --color-preview-accent-indigo: #818cf8;
+  --color-preview-accent-teal: #06b6d4;
+  --color-preview-accent-pink: #e879f9;
+  --color-preview-accent-rose: #fb7185;
+  --color-preview-config-bg: #1b1c1d;
+  --color-preview-config-fg: #d6d6d6;
+  --color-preview-config-line: #5c6370;
+  --color-preview-config-comment: #7fb05f;
+  --color-preview-config-keyword: #d989d9;
+  --color-preview-config-accent: #d7ba7d;
+  --color-preview-config-variable: #82aaff;
+  --color-preview-config-mods: #7db7f0;
+  --color-preview-config-strong: #f2f2f2;
+  --color-preview-config-value: #dcdcdc;
+  --color-editor-file-css: #7b4fc9;
+  --color-editor-file-typescript: #519aba;
+  --color-editor-file-lua: #51a0cf;
+  --color-editor-file-fennel: #8fbf57;
+  --color-editor-language-glow: rgba(74, 158, 255, 0.12);
+  --color-editor-language-panel-top: rgba(255, 255, 255, 0.03);
+  --color-editor-language-panel-bottom: rgba(255, 255, 255, 0.01);
+  --color-editor-language-panel-inset: rgba(255, 255, 255, 0.04);
+  --color-editor-monaco-sheen: rgba(255, 255, 255, 0.015);
+  --color-editor-monaco-loading-top: rgba(4, 8, 12, 0.82);
+  --color-editor-monaco-loading-bottom: rgba(9, 17, 26, 0.78);
+  --color-editor-monaco-loading-text: #94a3b8;
+  --color-file-tree-guide: rgba(120, 120, 120, 0.26);
+  --color-preview-wallpaper-overlay-top: rgba(10, 10, 10, 0.55);
+  --color-preview-wallpaper-overlay-bottom: rgba(10, 10, 10, 0.72);
+  --color-preview-frame-focused-bg: rgba(20, 24, 33, 1);
+  --color-preview-frame-bg: rgba(24, 27, 36, 1);
+  --color-preview-frame-border: rgba(89, 89, 89, 0.67);
+  --color-preview-frame-shadow: rgba(0, 0, 0, 0.22);
+  --color-preview-frame-shadow-strong: rgba(0, 0, 0, 0.24);
+  --color-preview-frame-focus-from: rgba(51, 204, 255, 0.93);
+  --color-preview-frame-focus-to: rgba(0, 255, 153, 0.93);
+  --color-preview-htop-bg: #0f0f0f;
+  --color-preview-htop-fg: #d6d6d6;
+  --color-preview-htop-green: #8bd450;
+  --color-preview-htop-cyan: #7dd3fc;
+  --color-preview-htop-gold: #f4d35e;
+  --color-preview-htop-purple: #c792ea;
+  --color-preview-htop-border: #2d2d2d;
+  --color-preview-htop-header: #1a1a1a;
+  --color-preview-htop-header-fg: #9fb3c8;
+  --color-preview-htop-row-active: #2b2b2b;
+  --color-preview-htop-row-active-fg: #f1f1f1;
+  --color-preview-nvim-bg: #1b1c1d;
+  --color-preview-nvim-fg: #d4d4d4;
+  --color-preview-nvim-muted: #b9b9b9;
+  --color-preview-nvim-track: #232425;
+  --color-preview-nvim-cursor: #d4d4d4;
+  --color-preview-nvim-rule: #5a5a5a;
+  --color-preview-nvim-blue: #61afef;
+  --color-preview-nvim-rose: #d08f8f;
+  --color-preview-nvim-gold: #d7ba7d;
+  --color-preview-nvim-purple: #c586c0;
   --font-mono:
     "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", "IBM Plex Mono",
     monospace;
@@ -83,29 +151,29 @@
   }
 
   .ui-select {
-    @apply text-terminal-fg min-w-28 border bg-terminal-bg-subtle pl-1.5 pr-4 text-[11px];
-    border-color: #5a5a5a;
+    @apply text-terminal-fg min-w-28 border bg-terminal-bg-subtle pl-1.5 pr-4 text-xs;
+    border-color: var(--color-terminal-select-border);
     appearance: none;
     letter-spacing: 0.01em;
     height: 18px;
     line-height: 18px;
     margin: 0;
     border-radius: 0;
-    box-shadow: inset 0 0 0 1px rgba(210, 210, 210, 0.12);
+    box-shadow: inset 0 0 0 1px var(--color-terminal-select-shadow);
     -webkit-appearance: none;
     -moz-appearance: none;
   }
 
   .ui-select:focus,
   .ui-select:focus-visible {
-    border-color: #8a8a8a;
-    background: #242424;
-    color: #d0d0d0;
-    box-shadow: inset 0 0 0 1px rgba(244, 244, 244, 0.18);
+    border-color: var(--color-terminal-select-border-focus);
+    background: var(--color-terminal-select-bg-focus);
+    color: var(--color-terminal-select-fg-focus);
+    box-shadow: inset 0 0 0 1px var(--color-terminal-select-shadow-focus);
   }
 
   .ui-select-wrap {
-    @apply relative inline-flex h-[18px] items-center leading-none align-middle;
+    @apply relative inline-flex h-4 items-center leading-none align-middle;
   }
 
   .ui-select-wrap::after {
@@ -116,18 +184,18 @@
     transform: translateY(-50%);
     pointer-events: none;
     font-size: 0.62rem;
-    color: #989898;
+    color: var(--color-terminal-dim);
   }
 
   .ui-select option {
-    background: #1f1f1f;
-    color: #d0d0d0;
+    background: var(--color-terminal-bg-subtle);
+    color: var(--color-terminal-select-fg-focus);
   }
 
   .ui-select option:checked,
   .ui-select option:hover {
-    background: #2b2b2b;
-    color: #f1f1f1;
+    background: var(--color-terminal-bg-hover);
+    color: var(--color-terminal-fg-strong);
   }
 
   @supports (appearance: base-select) {
@@ -148,12 +216,12 @@
     inset: auto;
     margin: 0;
     min-width: 10rem;
-    border: 1px solid #3c3c3c;
-    background: #1f1f1f;
-    color: #ffffff;
+    border: 1px solid var(--color-terminal-border-strong);
+    background: var(--color-terminal-bg-subtle);
+    color: var(--color-terminal-fg-strong);
     padding: 0.25rem;
     outline: none;
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+    box-shadow: 0 18px 44px var(--color-terminal-overlay-shadow);
   }
 
   .context-menu-items {
@@ -167,7 +235,7 @@
   }
 
   .context-menu-item:hover {
-    background: #2b2b2b;
+    background: var(--color-terminal-bg-hover);
   }
 
   .context-menu-item-disabled {
@@ -176,7 +244,7 @@
   }
 
   .context-menu-item-destructive {
-    color: #f85149;
+    color: var(--color-terminal-error);
   }
 
   .status-grid,

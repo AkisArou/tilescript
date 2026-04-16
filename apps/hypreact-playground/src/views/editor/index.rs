@@ -7,7 +7,7 @@ use crate::editor_files::{
     AuthoringLanguage, EditorFileKey, WORKSPACE_ROOT, file_by_key, file_display_badge,
     file_display_color_class, file_display_icon,
 };
-use crate::workspace::workspace_file_tree;
+use crate::workspace_tree::workspace_file_tree;
 
 use super::file_tree::FileTreeDirectoryView;
 use super::monaco::MonacoEditorPane;
@@ -39,11 +39,11 @@ pub fn EditorView() -> impl IntoView {
                         {WORKSPACE_ROOT}
                     </div>
                     <div class="border-terminal-border border-b px-2 py-2">
-                        <div class="grid grid-cols-3 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                        <div class="grid grid-cols-3 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,var(--color-editor-language-panel-top),var(--color-editor-language-panel-bottom))] p-1.5 shadow-[inset_0_1px_0_var(--color-editor-language-panel-inset)]">
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::JavaScript {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_var(--color-editor-language-glow)]"
                                     } else {
                                         "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
@@ -52,13 +52,13 @@ pub fn EditorView() -> impl IntoView {
                                     app_state.set_authoring_language(AuthoringLanguage::JavaScript);
                                 }
                             >
-                                <span class="text-xl leading-none text-[#519aba]">"󰛦"</span>
+                                <span class="text-[var(--color-editor-file-typescript)] text-xl leading-none">"󰛦"</span>
                                 <span class="text-center text-xs leading-tight">"JS/TS"</span>
                             </button>
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::Lua {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_var(--color-editor-language-glow)]"
                                     } else {
                                         "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
@@ -67,13 +67,13 @@ pub fn EditorView() -> impl IntoView {
                                     app_state.set_authoring_language(AuthoringLanguage::Lua);
                                 }
                             >
-                                <span class="text-xl leading-none text-[#51a0cf]">""</span>
+                                <span class="text-[var(--color-editor-file-lua)] text-xl leading-none">""</span>
                                 <span class="text-center text-xs leading-tight">"Lua"</span>
                             </button>
                             <button
                                 class=move || {
                                     if app_state.authoring_language.get() == AuthoringLanguage::Fennel {
-                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_rgba(74,158,255,0.12)]"
+                                        "border-terminal-info bg-terminal-bg-hover text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm font-medium shadow-[0_0_0_1px_var(--color-editor-language-glow)]"
                                     } else {
                                         "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg flex min-h-20 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-sm"
                                     }
@@ -82,7 +82,7 @@ pub fn EditorView() -> impl IntoView {
                                     app_state.set_authoring_language(AuthoringLanguage::Fennel);
                                 }
                             >
-                                <span class="text-xl leading-none text-[#8fbf57]">"󱘎"</span>
+                                <span class="text-[var(--color-editor-file-fennel)] text-xl leading-none">"󱘎"</span>
                                 <span class="text-center text-xs leading-tight">"Fennel"</span>
                             </button>
                         </div>
@@ -145,9 +145,9 @@ pub fn EditorView() -> impl IntoView {
                                                             if app_state.active_file_id.get()
                                                                 == Some(tab_file_id_active.clone())
                                                             {
-                                                                "flex min-w-0 items-center border-r border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-[12px]"
+                                                                "flex min-w-0 items-center border-r border-terminal-border-strong bg-terminal-bg-subtle text-terminal-fg-strong text-xs"
                                                             } else {
-                                                                "flex min-w-0 items-center border-r border-terminal-border bg-terminal-bg-panel/75 text-terminal-dim text-[12px] opacity-70 hover:bg-terminal-bg-hover hover:text-terminal-fg hover:opacity-100"
+                                                                "flex min-w-0 items-center border-r border-terminal-border bg-terminal-bg-panel/75 text-terminal-dim text-xs opacity-70 hover:bg-terminal-bg-hover hover:text-terminal-fg hover:opacity-100"
                                                             }
                                                         }
                                                         on:contextmenu=move |event: MouseEvent| {
@@ -170,13 +170,13 @@ pub fn EditorView() -> impl IntoView {
                                                             }
                                                         >
                                                             <span
-                                                                class=format!("text-[11px] {}", color_class)
+                                                                class=format!("text-xs {}", color_class)
                                                             >
                                                                 {icon.clone()}
                                                             </span>
                                                             <span class="truncate">{label.clone()}</span>
                                                             <Show when=move || file.is_reference_only>
-                                                                <span class="rounded border border-terminal-border px-1 text-[9px] uppercase tracking-[0.14em] text-terminal-faint">
+                                                                <span class="rounded border border-terminal-border px-1 text-xs uppercase tracking-[0.14em] text-terminal-faint">
                                                                     {badge.clone()}
                                                                 </span>
                                                             </Show>
@@ -184,14 +184,14 @@ pub fn EditorView() -> impl IntoView {
                                                         </button>
 
                                                         <button
-                                                            class="px-2 py-1 text-[9px] text-terminal-faint hover:text-terminal-fg"
+                                                            class="px-2 py-1 text-xs text-terminal-faint hover:text-terminal-fg"
                                                             on:click=move |event| {
                                                                 event.stop_propagation();
                                                                 tab_context_menu.set(None);
                                                                 app_state.close_editor_file(tab_file_id_close.clone());
                                                             }
                                                         >
-                                                            "󰅖"
+                                                            <span class="inline-block scale-75">"󰅖"</span>
                                                         </button>
                                                     </div>
                                                 }

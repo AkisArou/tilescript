@@ -410,13 +410,13 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
     if cfg!(target_arch = "wasm32") {
         view! {
-            <div class="relative flex h-full min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent)]">
+            <div class="relative flex h-full min-h-0 flex-1 bg-[linear-gradient(180deg,var(--color-editor-monaco-sheen),transparent)]">
                 <Show
                     when=move || monaco_error.get().is_none()
                     fallback=move || {
                         view! {
                             <textarea
-                                class="flex h-full w-full min-h-0 px-4 py-4 font-mono text-[0.94rem] leading-[1.55] text-white bg-transparent outline-none resize-none"
+                                class="text-terminal-fg-strong flex h-full w-full min-h-0 resize-none bg-transparent px-4 py-4 font-mono text-base leading-6 outline-none"
                                 prop:value=move || active_buffer_text(app_state)
                                 prop:spellcheck=false
                                 on:input=move |event| {
@@ -431,10 +431,10 @@ pub fn MonacoEditorPane() -> impl IntoView {
                 >
                     <div
                         node_ref=editor_mount
-                        class="h-full w-full min-h-0 text-[14px] leading-[20px]"
+                        class="h-full w-full min-h-0 text-base leading-5"
                     />
                     <Show when=move || monaco_loading.get()>
-                        <div class="grid absolute inset-0 place-items-center uppercase pointer-events-none bg-[linear-gradient(180deg,rgba(4,8,12,0.82),rgba(9,17,26,0.78))] text-[0.72rem] tracking-[0.18em] text-slate-400">
+                        <div class="text-[var(--color-editor-monaco-loading-text)] grid absolute inset-0 place-items-center bg-[linear-gradient(180deg,var(--color-editor-monaco-loading-top),var(--color-editor-monaco-loading-bottom))] text-xs uppercase tracking-[0.18em] pointer-events-none">
                             "loading monaco..."
                         </div>
                     </Show>
@@ -445,7 +445,7 @@ pub fn MonacoEditorPane() -> impl IntoView {
     } else {
         view! {
             <textarea
-                class="flex-1 h-full min-h-0 px-4 py-4 font-mono text-[0.94rem] leading-[1.55] text-white outline-none resize-none bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent)]"
+                class="text-terminal-fg-strong flex-1 h-full min-h-0 resize-none bg-[linear-gradient(180deg,var(--color-editor-monaco-sheen),transparent)] px-4 py-4 font-mono text-base leading-6 outline-none"
                 prop:value=move || active_buffer_text(app_state)
                 prop:spellcheck=false
                 on:input=move |event| {

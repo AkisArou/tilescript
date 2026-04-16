@@ -8,7 +8,7 @@ use crate::editor_files::{
     make_dynamic_layout,
 };
 use crate::editor_host::download_directory;
-use crate::workspace::{EditorFileTreeDirectory, EditorFileTreeNode};
+use crate::workspace_tree::{EditorFileTreeDirectory, EditorFileTreeNode};
 
 use super::download::{collect_directory_download_items, download_directory_title};
 
@@ -27,7 +27,7 @@ fn branch_guide(depth: usize) -> String {
 
     let offset = depth * 14 - 6;
     format!(
-        "background-image: linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)), linear-gradient(rgba(120,120,120,0.26), rgba(120,120,120,0.26)); background-size: 1px 100%, 9px 1px; background-position: {offset}px 0, {offset}px 50%; background-repeat: no-repeat;"
+        "background-image: linear-gradient(var(--color-file-tree-guide), var(--color-file-tree-guide)), linear-gradient(var(--color-file-tree-guide), var(--color-file-tree-guide)); background-size: 1px 100%, 9px 1px; background-position: {offset}px 0, {offset}px 50%; background-repeat: no-repeat;"
     )
 }
 
@@ -59,7 +59,7 @@ pub fn FileTreeDirectoryView(
                     view! {
                         <div class="group/layout-subtree pr-2 flex items-center gap-1">
                             <button
-                                class="text-terminal-dim flex flex-1 items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] hover:text-terminal-fg"
+                                class="text-terminal-dim flex flex-1 items-center gap-1 py-0.5 text-left text-sm leading-5 hover:text-terminal-fg"
                                 style=tree_row_style(depth, is_root)
                                 on:click=move |_| {
                                     let current = directory.get();
@@ -85,7 +85,7 @@ pub fn FileTreeDirectoryView(
                                         }
                                     }}
                                 </span>
-                                <span class="text-terminal-info shrink-0 text-[12px]">""</span>
+                                <span class="text-terminal-info shrink-0 text-xs">""</span>
                                 <span class="min-w-0 flex-1 truncate text-terminal-fg">
                                     {move || directory.get().name.to_string()}
                                 </span>
@@ -93,7 +93,7 @@ pub fn FileTreeDirectoryView(
 
                             <Show when=move || directory.get().can_create_layout>
                                 <button
-                                    class="px-1 text-[11px] text-terminal-faint hover:text-terminal-fg"
+                                    class="px-1 text-xs text-terminal-faint hover:text-terminal-fg"
                                     on:click=move |event| {
                                         event.stop_propagation();
                                         let Some(window) = web_sys::window() else {
@@ -122,7 +122,7 @@ pub fn FileTreeDirectoryView(
                                     class="ml-auto"
                                 >
                                     <button
-                                        class="px-0.5 py-0 text-[11px] text-terminal-faint hover:text-terminal-fg"
+                                        class="px-0.5 py-0 text-xs text-terminal-faint hover:text-terminal-fg"
                                         aria-label=move || download_directory_title(&directory.get())
                                         on:click=move |event| {
                                             event.stop_propagation();
@@ -198,9 +198,9 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                     <button
                         class=move || {
                             if app_state.active_file_id.get() == Some(file_key_active.clone()) {
-                                "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] bg-terminal-bg-hover text-terminal-fg-strong"
+                                "flex w-full items-center gap-1 py-0.5 text-left text-sm leading-5 bg-terminal-bg-hover text-terminal-fg-strong"
                             } else {
-                                "flex w-full items-center gap-1 py-0.5 text-left text-[13px] leading-[1.15rem] text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
+                                "flex w-full items-center gap-1 py-0.5 text-left text-sm leading-5 text-terminal-muted hover:bg-terminal-bg-hover hover:text-terminal-fg"
                             }
                         }
                         style=tree_row_style(depth, false)
@@ -226,7 +226,7 @@ pub fn FileTreeNodeView(node: EditorFileTreeNode, #[prop(optional)] depth: usize
                             {label.clone()}
                         </span>
                         <Show when=move || file.is_reference_only>
-                            <span class="shrink-0 rounded border border-terminal-border px-1 text-[9px] uppercase tracking-[0.14em] text-terminal-faint">
+                            <span class="shrink-0 rounded border border-terminal-border px-1 text-xs uppercase tracking-[0.14em] text-terminal-faint">
                                 {badge.clone()}
                             </span>
                         </Show>

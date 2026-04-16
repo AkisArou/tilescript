@@ -9,7 +9,7 @@ use crate::editor_files::{
 };
 use crate::layout_runtime::EvaluatedPreview;
 use crate::session::PreviewSessionState;
-use crate::workspace::initial_open_directories;
+use crate::workspace_tree::initial_open_directories;
 
 const STORAGE_KEY: &str = "hypreact.playground.ui-state.v3";
 

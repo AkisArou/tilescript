@@ -9,8 +9,6 @@ pub enum AuthoringLanguage {
     Fennel,
 }
 
-impl AuthoringLanguage {}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum EditorFileKey {
     StaticJavaScript(JavaScriptStaticEditorFileId),
@@ -120,10 +118,10 @@ pub fn file_icon(language: &str) -> &'static str {
 
 pub fn file_color_class(language: &str) -> &'static str {
     match language {
-        "css" => "text-[#7b4fc9]",
-        "typescript" | "typescriptreact" => "text-[#519aba]",
-        "lua" => "text-[#51a0cf]",
-        "fennel" => "text-[#8fbf57]",
+        "css" => "text-[var(--color-editor-file-css)]",
+        "typescript" | "typescriptreact" => "text-[var(--color-editor-file-typescript)]",
+        "lua" => "text-[var(--color-editor-file-lua)]",
+        "fennel" => "text-[var(--color-editor-file-fennel)]",
         _ => "text-terminal-info",
     }
 }

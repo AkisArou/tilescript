@@ -7,7 +7,7 @@ mod editor_host;
 mod layout_runtime;
 mod session;
 mod views;
-mod workspace;
+mod workspace_tree;
 
 use app_state::AppState;
 use views::preview::PreviewView;

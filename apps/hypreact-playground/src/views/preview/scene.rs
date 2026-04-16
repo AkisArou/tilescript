@@ -15,13 +15,13 @@ pub fn pane_style(
     let height = geometry.height as f32 / canvas_height as f32 * 100.0;
 
     let transition_css = if animations_enabled {
-        "will-change: left, top, width, height, transform, opacity; transition-property: left, top, width, height, transform, opacity, box-shadow, filter; transition-duration: 220ms, 220ms, 220ms, 220ms, 180ms, 170ms, 170ms, 190ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.5, 0.5, 0.75, 1), cubic-bezier(0.15, 0, 0.1, 1), cubic-bezier(0.5, 0.5, 0.75, 1);"
+        "will-change: transform, opacity; transition-property: transform, opacity, box-shadow, filter; transition-duration: 220ms, 170ms, 170ms, 190ms; transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1), cubic-bezier(0.5, 0.5, 0.75, 1), cubic-bezier(0.15, 0, 0.1, 1), cubic-bezier(0.5, 0.5, 0.75, 1);"
     } else {
         "will-change: auto; transition: none;"
     };
 
     format!(
-        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {}; {transition_css}",
+        "left: {left:.3}%; top: {top:.3}%; width: {width:.3}%; height: {height:.3}%; --accent: {}; transform: translate(0%, 0%); {transition_css}",
         accent,
     )
 }
@@ -53,13 +53,13 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
     let background =
         layout_style.and_then(|style| style.background).map(css_color).unwrap_or_else(|| {
             if focused {
-                "rgba(20, 24, 33, 1.0)".to_string()
+                "var(--color-preview-frame-focused-bg)".to_string()
             } else {
-                "rgba(24, 27, 36, 1.0)".to_string()
+                "var(--color-preview-frame-bg)".to_string()
             }
         });
     let border_color = if focused {
-        "linear-gradient(180deg, rgba(51, 204, 255, 0.93), rgba(0, 255, 153, 0.93))".to_string()
+        "linear-gradient(180deg, var(--color-preview-frame-focus-from), var(--color-preview-frame-focus-to))".to_string()
     } else {
         layout_style
             .and_then(|style| style.border_color)
@@ -69,7 +69,7 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
                     .and_then(|colors| colors.top)
             })
             .map(css_color)
-            .unwrap_or_else(|| "rgba(89, 89, 89, 0.67)".to_string())
+            .unwrap_or_else(|| "var(--color-preview-frame-border)".to_string())
     };
     let border_width = layout_style
         .and_then(|style| style.border)
@@ -95,20 +95,20 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
         || border_width == 0
     {
         return format!(
-            "background: {background}; {radius_css} box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);"
+            "background: {background}; {radius_css} box-shadow: 0 10px 30px var(--color-preview-frame-shadow);"
         );
     }
 
     if focused {
         return format!(
-            "border: {}px solid transparent; {radius_css} background: linear-gradient({background}, {background}) padding-box, {} border-box; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);",
+            "border: {}px solid transparent; {radius_css} background: linear-gradient({background}, {background}) padding-box, {} border-box; box-shadow: 0 12px 34px var(--color-preview-frame-shadow-strong);",
             border_width.max(2),
             border_color,
         );
     }
 
     format!(
-        "background: {background}; border: {}px solid {}; {radius_css} box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);",
+        "background: {background}; border: {}px solid {}; {radius_css} box-shadow: 0 10px 30px var(--color-preview-frame-shadow);",
         border_width.max(2),
         border_color,
     )
