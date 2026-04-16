@@ -426,6 +426,7 @@ mod tests {
                 "modules": [],
             }),
             stylesheets: PreparedStylesheets::default(),
+            dependencies: vec![],
         }
     }
 

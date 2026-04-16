@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use oxc::span::SourceType;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::debug;
 
@@ -16,6 +17,7 @@ use hypreact_runtime_js_core::graph::{
 use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
 
 use crate::evaluate_entry_export_to_json;
+use crate::module_graph_runtime::module_graph_execution_key;
 
 pub fn load_authored_config(path: impl AsRef<Path>) -> Result<Config, LayoutConfigError> {
     debug!(path = %path.as_ref().display(), "loading authored project config");
@@ -25,6 +27,11 @@ pub fn load_authored_config(path: impl AsRef<Path>) -> Result<Config, LayoutConf
 pub fn load_prepared_config(path: impl AsRef<Path>) -> Result<Config, LayoutConfigError> {
     debug!(path = %path.as_ref().display(), "loading prepared project config");
     load_project_config(path.as_ref())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuntimeAppMetadata {
+    authored_dependencies: Vec<String>,
 }
 
 fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
@@ -78,6 +85,9 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
                 message: error.to_string(),
             }
         })?;
+        let authored_dependencies = load_runtime_app_metadata(app)
+            .map(|metadata| metadata.authored_dependencies)
+            .unwrap_or_else(|| authored_graph_dependencies(&graph));
 
         layout_defs.push(LayoutDefinition {
             name: app.name.clone(),
@@ -92,7 +102,10 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
                 .stylesheet_path
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
-            runtime_cache_payload: Some(encode_runtime_graph_payload(&runtime_graph)),
+            runtime_cache_payload: Some(encode_runtime_graph_payload(
+                &runtime_graph,
+                &authored_dependencies,
+            )),
         });
 
         debug!(
@@ -117,6 +130,7 @@ fn load_project_config(path: &Path) -> Result<Config, LayoutConfigError> {
     Ok(config)
 }
 
+
 pub fn refresh_prepared_config(
     authored_path: impl AsRef<Path>,
     runtime_path: impl AsRef<Path>,
@@ -137,8 +151,10 @@ fn write_runtime_cache(
     force_rebuild: bool,
 ) -> Result<JsRuntimeCacheUpdate, LayoutConfigError> {
     let runtime_root = runtime_path.parent().unwrap_or_else(|| Path::new("."));
+    let bytecode_root = runtime_root.join(".quickjs-bytecode");
     let mut update = JsRuntimeCacheUpdate::default();
     let mut expected_paths = BTreeSet::new();
+    let mut expected_bytecode_graphs = BTreeSet::new();
     let project = discover_project_apps(authored_path).map_err(|error| {
         LayoutConfigError::CompileAuthoredConfig {
             path: authored_path.to_path_buf(),
@@ -150,10 +166,12 @@ fn write_runtime_cache(
         write_compiled_app(&project.config_app, runtime_root, runtime_path, force_rebuild)?;
     update.rebuilt_files += config_outputs.written_files;
     expected_paths.extend(config_outputs.paths);
+    expected_bytecode_graphs.insert(config_outputs.execution_key);
     for app in &project.layout_apps {
         let outputs = write_compiled_app(app, runtime_root, runtime_path, force_rebuild)?;
         update.rebuilt_files += outputs.written_files;
         expected_paths.extend(outputs.paths);
+        expected_bytecode_graphs.insert(outputs.execution_key);
     }
 
     if let Some(stylesheet) = &project.global_stylesheet_path {
@@ -166,6 +184,7 @@ fn write_runtime_cache(
         expected_paths.insert(destination);
     }
     update.pruned_files = prune_stale_runtime_cache(runtime_root, &expected_paths)?;
+    update.pruned_files += prune_stale_quickjs_bytecode_cache(&bytecode_root, &expected_bytecode_graphs)?;
 
     Ok(update)
 }
@@ -196,7 +215,7 @@ fn write_compiled_app(
             path: app.entry_path.clone(),
             message: error.to_string(),
         }
-    })?;
+        })?;
     let expected_paths = graph
         .modules
         .values()
@@ -217,9 +236,6 @@ fn write_compiled_app(
             _ => None,
         })
         .collect::<Vec<_>>();
-    if !force_rebuild && app_cache_is_fresh(&graph, runtime_root, runtime_entry_path) {
-        return Ok(CompiledRuntimeAppOutputs { paths: expected_paths, written_files: 0 });
-    }
     let plan = AppBuildPlan::from_graph(&graph);
     let compiled =
         compile_app(&plan).map_err(|error| LayoutConfigError::CompileAuthoredConfig {
@@ -234,6 +250,7 @@ fn write_compiled_app(
     })?;
 
     let mut written_files = 0usize;
+    let authored_dependencies = authored_graph_dependencies(&graph);
     for module in &module_graph.modules {
         if is_virtual_sdk_specifier(&module.specifier) {
             continue;
@@ -255,9 +272,12 @@ fn write_compiled_app(
             std::fs::create_dir_all(parent)
                 .map_err(|_| LayoutConfigError::ReadConfig { path: parent.to_path_buf() })?;
         }
-        std::fs::write(&destination, rewritten)
-            .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
-        written_files += 1;
+        let current = std::fs::read_to_string(&destination).ok();
+        if force_rebuild || current.as_deref() != Some(rewritten.as_str()) {
+            std::fs::write(&destination, rewritten)
+                .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
+            written_files += 1;
+        }
     }
 
     if let Some(stylesheet_path) = app.stylesheet_path.as_ref() {
@@ -267,9 +287,12 @@ fn write_compiled_app(
             std::fs::create_dir_all(parent)
                 .map_err(|_| LayoutConfigError::ReadConfig { path: parent.to_path_buf() })?;
         }
-        std::fs::write(&destination, &compiled.stylesheet)
-            .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
-        written_files += 1;
+        let current = std::fs::read_to_string(&destination).ok();
+        if force_rebuild || current.as_deref() != Some(compiled.stylesheet.as_str()) {
+            std::fs::write(&destination, &compiled.stylesheet)
+                .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
+            written_files += 1;
+        }
     }
 
     for stylesheet in &plan.stylesheet_modules {
@@ -282,82 +305,80 @@ fn write_compiled_app(
             std::fs::create_dir_all(parent)
                 .map_err(|_| LayoutConfigError::ReadConfig { path: parent.to_path_buf() })?;
         }
-        std::fs::copy(stylesheet, &destination)
-            .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
-        written_files += 1;
+        let source = std::fs::read(stylesheet)
+            .map_err(|_| LayoutConfigError::ReadConfig { path: stylesheet.clone() })?;
+        let current = std::fs::read(&destination).ok();
+        if force_rebuild || current.as_deref() != Some(source.as_slice()) {
+            std::fs::write(&destination, source)
+                .map_err(|_| LayoutConfigError::ReadConfig { path: destination.clone() })?;
+            written_files += 1;
+        }
     }
 
-    Ok(CompiledRuntimeAppOutputs { paths: expected_paths, written_files })
+    let entry_destination = runtime_root.join(runtime_relative_path(
+        &graph.app.entry_path,
+        &graph.app.root_dir,
+        runtime_entry_path.file_name().and_then(|name| name.to_str()),
+    ));
+    write_runtime_app_metadata(&entry_destination, &RuntimeAppMetadata { authored_dependencies })?;
+
+    Ok(CompiledRuntimeAppOutputs {
+        paths: expected_paths,
+        written_files,
+        execution_key: module_graph_execution_key(&module_graph),
+    })
 }
 
-fn app_cache_is_fresh(graph: &ModuleGraph, runtime_root: &Path, runtime_entry_path: &Path) -> bool {
-    let plan = AppBuildPlan::from_graph(graph);
-    let source_files = graph
-        .modules
-        .values()
-        .filter_map(|record| match &record.id {
-            hypreact_runtime_js_core::graph::ModuleId::File(path)
-                if matches!(
-                    record.kind,
-                    hypreact_runtime_js_core::graph::ModuleKind::Script
-                        | hypreact_runtime_js_core::graph::ModuleKind::Stylesheet
-                ) =>
-            {
-                Some(path)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if source_files.is_empty() {
-        return false;
+fn prune_stale_quickjs_bytecode_cache(
+    bytecode_root: &Path,
+    expected_graph_keys: &BTreeSet<String>,
+) -> Result<usize, LayoutConfigError> {
+    if !bytecode_root.exists() {
+        return Ok(0);
     }
 
-    let newest_source =
-        source_files.iter().filter_map(|path| std::fs::metadata(path).ok()?.modified().ok()).max();
-    let Some(newest_source) = newest_source else {
-        return false;
+    let mut pruned = 0usize;
+    let entries = match std::fs::read_dir(bytecode_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(_) => {
+            return Err(LayoutConfigError::ReadConfig { path: bytecode_root.to_path_buf() });
+        }
     };
 
-    source_files.iter().all(|path| {
-        let relative = if path.extension().and_then(|ext| ext.to_str()) == Some("css") {
-            runtime_static_relative_path(path, &graph.app.root_dir)
-        } else {
-            runtime_relative_path(
-                path,
-                &graph.app.root_dir,
-                runtime_entry_path.file_name().and_then(|name| name.to_str()),
-            )
+    for entry in entries {
+        let entry =
+            match entry {
+                Ok(entry) => entry,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => {
+                    return Err(LayoutConfigError::ReadConfig { path: bytecode_root.to_path_buf() });
+                }
+            };
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(LayoutConfigError::ReadConfig { path: path.clone() }),
         };
-        let destination = runtime_root.join(relative);
-        std::fs::metadata(destination)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok())
-            .map(|modified| modified >= newest_source)
-            .unwrap_or(false)
-    }) && generated_stylesheet_matches_cached(&plan, graph, runtime_root)
-}
+        if !file_type.is_dir() {
+            continue;
+        }
 
-fn generated_stylesheet_matches_cached(
-    plan: &AppBuildPlan,
-    graph: &ModuleGraph,
-    runtime_root: &Path,
-) -> bool {
-    let Some(stylesheet_path) = graph.app.stylesheet_path.as_ref() else {
-        return true;
-    };
+        let graph_key = entry.file_name().to_string_lossy().into_owned();
+        if expected_graph_keys.contains(&graph_key) {
+            continue;
+        }
 
-    let destination =
-        runtime_root.join(runtime_static_relative_path(stylesheet_path, &graph.app.root_dir));
-    let expected = plan
-        .stylesheet_modules
-        .iter()
-        .map(std::fs::read_to_string)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()
-        .map(|chunks| chunks.join("\n"));
-    let actual = std::fs::read_to_string(destination).ok();
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(LayoutConfigError::ReadConfig { path: path.clone() }),
+        }
+        pruned += 1;
+    }
 
-    expected.is_some() && expected == actual
+    Ok(pruned)
 }
 
 fn runtime_destination_for_specifier(
@@ -518,6 +539,52 @@ fn is_virtual_sdk_specifier(specifier: &str) -> bool {
     specifier.starts_with("@hypreact/sdk/")
 }
 
+fn authored_graph_dependencies(graph: &ModuleGraph) -> Vec<String> {
+    graph
+        .modules
+        .values()
+        .filter_map(|record| match &record.id {
+            hypreact_runtime_js_core::graph::ModuleId::File(path)
+                if matches!(
+                    record.kind,
+                    hypreact_runtime_js_core::graph::ModuleKind::Script
+                        | hypreact_runtime_js_core::graph::ModuleKind::Stylesheet
+                ) => Some(path.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn runtime_app_metadata_path(entry_path: &Path) -> PathBuf {
+    let file_name = entry_path.file_name().and_then(|name| name.to_str()).unwrap_or("entry.js");
+    entry_path.with_file_name(format!("{file_name}.hypreact-meta.json"))
+}
+
+fn write_runtime_app_metadata(
+    entry_path: &Path,
+    metadata: &RuntimeAppMetadata,
+) -> Result<(), LayoutConfigError> {
+    let metadata_path = runtime_app_metadata_path(entry_path);
+    if let Some(parent) = metadata_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|_| LayoutConfigError::ReadConfig { path: parent.to_path_buf() })?;
+    }
+    std::fs::write(
+        &metadata_path,
+        serde_json::to_vec_pretty(metadata)
+            .map_err(|_| LayoutConfigError::ReadConfig { path: metadata_path.clone() })?,
+    )
+    .map_err(|_| LayoutConfigError::ReadConfig { path: metadata_path.clone() })?;
+    Ok(())
+}
+
+fn load_runtime_app_metadata(app: &DiscoveredApp) -> Option<RuntimeAppMetadata> {
+    let metadata_path = runtime_app_metadata_path(&app.entry_path);
+    std::fs::read(&metadata_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<RuntimeAppMetadata>(&bytes).ok())
+}
+
 fn relative_path_from(base: &Path, target: &Path) -> PathBuf {
     let base_components = base.components().collect::<Vec<_>>();
     let target_components = target.components().collect::<Vec<_>>();
@@ -614,6 +681,7 @@ fn prune_stale_runtime_cache_dir(
 struct CompiledRuntimeAppOutputs {
     paths: Vec<PathBuf>,
     written_files: usize,
+    execution_key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -621,4 +689,48 @@ pub struct JsRuntimeCacheUpdate {
     pub rebuilt_files: usize,
     pub copied_stylesheets: usize,
     pub pruned_files: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn copy_dir_recursively(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            let source = entry.path();
+            let destination = to.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                copy_dir_recursively(&source, &destination)?;
+            } else {
+                std::fs::copy(&source, &destination)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rebuild_prepared_config_rewrites_layout_js_after_tsx_change() {
+        let source_root = PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config");
+        let temp_root = tempfile::TempDir::new().expect("temp js authored root");
+        copy_dir_recursively(&source_root, temp_root.path()).expect("copy test config");
+
+        let authored_config = temp_root.path().join("config.ts");
+        let prepared_config = temp_root.path().join(".hypreact-build/config.js");
+        rebuild_prepared_config(&authored_config, &prepared_config).expect("initial rebuild");
+
+        let layout_path = temp_root.path().join("layouts/master-stack/index.tsx");
+        let updated = std::fs::read_to_string(&layout_path)
+            .expect("read master-stack tsx")
+            .replace("take={1}", "take={2}");
+        std::fs::write(&layout_path, updated).expect("write updated tsx");
+
+        rebuild_prepared_config(&authored_config, &prepared_config).expect("rebuild after tsx change");
+
+        let prepared_layout =
+            std::fs::read_to_string(temp_root.path().join(".hypreact-build/layouts/master-stack/index.js"))
+                .expect("read prepared layout js");
+        assert!(prepared_layout.contains("take: 2"), "prepared JS should be rewritten after TSX change");
+    }
 }

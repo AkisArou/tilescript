@@ -120,7 +120,6 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
   }
 
   if (command == "layouts") {
-    loadLayoutRuntimeConfig();
     const auto layout = runtime()->layoutStatusResult();
     Json::Value response;
     response["ok"] = true;
@@ -130,7 +129,6 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
   }
 
   if (command == "debug-layout") {
-    loadLayoutRuntimeConfig();
     const auto layout = runtime()->layoutStatusResult();
     Json::Value response;
     response["ok"] = true;
@@ -144,7 +142,6 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
   }
 
   if (command.rfind("debug-layout-workspace ", 0) == 0) {
-    loadLayoutRuntimeConfig();
     const auto workspaceId =
         trim(command.substr(std::string("debug-layout-workspace ").size()));
     Json::Value response;
@@ -178,7 +175,6 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
   appendRuntimeState(response["data"]["runtime"], state);
   hypreact_runtime_free_state_result(state);
 
-  loadLayoutRuntimeConfig();
   const auto layout = runtime()->layoutStatusResult();
   appendLayoutStatus(response["data"]["layouts"], layout);
   hypreact_runtime_free_layout_status_result(layout);

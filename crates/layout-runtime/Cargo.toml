@@ -12,6 +12,11 @@ hypreact-css = { path = "../css" }
 hypreact-runtime-js-native = { path = "../runtimes/js/native" }
 hypreact-runtime-lua-native = { path = "../runtimes/lua/native" }
 hypreact-scene = { path = "../scene" }
+inotify = "0.11.1"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

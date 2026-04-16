@@ -33,6 +33,7 @@ using hypreact_plugin::layoutRuntimeLoaded;
 using hypreact_plugin::loadLayoutRuntimeConfig;
 using hypreact_plugin::makeWindowId;
 using hypreact_plugin::markRecentWorkspaceResize;
+using hypreact_plugin::drainLayoutRuntimeSourceChanges;
 using hypreact_plugin::queueWorkspaceRecalculate;
 using hypreact_plugin::recalculateWorkspace;
 using hypreact_plugin::resyncAll;
@@ -86,6 +87,10 @@ void registerHypreactDispatchers() {
 
 void refreshWorkspaceAlgorithms() {
   hypreact_plugin::refreshWorkspaceAlgorithms();
+}
+
+bool drainLayoutRuntimeSourceChangesCallback() {
+  return hypreact_plugin::drainLayoutRuntimeSourceChanges();
 }
 
 void registerHypreactAlgorithm() {
@@ -234,8 +239,10 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   }
   registerHypreactDispatchers();
   hypreact_plugin::registerHooks({
+      .drainLayoutRuntimeSourceChanges = drainLayoutRuntimeSourceChangesCallback,
       .loadLayoutRuntimeConfig = loadLayoutRuntimeConfig,
       .layoutRuntimeLoaded = layoutRuntimeLoaded,
+      .resyncAll = resyncAll,
       .registerHypreactAlgorithm = registerHypreactAlgorithm,
       .refreshWorkspaceAlgorithms = refreshWorkspaceAlgorithms,
   });

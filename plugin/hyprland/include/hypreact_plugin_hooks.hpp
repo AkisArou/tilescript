@@ -3,8 +3,10 @@
 namespace hypreact_plugin {
 
 struct HookCallbacks {
+  bool (*drainLayoutRuntimeSourceChanges)();
   void (*loadLayoutRuntimeConfig)();
   bool (*layoutRuntimeLoaded)();
+  void (*resyncAll)();
   void (*registerHypreactAlgorithm)();
   void (*refreshWorkspaceAlgorithms)();
 };

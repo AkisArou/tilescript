@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -31,6 +32,8 @@ class Runtime {
     [[nodiscard]] HypreactStatusResult upsertWindow(const HypreactWindowSync& window) const;
     [[nodiscard]] HypreactStatusResult loadLayoutConfig(const std::string& configPath) const;
     [[nodiscard]] HypreactStatusResult reloadLayoutConfig() const;
+    [[nodiscard]] HypreactStatusResult drainLayoutSourceChanges() const;
+    [[nodiscard]] int layoutSourceChangeFd() const;
     [[nodiscard]] HypreactLayoutStatusResult layoutStatusResult() const;
     [[nodiscard]] HypreactPlacementResult layoutPlacement() const;
     [[nodiscard]] HypreactPlacementResult layoutPlacementForWorkspace(const std::string& workspaceId) const;
@@ -58,5 +61,7 @@ std::string stringify(const Json::Value& value);
 
 void loadLayoutRuntimeConfig();
 bool layoutRuntimeLoaded();
+bool drainLayoutRuntimeSourceChanges();
+void watchLayoutRuntimeSources(const std::function<void()>& callback);
 
 } // namespace hypreact_plugin

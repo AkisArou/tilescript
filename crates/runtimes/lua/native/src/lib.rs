@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use hypreact_config::config_decode::decode_config_value;
 use hypreact_config::layout_decode::decode_layout_value;
@@ -8,6 +10,9 @@ use hypreact_config::runtime::RuntimeBundle;
 use hypreact_config::selection::validate_layout_selection;
 use hypreact_core::SourceLayoutNode;
 use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
+use hypreact_core::runtime::native_artifact::{
+    NativeDependencySnapshot, load_cached_stylesheet, load_text_dependency,
+};
 use hypreact_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets,
 };
@@ -17,16 +22,23 @@ use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
 use hypreact_runtime_lua_core::LUA_SDK_SOURCE;
-use mlua::{Function, Lua, LuaSerdeExt, Table, Value};
+use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct LuaPreparedLayoutRuntime;
+#[derive(Debug, Default)]
+pub struct LuaPreparedLayoutRuntime {
+    execution_cache: Mutex<Option<LuaExecutionCache>>,
+}
+
+#[derive(Debug)]
+struct LuaExecutionCache {
+    lua: Lua,
+    functions: HashMap<String, RegistryKey>,
+}
 
 pub fn build_runtime_bundle(_paths: &ConfigPaths) -> Result<RuntimeBundle, LayoutConfigError> {
-    let runtime = LuaPreparedLayoutRuntime;
     Ok(RuntimeBundle {
-        config_runtime: Box::new(runtime),
-        layout_runtime: Box::new(LuaPreparedLayoutRuntime),
+        config_runtime: Box::new(LuaPreparedLayoutRuntime::default()),
+        layout_runtime: Box::new(LuaPreparedLayoutRuntime::default()),
     })
 }
 
@@ -42,11 +54,26 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
             return Ok(None);
         };
 
-        let source = fs::read_to_string(&layout.module)
-            .map_err(|_| RuntimeError::MissingRuntimeSource { name: layout.name.clone() })?;
+        let (source, module_dependency) = load_text_dependency(&layout.module)
+            .ok_or_else(|| RuntimeError::MissingRuntimeSource { name: layout.name.clone() })?;
         let lua = create_lua_runtime().map_err(runtime_error)?;
         let source = compile_authored_source(&lua, Path::new(&layout.module), &source)
             .map_err(runtime_error)?;
+        let global_stylesheet = load_stylesheet(config.global_stylesheet_path.as_deref());
+        let layout_stylesheet = load_stylesheet(layout.stylesheet_path.as_deref());
+        let mut dependencies = vec![module_dependency];
+        if let Some(stylesheet) = global_stylesheet.as_ref() {
+            dependencies.push(NativeDependencySnapshot {
+                path: stylesheet.path.clone(),
+                content_hash: hash_source(&stylesheet.source),
+            });
+        }
+        if let Some(stylesheet) = layout_stylesheet.as_ref() {
+            dependencies.push(NativeDependencySnapshot {
+                path: stylesheet.path.clone(),
+                content_hash: hash_source(&stylesheet.source),
+            });
+        }
 
         Ok(Some(PreparedLayout {
             selected: config
@@ -55,9 +82,10 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
                 .expect("selected layout exists when config.selected_layout returned Some"),
             runtime_payload: serde_json::json!({ "source": source }),
             stylesheets: PreparedStylesheets {
-                global: load_stylesheet(config.global_stylesheet_path.as_deref()),
-                layout: load_stylesheet(layout.stylesheet_path.as_deref()),
+                global: global_stylesheet,
+                layout: layout_stylesheet,
             },
+            dependencies,
         }))
     }
 
@@ -85,13 +113,32 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
                 },
             )?;
 
-        let lua = create_lua_runtime().map_err(runtime_error)?;
-        let layout_fn = lua
-            .load(source)
-            .set_name(&artifact.selected.module)
-            .eval::<Function>()
+        let mut cache_guard = self.execution_cache.lock().map_err(|_| RuntimeError::Other {
+            message: "lua execution cache mutex is poisoned".into(),
+        })?;
+        if cache_guard.is_none() {
+            *cache_guard = Some(LuaExecutionCache {
+                lua: create_lua_runtime().map_err(runtime_error)?,
+                functions: HashMap::new(),
+            });
+        }
+        let cache = cache_guard.as_mut().expect("lua execution cache initialized");
+        let function_key = executable_function_key(&artifact.selected.module, source);
+        if !cache.functions.contains_key(&function_key) {
+            let function = cache
+                .lua
+                .load(source)
+                .set_name(&artifact.selected.module)
+                .eval::<Function>()
+                .map_err(runtime_error)?;
+            let registry_key = cache.lua.create_registry_value(function).map_err(runtime_error)?;
+            cache.functions.insert(function_key.clone(), registry_key);
+        }
+        let layout_fn: Function = cache
+            .lua
+            .registry_value(cache.functions.get(&function_key).expect("cached registry key exists"))
             .map_err(runtime_error)?;
-        let context_value = lua.to_value(context).map_err(runtime_error)?;
+        let context_value = cache.lua.to_value(context).map_err(runtime_error)?;
         let result = layout_fn.call::<Value>(context_value).map_err(runtime_error)?;
 
         if matches!(result, Value::Nil) {
@@ -100,7 +147,7 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
             });
         }
 
-        let value: serde_json::Value = lua.from_value(result).map_err(runtime_error)?;
+        let value: serde_json::Value = cache.lua.from_value(result).map_err(runtime_error)?;
         decode_layout_value(&value).map_err(|message| RuntimeError::Other {
             message: format!(
                 "lua to layout conversion failed for `{}`: {message}",
@@ -249,8 +296,7 @@ fn write_prepared_config(
 
 fn load_stylesheet(path: Option<&str>) -> Option<PreparedStylesheet> {
     let path = path?;
-    let source = fs::read_to_string(path).ok()?;
-    Some(PreparedStylesheet { path: path.into(), source })
+    load_cached_stylesheet(path).map(|(stylesheet, _)| stylesheet)
 }
 
 fn create_lua_runtime() -> Result<Lua, mlua::Error> {
@@ -306,6 +352,19 @@ fn runtime_error(error: mlua::Error) -> RuntimeError {
     RuntimeError::Other { message: error.to_string() }
 }
 
+fn hash_source(source: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn executable_function_key(module: &str, source: &str) -> String {
+    format!("{}:{}", module, hash_source(source))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,7 +409,7 @@ mod tests {
         )
         .unwrap();
 
-        let runtime = LuaPreparedLayoutRuntime;
+        let runtime = LuaPreparedLayoutRuntime::default();
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),
@@ -448,7 +507,7 @@ mod tests {
         )
         .unwrap();
 
-        let runtime = LuaPreparedLayoutRuntime;
+        let runtime = LuaPreparedLayoutRuntime::default();
         let config = Config {
             layouts: vec![LayoutDefinition {
                 name: "master-stack".into(),

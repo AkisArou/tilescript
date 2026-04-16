@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use hypreact_config::model::Config;
 use hypreact_config::runtime::AuthoringConfigRuntime;
 use hypreact_core::SourceLayoutNode;
@@ -14,7 +16,7 @@ use hypreact_runtime_js_core::{
     encode_runtime_graph_payload,
 };
 
-use crate::module_graph_runtime::call_entry_export_with_json_arg;
+use crate::module_graph_runtime::{QuickJsExecutionCache, module_graph_execution_key};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum PreparedLayoutRuntimeError {
@@ -39,11 +41,16 @@ pub struct StubPreparedLayoutRuntime;
 pub struct QuickJsPreparedLayoutRuntime<L = InlineLayoutSourceLoader> {
     contract: LayoutModuleContract,
     loader: L,
+    execution_cache: Arc<Mutex<QuickJsExecutionCache>>,
 }
 
 impl Default for QuickJsPreparedLayoutRuntime<InlineLayoutSourceLoader> {
     fn default() -> Self {
-        Self { contract: LayoutModuleContract::default(), loader: InlineLayoutSourceLoader }
+        Self {
+            contract: LayoutModuleContract::default(),
+            loader: InlineLayoutSourceLoader,
+            execution_cache: Arc::new(Mutex::new(QuickJsExecutionCache::new(None))),
+        }
     }
 }
 
@@ -54,8 +61,29 @@ impl QuickJsPreparedLayoutRuntime<InlineLayoutSourceLoader> {
 }
 
 impl<L> QuickJsPreparedLayoutRuntime<L> {
+    pub fn with_loader_and_bytecode_root(
+        loader: L,
+        bytecode_root: Option<std::path::PathBuf>,
+    ) -> Self {
+        Self {
+            contract: LayoutModuleContract::default(),
+            loader,
+            execution_cache: Arc::new(Mutex::new(QuickJsExecutionCache::new(bytecode_root))),
+        }
+    }
+
     pub fn with_loader(loader: L) -> Self {
-        Self { contract: LayoutModuleContract::default(), loader }
+        Self::with_loader_and_bytecode_root(loader, None)
+    }
+
+    fn reset_execution_cache(&self) -> Result<(), RuntimeError> {
+        self.execution_cache
+            .lock()
+            .map_err(|_| RuntimeError::Other {
+                message: "js execution cache mutex is poisoned".into(),
+            })?
+            .reset();
+        Ok(())
     }
 
     pub fn evaluate_module_source(
@@ -88,29 +116,37 @@ impl<L> QuickJsPreparedLayoutRuntime<L> {
             PreparedLayoutRuntimeError::JavaScript { message: error.to_string() }
         })?;
 
-        let json = call_entry_export_with_json_arg(
-            graph,
-            &selected_layout.module,
-            &self.contract.export_name,
-            &context_value,
-        )
-        .map_err(|error| match error {
-            crate::module_graph_runtime::ModuleGraphRuntimeError::JavaScript { message } => {
-                PreparedLayoutRuntimeError::JavaScript { message }
-            }
-            crate::module_graph_runtime::ModuleGraphRuntimeError::MissingExport {
-                name,
-                export,
-            } => PreparedLayoutRuntimeError::MissingExport { name, export },
-            crate::module_graph_runtime::ModuleGraphRuntimeError::NonCallableExport {
-                name,
-                export,
-            } => PreparedLayoutRuntimeError::NonCallableExport { name, export },
-        })?
-        .ok_or_else(|| PreparedLayoutRuntimeError::ValueConversion {
-            name: selected_layout.name.clone(),
-            message: "layout function returned undefined".into(),
-        })?;
+        let graph_key = module_graph_execution_key(graph);
+        let json = self
+            .execution_cache
+            .lock()
+            .map_err(|_| PreparedLayoutRuntimeError::JavaScript {
+                message: "js execution cache mutex is poisoned".into(),
+            })?
+            .call_entry_export_with_json_arg(
+                &graph_key,
+                graph,
+                &selected_layout.module,
+                &self.contract.export_name,
+                &context_value,
+            )
+            .map_err(|error| match error {
+                crate::module_graph_runtime::ModuleGraphRuntimeError::JavaScript { message } => {
+                    PreparedLayoutRuntimeError::JavaScript { message }
+                }
+                crate::module_graph_runtime::ModuleGraphRuntimeError::MissingExport {
+                    name,
+                    export,
+                } => PreparedLayoutRuntimeError::MissingExport { name, export },
+                crate::module_graph_runtime::ModuleGraphRuntimeError::NonCallableExport {
+                    name,
+                    export,
+                } => PreparedLayoutRuntimeError::NonCallableExport { name, export },
+            })?
+            .ok_or_else(|| PreparedLayoutRuntimeError::ValueConversion {
+                name: selected_layout.name.clone(),
+                message: "layout function returned undefined".into(),
+            })?;
 
         decode_js_layout_value(&json).map_err(|message| {
             PreparedLayoutRuntimeError::ValueConversion {
@@ -154,12 +190,13 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
             .map_err(|error| RuntimeError::Config { message: error.to_string() })?
             .map(|selected| PreparedLayout {
                 selected,
-                runtime_payload: encode_runtime_graph_payload(&JavaScriptModuleGraph {
-                    entry: String::new(),
-                    modules: Vec::new(),
-                }),
+                runtime_payload: encode_runtime_graph_payload(
+                    &JavaScriptModuleGraph { entry: String::new(), modules: Vec::new() },
+                    &[],
+                ),
                 stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets::default(
                 ),
+                dependencies: vec![],
             }))
     }
 
@@ -251,9 +288,13 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         runtime: &std::path::Path,
     ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         debug!(authored = %authored.display(), runtime = %runtime.display(), "refreshing prepared config");
-        crate::authored::refresh_prepared_config(authored, runtime)
+        let result = crate::authored::refresh_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
-            .map_err(|error| RuntimeError::Config { message: error.to_string() })
+            .map_err(|error| RuntimeError::Config { message: error.to_string() });
+        if result.is_ok() {
+            self.reset_execution_cache()?;
+        }
+        result
     }
 
     fn rebuild_prepared_config(
@@ -262,9 +303,13 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         runtime: &std::path::Path,
     ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         debug!(authored = %authored.display(), runtime = %runtime.display(), "rebuilding prepared config");
-        crate::authored::rebuild_prepared_config(authored, runtime)
+        let result = crate::authored::rebuild_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
-            .map_err(|error| RuntimeError::Config { message: error.to_string() })
+            .map_err(|error| RuntimeError::Config { message: error.to_string() });
+        if result.is_ok() {
+            self.reset_execution_cache()?;
+        }
+        result
     }
 }
 

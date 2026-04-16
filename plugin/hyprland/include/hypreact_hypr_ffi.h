@@ -212,6 +212,8 @@ HypreactStatusResult hypreact_runtime_load_layout_config_result(HypreactRuntimeH
 HypreactStatusResult hypreact_runtime_bootstrap_config_result(const char* config_root);
 HypreactStatusResult hypreact_runtime_sync_sdk_support_result(const char* config_root);
 HypreactStatusResult hypreact_runtime_reload_layout_config_result(HypreactRuntimeHandle* handle);
+HypreactStatusResult hypreact_runtime_poll_layout_sources_result(HypreactRuntimeHandle* handle);
+int hypreact_runtime_layout_source_change_fd(HypreactRuntimeHandle* handle);
 HypreactPlacementResult hypreact_runtime_layout_placement(HypreactRuntimeHandle* handle);
 HypreactPlacementResult hypreact_runtime_layout_placement_for_workspace(
     HypreactRuntimeHandle* handle,

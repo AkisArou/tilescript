@@ -73,8 +73,8 @@ public:
         continue;
       }
 
-      target->setPositionGlobal(
-          offsetPlacementToWorkspace(it->second, workspace));
+      const auto box = offsetPlacementToWorkspace(it->second, workspace);
+      target->setPositionGlobal({.logicalBox = box, .visualBox = box});
     }
   }
 

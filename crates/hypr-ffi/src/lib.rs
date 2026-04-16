@@ -27,8 +27,9 @@ use action::{action_to_ffi, wm_command_from_ffi};
 use bootstrap::bootstrap_config_root;
 use ffi_string::{cstr_to_str, optional_cstr_to_string, string_free};
 use layout::{
-    layout_close_focus_candidate, layout_focus_candidate, layout_runtime_placement,
-    layout_runtime_placement_for_workspace, layout_runtime_status, load_layout_config,
+    drain_layout_runtime_source_changes, layout_close_focus_candidate, layout_focus_candidate,
+    layout_runtime_placement, layout_runtime_placement_for_workspace,
+    layout_runtime_source_change_fd, layout_runtime_status, load_layout_config,
     reload_layout_config,
 };
 use response::FfiError;
@@ -348,6 +349,34 @@ pub extern "C" fn hypreact_runtime_reload_layout_config_result(
         Ok(Ok(result)) => result,
         Ok(Err(error)) => error_status_result(error),
         Err(_) => error_status_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_poll_layout_sources_result(
+    handle: *mut HypreactRuntimeHandle,
+) -> HypreactStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        let changed = drain_layout_runtime_source_changes(handle)?;
+        status_result(StatusResult { changed, focused_window_id: None })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn hypreact_runtime_layout_source_change_fd(
+    handle: *mut HypreactRuntimeHandle,
+) -> i32 {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        layout_runtime_source_change_fd(handle)
+    })) {
+        Ok(Ok(fd)) => fd,
+        Ok(Err(_)) | Err(_) => -1,
     }
 }
 

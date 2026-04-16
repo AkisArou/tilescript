@@ -1,8 +1,10 @@
 #include "hypreact_plugin_hooks.hpp"
 
+#include <iostream>
 #include <optional>
 #include <vector>
 
+#include "hypreact_plugin_runtime.hpp"
 #include "hypreact_plugin_sync.hpp"
 
 #include "src/SharedDefs.hpp"
@@ -15,12 +17,37 @@ namespace {
 std::vector<CHyprSignalListener> g_listeners;
 std::optional<HookCallbacks> g_hookCallbacks;
 
+void processLiveReloadChange() {
+  if (g_hookCallbacks.has_value() && g_hookCallbacks->drainLayoutRuntimeSourceChanges != nullptr
+      && g_hookCallbacks->drainLayoutRuntimeSourceChanges()) {
+    std::cout << "[hypreact] live-reload detected source changes" << std::endl;
+    if (g_hookCallbacks->resyncAll != nullptr) {
+      std::cout << "[hypreact] live-reload resyncing runtime state" << std::endl;
+      g_hookCallbacks->resyncAll();
+    }
+    if (g_hookCallbacks->layoutRuntimeLoaded()) {
+      std::cout << "[hypreact] live-reload refreshing workspace algorithms" << std::endl;
+      g_hookCallbacks->refreshWorkspaceAlgorithms();
+    }
+    for (const auto &monitor : g_pCompositor->m_monitors) {
+      if (monitor && monitor->m_activeWorkspace) {
+        std::cout << "[hypreact] live-reload queue workspace recalc for "
+                  << monitor->m_activeWorkspace->getConfigName() << std::endl;
+        queueWorkspaceRecalculate(monitor->m_activeWorkspace);
+      }
+    }
+    flushPendingWorkspaceRecalculations();
+  }
+}
+
 } // namespace
 
 void registerHooks(const HookCallbacks &callbacks) {
   g_hookCallbacks = callbacks;
 
   auto &events = Event::bus()->m_events;
+
+  watchLayoutRuntimeSources([] { processLiveReloadChange(); });
 
   g_listeners.push_back(events.tick.listen([] {
     syncActiveRuntimeState();
@@ -109,6 +136,7 @@ void registerHooks(const HookCallbacks &callbacks) {
     }
 
     g_hookCallbacks->loadLayoutRuntimeConfig();
+    watchLayoutRuntimeSources([] { processLiveReloadChange(); });
     if (g_hookCallbacks->layoutRuntimeLoaded()) {
       g_hookCallbacks->registerHypreactAlgorithm();
       g_hookCallbacks->refreshWorkspaceAlgorithms();

@@ -14,7 +14,10 @@
 #include <thread>
 #include <vector>
 
+#include <hyprutils/os/FileDescriptor.hpp>
+
 #include "src/plugins/PluginAPI.hpp"
+#include "src/managers/eventLoop/EventLoopManager.hpp"
 
 extern char** environ;
 
@@ -29,6 +32,7 @@ std::optional<std::filesystem::path> g_resolvedConfigRoot;
 std::string g_lastDiagnosticNotificationKey;
 bool g_hasPersistentErrorBanner = false;
 std::string g_lastPersistentErrorBannerText;
+size_t g_layoutSourceWatchGeneration = 0;
 
 void spawnHyprctlCommand(std::vector<std::string> args) {
     std::thread([args = std::move(args)]() mutable {
@@ -318,6 +322,14 @@ HypreactStatusResult Runtime::reloadLayoutConfig() const {
     return hypreact_runtime_reload_layout_config_result(handle_);
 }
 
+HypreactStatusResult Runtime::drainLayoutSourceChanges() const {
+    return hypreact_runtime_poll_layout_sources_result(handle_);
+}
+
+int Runtime::layoutSourceChangeFd() const {
+    return hypreact_runtime_layout_source_change_fd(handle_);
+}
+
 HypreactLayoutStatusResult Runtime::layoutStatusResult() const {
     return hypreact_runtime_layout_status_result(handle_);
 }
@@ -396,6 +408,7 @@ void createRuntime() {
 }
 
 void destroyRuntime() {
+    ++g_layoutSourceWatchGeneration;
     g_runtime.reset();
     g_resolvedConfigRoot.reset();
     g_lastDiagnosticNotificationKey.clear();
@@ -442,6 +455,8 @@ void loadLayoutRuntimeConfig() {
         return;
     }
 
+    ++g_layoutSourceWatchGeneration;
+
     const auto resolvedRoot = resolveConfiguredConfigRoot();
     if (!resolvedRoot.has_value()) {
         g_resolvedConfigRoot.reset();
@@ -475,6 +490,39 @@ bool layoutRuntimeLoaded() {
     const auto loaded = status.loaded;
     hypreact_runtime_free_layout_status_result(status);
     return loaded;
+}
+
+bool drainLayoutRuntimeSourceChanges() {
+    if (!g_runtime) {
+        return false;
+    }
+
+    const auto result = g_runtime->drainLayoutSourceChanges();
+    const bool changed = result.changed;
+    logStatusResult("drain-layout-source-changes", result);
+    hypreact_runtime_free_status_result(result);
+    return changed;
+}
+
+void watchLayoutRuntimeSources(const std::function<void()>& callback) {
+    if (!g_runtime || !g_pEventLoopManager) {
+        return;
+    }
+
+    const auto generation = g_layoutSourceWatchGeneration;
+
+    const auto fd = g_runtime->layoutSourceChangeFd();
+    if (fd < 0) {
+        return;
+    }
+
+    g_pEventLoopManager->doOnReadable(Hyprutils::OS::CFileDescriptor{fcntl(fd, F_DUPFD_CLOEXEC, 0)}, [callback, generation] {
+        if (generation != g_layoutSourceWatchGeneration) {
+            return;
+        }
+        callback();
+        watchLayoutRuntimeSources(callback);
+    });
 }
 
 } // namespace hypreact_plugin

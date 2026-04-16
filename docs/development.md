@@ -18,6 +18,7 @@
 - `examples/lua` - Lua starter config
 - `docs/plan/lua.md` - Lua runtime and authoring plan
 - `docs/plan/fennel.md` - Fennel authoring/runtime plan
+- `docs/plan/performance.md` - runtime caching, bytecode, and live reload plan
 
 ## Common Commands
 
@@ -135,3 +136,5 @@ The plugin bootstraps missing config roots from `examples/js/` and refreshes tha
 - `docs/plan/resizing.md`
 - `docs/plan/animations.md`
 - `docs/plan/lua.md`
+- `docs/plan/fennel.md`
+- `docs/plan/performance.md`

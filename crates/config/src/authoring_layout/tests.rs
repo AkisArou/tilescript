@@ -275,6 +275,7 @@ fn prepared_layout(name: &str, module: &str) -> PreparedLayout {
         },
         runtime_payload: runtime_cache_payload(module),
         stylesheets: Default::default(),
+        dependencies: vec![],
     }
 }
 
@@ -382,7 +383,7 @@ fn authoring_layout_service_loads_config_from_runtime_path() {
     fs::write(&prepared_config_path, "export default {};").unwrap();
 
     let runtime = StubRuntime { loaded: None, error_message: None };
-    let service = AuthoringLayoutService::new(runtime.clone(), runtime);
+    let mut service = AuthoringLayoutService::new(runtime.clone(), runtime);
     let config = service.load_config(&ConfigPaths::new("unused", &prepared_config_path)).unwrap();
 
     assert_eq!(config.layouts[0].module, "layouts/master-stack.js");
@@ -458,7 +459,7 @@ fn authoring_layout_service_loads_authored_config_when_runtime_js_is_missing() {
         prepared_load_failures_remaining: Arc::new(AtomicUsize::new(0)),
         rebuild_count: Arc::new(AtomicUsize::new(0)),
     };
-    let service = AuthoringLayoutService::new(runtime.clone(), runtime);
+    let mut service = AuthoringLayoutService::new(runtime.clone(), runtime);
     let config = service
         .load_config(&ConfigPaths::new(
             project_root.path().join("config.ts"),
@@ -496,7 +497,7 @@ fn authoring_layout_service_rebuilds_prepared_config_after_load_failure() {
         prepared_load_failures_remaining: Arc::new(AtomicUsize::new(1)),
         rebuild_count: rebuild_count.clone(),
     };
-    let service = AuthoringLayoutService::new(runtime.clone(), runtime);
+    let mut service = AuthoringLayoutService::new(runtime.clone(), runtime);
 
     let _config = service.load_config(&ConfigPaths::new(&authored_path, &prepared_path)).unwrap();
 

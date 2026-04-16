@@ -1,3 +1,6 @@
+use hypreact_core::runtime::native_artifact::{
+    NativeDependencySnapshot, load_cached_stylesheet, load_text_dependency,
+};
 use hypreact_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets, SelectedLayout,
 };
@@ -197,6 +200,31 @@ pub fn loaded_layout_definition(
     module: String,
     runtime_graph: JavaScriptModuleGraph,
 ) -> PreparedLayout {
+    let mut dependencies = Vec::new();
+    if let Some((_, dependency)) = load_text_dependency(&module) {
+        dependencies.push(dependency);
+    }
+
+    let global_stylesheet =
+        global_stylesheet_path.and_then(|path| load_global_stylesheet_asset(layout, path));
+    if let Some(stylesheet) = global_stylesheet.as_ref() {
+        dependencies.push(NativeDependencySnapshot {
+            path: stylesheet.path.clone(),
+            content_hash: hash_source(&stylesheet.source),
+        });
+    }
+
+    let layout_stylesheet = layout
+        .stylesheet_path
+        .as_ref()
+        .and_then(|path| load_stylesheet_asset(layout, &module, path));
+    if let Some(stylesheet) = layout_stylesheet.as_ref() {
+        dependencies.push(NativeDependencySnapshot {
+            path: stylesheet.path.clone(),
+            content_hash: hash_source(&stylesheet.source),
+        });
+    }
+
     PreparedLayout {
         selected: SelectedLayout {
             name: layout.name.clone(),
@@ -207,14 +235,9 @@ pub fn loaded_layout_definition(
         runtime_payload: layout
             .runtime_cache_payload
             .clone()
-            .unwrap_or_else(|| encode_runtime_graph_payload(&runtime_graph)),
-        stylesheets: PreparedStylesheets {
-            global: global_stylesheet_path.map(|path| load_global_stylesheet_asset(layout, path)),
-            layout: layout
-                .stylesheet_path
-                .as_ref()
-                .map(|path| load_stylesheet_asset(layout, &module, path)),
-        },
+            .unwrap_or_else(|| encode_runtime_graph_payload(&runtime_graph, &[])),
+        stylesheets: PreparedStylesheets { global: global_stylesheet, layout: layout_stylesheet },
+        dependencies,
     }
 }
 
@@ -222,8 +245,8 @@ fn load_stylesheet_asset(
     layout: &LayoutDefinition,
     module_path: &str,
     path: &str,
-) -> PreparedStylesheet {
-    let source = load_stylesheet_asset_source(layout, module_path, path).unwrap_or_else(|| {
+) -> Option<PreparedStylesheet> {
+    let stylesheet = load_stylesheet_asset_source(layout, module_path, path).or_else(|| {
         warn!(
             layout = %layout.name,
             stylesheet_path = %path,
@@ -231,10 +254,14 @@ fn load_stylesheet_asset(
             module = %module_path,
             "failed to load layout stylesheet from any candidate path"
         );
-        String::new()
+        None
     });
 
-    if source.trim().is_empty() {
+    let Some(stylesheet) = stylesheet else {
+        return None;
+    };
+
+    if stylesheet.source.trim().is_empty() {
         warn!(
             layout = %layout.name,
             stylesheet_path = %path,
@@ -246,25 +273,28 @@ fn load_stylesheet_asset(
             layout = %layout.name,
             stylesheet_path = %path,
             module = %module_path,
-            bytes = source.len(),
+            bytes = stylesheet.source.len(),
             "loaded layout stylesheet source"
         );
     }
 
-    PreparedStylesheet { path: path.into(), source }
+    Some(stylesheet)
 }
 
-fn load_global_stylesheet_asset(layout: &LayoutDefinition, path: &str) -> PreparedStylesheet {
-    let source = std::fs::read_to_string(path).unwrap_or_else(|_| {
+fn load_global_stylesheet_asset(
+    layout: &LayoutDefinition,
+    path: &str,
+) -> Option<PreparedStylesheet> {
+    let Some((stylesheet, _)) = load_cached_stylesheet(path) else {
         warn!(
             layout = %layout.name,
             stylesheet_path = %path,
             "failed to load global stylesheet"
         );
-        String::new()
-    });
+        return None;
+    };
 
-    if source.trim().is_empty() {
+    if stylesheet.source.trim().is_empty() {
         warn!(
             layout = %layout.name,
             stylesheet_path = %path,
@@ -274,19 +304,19 @@ fn load_global_stylesheet_asset(layout: &LayoutDefinition, path: &str) -> Prepar
         debug!(
             layout = %layout.name,
             stylesheet_path = %path,
-            bytes = source.len(),
+            bytes = stylesheet.source.len(),
             "loaded global stylesheet source"
         );
     }
 
-    PreparedStylesheet { path: path.into(), source }
+    Some(stylesheet)
 }
 
 fn load_stylesheet_asset_source(
     layout: &LayoutDefinition,
     module_path: &str,
     path: &str,
-) -> Option<String> {
+) -> Option<PreparedStylesheet> {
     let path_obj = std::path::Path::new(path);
     let mut candidates = Vec::new();
 
@@ -312,13 +342,22 @@ fn load_stylesheet_asset_source(
     candidates.dedup();
 
     for candidate in candidates {
-        if let Ok(source) = std::fs::read_to_string(&candidate) {
+        if let Some((stylesheet, _)) = load_cached_stylesheet(&candidate) {
             debug!(candidate = %candidate.display(), "resolved stylesheet candidate path");
-            return Some(source);
+            return Some(stylesheet);
         }
     }
 
     None
+}
+
+fn hash_source(source: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn single_module_graph(module: String, source: String) -> JavaScriptModuleGraph {

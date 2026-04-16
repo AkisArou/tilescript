@@ -1,4 +1,11 @@
+use std::collections::BTreeSet;
+use std::fs;
+#[cfg(target_family = "unix")]
+use std::os::fd::RawFd;
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use hypreact_config::authoring_layout::{
     AuthoringLayoutService, AuthoringLayoutServiceError, PreparedLayoutEvaluation,
@@ -16,21 +23,33 @@ use hypreact_core::resize::{
     ResizeDirection, apply_resize_step, gc_resize_state, scale_authored_share_units,
     select_resize_candidate,
 };
+use hypreact_core::runtime::artifact_state::{
+    ArtifactGraph, ArtifactKey, ArtifactRecord, ArtifactRegistry,
+};
 use hypreact_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheets, SelectedLayout,
 };
+use hypreact_core::runtime::runtime_kind::RuntimeKind;
 use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 use hypreact_core::wm::WindowGeometry;
 use hypreact_core::wm::WmModel;
 use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
-use hypreact_css::analysis::{CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet};
+use hypreact_css::analysis::{
+    CssAnalysis, CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet,
+};
 use hypreact_scene::Display;
 use hypreact_scene::FlexDirectionValue;
 use hypreact_scene::ast::ValidatedLayoutTree;
 use hypreact_scene::pipeline::SceneCache;
 use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
+use tracing::{debug, info};
+
+use hypreact_runtime_js_native::{decode_runtime_graph_payload, module_graph_execution_key};
 
 mod runtime_factory;
+mod source_watcher;
+
+use source_watcher::SourceWatcher;
 
 const DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX: f32 = 120.0;
 const FALLBACK_LAYOUT_STYLESHEET: &str =
@@ -79,6 +98,13 @@ impl LayoutRuntimePaths {
 pub struct LayoutRuntimeService {
     service: AuthoringLayoutService,
     paths: LayoutRuntimePaths,
+    loaded_config: Option<Config>,
+    watched_files: BTreeSet<PathBuf>,
+    watched_fingerprints: Vec<(PathBuf, String)>,
+    source_watcher: Option<SourceWatcher>,
+    stylesheet_analysis_cache: ArtifactRegistry<CssAnalysis>,
+    artifact_graph: ArtifactGraph,
+    last_reload_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -154,6 +180,9 @@ pub enum LayoutRuntimeError {
     Config(#[from] LayoutConfigError),
     #[error(transparent)]
     Service(#[from] AuthoringLayoutServiceError),
+    #[cfg(target_family = "unix")]
+    #[error("source watcher failed: {0}")]
+    Watcher(std::io::Error),
 }
 
 impl LayoutRuntimeService {
@@ -162,15 +191,40 @@ impl LayoutRuntimeService {
             &paths.config_paths,
             runtime_factory::build_runtime_bundle(&paths.config_paths)?,
         )?;
-        Ok(Self { service, paths })
+        let watched_files =
+            watched_source_paths(&service, None, &paths.config_paths.authored_config);
+        let watched_fingerprints = snapshot_watched_fingerprints(&watched_files);
+        Ok(Self {
+            service,
+            paths,
+            loaded_config: None,
+            watched_files,
+            watched_fingerprints,
+            source_watcher: None,
+            stylesheet_analysis_cache: ArtifactRegistry::new(),
+            artifact_graph: ArtifactGraph::new(),
+            last_reload_at: None,
+        })
     }
 
     pub fn paths(&self) -> &LayoutRuntimePaths {
         &self.paths
     }
 
-    pub fn load_config(&self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
-        Ok(LoadedLayoutConfig { config: self.service.load_config(&self.paths.config_paths)? })
+    fn ensure_loaded_config(&mut self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
+        if let Some(config) = self.loaded_config.clone() {
+            return Ok(LoadedLayoutConfig { config });
+        }
+
+        self.load_config()
+    }
+
+    pub fn load_config(&mut self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
+        let loaded =
+            LoadedLayoutConfig { config: self.service.load_config(&self.paths.config_paths)? };
+        self.loaded_config = Some(loaded.config.clone());
+        self.refresh_watched_paths_and_hashes();
+        Ok(loaded)
     }
 
     pub fn load_authored_config(&self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
@@ -180,7 +234,68 @@ impl LayoutRuntimeService {
     }
 
     pub fn reload_config(&mut self) -> Result<LoadedLayoutConfig, LayoutRuntimeError> {
-        Ok(LoadedLayoutConfig { config: self.service.reload_config()? })
+        let loaded = LoadedLayoutConfig { config: self.service.reload_config()? };
+        self.invalidate_layout_style_artifacts();
+        self.loaded_config = Some(loaded.config.clone());
+        self.refresh_watched_paths_and_hashes();
+        self.last_reload_at = Some(Instant::now());
+        Ok(loaded)
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn source_change_fd(&mut self) -> Result<RawFd, LayoutRuntimeError> {
+        self.ensure_source_watcher()?;
+        Ok(self.source_watcher.as_ref().expect("source watcher initialized").signal_fd())
+    }
+
+    #[cfg(not(target_family = "unix"))]
+    pub fn source_change_fd(&mut self) -> Result<i32, LayoutRuntimeError> {
+        Ok(-1)
+    }
+
+    pub fn drain_source_changes(&mut self) -> Result<bool, LayoutRuntimeError> {
+        #[cfg(target_family = "unix")]
+        self.drain_source_change_events()?;
+
+        if self.last_reload_at.is_some_and(|instant| instant.elapsed() < Duration::from_millis(120))
+        {
+            debug!("live-reload poll skipped due to debounce window");
+            return Ok(false);
+        }
+
+        let current_fingerprints = snapshot_watched_fingerprints(&self.watched_files);
+        let prepared_cache_stale = authored_sources_newer_than_prepared_cache(
+            &self.paths.config_paths.authored_config,
+            &self.paths.config_paths.prepared_config,
+        );
+        debug!(
+            watched_paths = ?self.watched_files,
+            watched_fingerprint_count = current_fingerprints.len(),
+            "live-reload poll snapshot"
+        );
+        if current_fingerprints == self.watched_fingerprints && !prepared_cache_stale {
+            return Ok(false);
+        }
+
+        if prepared_cache_stale {
+            info!("live-reload detected stale prepared cache relative to authored source tree");
+        }
+
+        for (path, old_fingerprint, new_fingerprint) in
+            diff_watched_fingerprints(&self.watched_fingerprints, &current_fingerprints)
+        {
+            info!(
+                path = %path.display(),
+                old_fingerprint,
+                new_fingerprint,
+                "live-reload detected watched source change"
+            );
+        }
+
+        self.watched_fingerprints = current_fingerprints;
+        let _ = self.reload_config()?;
+        info!("live-reload reloaded config after watched source change");
+        Ok(true)
     }
 
     pub fn evaluate_workspace(
@@ -189,10 +304,12 @@ impl LayoutRuntimeService {
         state: &StateSnapshot,
         workspace: &WorkspaceSnapshot,
     ) -> Result<Option<LayoutWorkspaceEvaluation>, LayoutRuntimeError> {
-        Ok(self
+        let result = self
             .service
             .evaluate_prepared_for_workspace(config, state, workspace)?
-            .map(|evaluation| LayoutWorkspaceEvaluation { evaluation }))
+            .map(|evaluation| LayoutWorkspaceEvaluation { evaluation });
+        self.refresh_watched_paths();
+        Ok(result)
     }
 
     pub fn evaluate_workspace_scene(
@@ -246,7 +363,7 @@ impl LayoutRuntimeService {
                 Ok(Some(layout_workspace_scene(config, Some(evaluation), scene, Vec::new(), None)))
             }
             Err(error) => {
-                let diagnostic = scene_failure_diagnostic(&evaluation.artifact, &error);
+                let diagnostic = scene_failure_diagnostic(self, &evaluation.artifact, &error);
                 let scene = build_fallback_scene(
                     config,
                     state,
@@ -263,6 +380,432 @@ impl LayoutRuntimeService {
                 )))
             }
         }
+    }
+
+    fn refresh_watched_paths(&mut self) {
+        self.watched_files = watched_source_paths(
+            &self.service,
+            self.loaded_config.as_ref(),
+            &self.paths.config_paths.authored_config,
+        );
+        self.rebuild_source_watcher_if_supported();
+        debug!(watched_paths = ?self.watched_files, "refreshed live-reload watched paths");
+    }
+
+    fn refresh_watched_paths_without_rebuilding_watcher(&mut self) {
+        self.watched_files = watched_source_paths(
+            &self.service,
+            self.loaded_config.as_ref(),
+            &self.paths.config_paths.authored_config,
+        );
+        debug!(watched_paths = ?self.watched_files, "refreshed live-reload watched paths");
+    }
+
+    fn rebuild_source_watcher_if_supported(&mut self) {
+        #[cfg(target_family = "unix")]
+        if let Err(error) = self.rebuild_source_watcher() {
+            debug!(error = %error, "failed to rebuild source watcher");
+        }
+    }
+
+    fn invalidate_layout_style_artifacts(&mut self) {
+        let layout_keys = self
+            .artifact_graph
+            .dependents_of(&ArtifactKey::config("authoring-config"))
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in layout_keys {
+            self.artifact_graph.invalidate_dependents_of(&key, &mut self.stylesheet_analysis_cache);
+            self.artifact_graph.remove(&key);
+        }
+        self.stylesheet_analysis_cache.clear();
+        self.artifact_graph.clear();
+    }
+
+    fn refresh_watched_paths_and_hashes(&mut self) {
+        self.refresh_watched_paths();
+        self.watched_fingerprints = snapshot_watched_fingerprints(&self.watched_files);
+    }
+}
+
+#[cfg(target_family = "unix")]
+impl LayoutRuntimeService {
+    fn ensure_source_watcher(&mut self) -> Result<(), LayoutRuntimeError> {
+        if self.source_watcher.is_some() {
+            return Ok(());
+        }
+
+        self.source_watcher =
+            Some(SourceWatcher::new(&self.watched_files).map_err(LayoutRuntimeError::Watcher)?);
+        Ok(())
+    }
+
+    fn rebuild_source_watcher(&mut self) -> Result<(), LayoutRuntimeError> {
+        self.source_watcher =
+            Some(SourceWatcher::new(&self.watched_files).map_err(LayoutRuntimeError::Watcher)?);
+        Ok(())
+    }
+
+    fn drain_source_change_events(&mut self) -> Result<(), LayoutRuntimeError> {
+        self.ensure_source_watcher()?;
+        if let Some(watcher) = self.source_watcher.as_mut() {
+            let had_event = watcher.drain().map_err(LayoutRuntimeError::Watcher)?;
+            if had_event {
+                self.refresh_watched_paths_without_rebuilding_watcher();
+                self.rebuild_source_watcher_if_supported();
+            }
+        }
+        Ok(())
+    }
+}
+
+fn authored_sources_newer_than_prepared_cache(
+    authored_config: &Path,
+    prepared_config: &Path,
+) -> bool {
+    let Some(authored_root) = authored_config.parent() else {
+        return false;
+    };
+    let Some(prepared_root) = prepared_config.parent() else {
+        return false;
+    };
+
+    let newest_authored = newest_tree_timestamp(authored_root, &[".hypreact-build", ".sdk"]);
+    let newest_prepared = newest_tree_timestamp(prepared_root, &[".quickjs-bytecode"]);
+    match (newest_authored, newest_prepared) {
+        (Some(authored), Some(prepared)) => authored > prepared,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn newest_tree_timestamp(root: &Path, excluded_dirs: &[&str]) -> Option<std::time::SystemTime> {
+    let mut newest = None;
+    collect_newest_tree_timestamp(root, excluded_dirs, &mut newest);
+    newest
+}
+
+fn collect_newest_tree_timestamp(
+    root: &Path,
+    excluded_dirs: &[&str],
+    newest: &mut Option<std::time::SystemTime>,
+) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+
+        if file_type.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if excluded_dirs.iter().any(|excluded| *excluded == name) {
+                continue;
+            }
+            collect_newest_tree_timestamp(&path, excluded_dirs, newest);
+            continue;
+        }
+
+        if let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) {
+            if newest.is_none_or(|current| modified > current) {
+                *newest = Some(modified);
+            }
+        }
+    }
+}
+
+fn watched_source_paths(
+    service: &AuthoringLayoutService,
+    config: Option<&Config>,
+    authored_config: &Path,
+) -> BTreeSet<PathBuf> {
+    let mut watched = BTreeSet::new();
+    watched.extend(recursive_authored_source_paths(authored_config));
+    let authored_root = authored_config.parent().unwrap_or_else(|| Path::new("."));
+
+    if let Some(config) = config {
+        if let Some(path) = config.global_stylesheet_path.as_ref() {
+            if let Some(path) = resolve_authored_watch_path(authored_root, path) {
+                watched.insert(path);
+            }
+        }
+
+        for layout in &config.layouts {
+            if let Some(path) = layout.stylesheet_path.as_ref() {
+                if let Some(path) = resolve_authored_watch_path(authored_root, path) {
+                    watched.insert(path);
+                }
+            }
+        }
+    }
+
+    for layout in service.cached_layouts() {
+        for dependency in &layout.dependencies {
+            if let Some(path) = resolve_authored_watch_path(authored_root, &dependency.path) {
+                watched.insert(path);
+            }
+        }
+    }
+
+    watched
+}
+
+fn resolve_authored_watch_path(authored_root: &Path, path: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(path);
+    let resolved = if path.is_absolute() { path } else { authored_root.join(path) };
+
+    if path_uses_runtime_cache_dir(&resolved) || !resolved.exists() {
+        return None;
+    }
+
+    Some(resolved)
+}
+
+fn path_uses_runtime_cache_dir(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(component, std::path::Component::Normal(name) if name == ".hypreact-build" || name == ".sdk")
+    })
+}
+
+fn recursive_authored_source_paths(authored_config: &Path) -> BTreeSet<PathBuf> {
+    let mut watched = BTreeSet::new();
+    let Some(root) = authored_config.parent() else {
+        watched.insert(authored_config.to_path_buf());
+        return watched;
+    };
+
+    collect_authored_source_paths(root, &mut watched);
+    watched.insert(authored_config.to_path_buf());
+    watched
+}
+
+fn collect_authored_source_paths(root: &Path, watched: &mut BTreeSet<PathBuf>) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+
+        if file_type.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name == ".hypreact-build" || name == ".sdk" {
+                continue;
+            }
+            collect_authored_source_paths(&path, watched);
+            continue;
+        }
+
+        watched.insert(path);
+    }
+}
+
+fn snapshot_watched_fingerprints(watched_files: &BTreeSet<PathBuf>) -> Vec<(PathBuf, String)> {
+    watched_files
+        .iter()
+        .filter_map(|path| {
+            fs::metadata(path).ok().and_then(|metadata| {
+                let modified = metadata.modified().ok()?;
+                let modified = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+                #[cfg(target_family = "unix")]
+                let changed = format!("{}:{}", metadata.ctime(), metadata.ctime_nsec());
+                #[cfg(not(target_family = "unix"))]
+                let changed = String::new();
+                Some((
+                    path.clone(),
+                    format!("{}:{}:{}", metadata.len(), modified.as_nanos(), changed),
+                ))
+            })
+        })
+        .collect()
+}
+
+fn diff_watched_fingerprints(
+    previous: &[(PathBuf, String)],
+    current: &[(PathBuf, String)],
+) -> Vec<(PathBuf, String, String)> {
+    let previous = previous.iter().cloned().collect::<std::collections::BTreeMap<_, _>>();
+    current
+        .iter()
+        .filter_map(|(path, new_hash)| {
+            previous.get(path).and_then(|old_hash| {
+                (old_hash != new_hash).then(|| (path.clone(), old_hash.clone(), new_hash.clone()))
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod runtime_watch_tests {
+    use super::*;
+    use hypreact_core::WorkspaceId;
+    use std::thread;
+
+    #[test]
+    fn poll_watches_authored_source_root_except_runtime_cache_dirs() {
+        let root = tempfile::TempDir::new().unwrap();
+        let authored = root.path().join("config.lua");
+        let layout_dir = root.path().join("layouts/master-stack");
+        let build_dir = root.path().join(".hypreact-build/layouts/master-stack");
+        let sdk_dir = root.path().join(".sdk/runtime");
+        fs::create_dir_all(&layout_dir).unwrap();
+        fs::create_dir_all(&build_dir).unwrap();
+        fs::create_dir_all(&sdk_dir).unwrap();
+        fs::write(
+            &authored,
+            "return { defaultLayout = 'master-stack', layoutRules = { { index = 0, layout = 'master-stack' } } }",
+        )
+        .unwrap();
+        fs::write(
+            layout_dir.join("index.lua"),
+            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
+        )
+        .unwrap();
+        fs::write(layout_dir.join("index.css"), ".master { flex: 1; }").unwrap();
+        fs::write(root.path().join("unrelated.ts"), "export default 1;").unwrap();
+        fs::write(build_dir.join("index.js"), "export default 1;").unwrap();
+        fs::write(sdk_dir.join("generated.lua"), "return {}").unwrap();
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&authored)).unwrap();
+        let loaded = service.reload_config().unwrap();
+        let mut model = WmModel::default();
+        model.upsert_workspace(WorkspaceId::from("1"), "1".to_string());
+        model.set_current_workspace(WorkspaceId::from("1"));
+        let snapshot = state_snapshot_for_model(&model);
+        let workspace = snapshot.current_workspace().cloned().unwrap();
+        let _ = service.evaluate_workspace_scene(&loaded.config, &snapshot, &workspace);
+
+        assert!(service.watched_files.contains(&authored));
+        assert!(service.watched_files.contains(&layout_dir.join("index.lua")));
+        assert!(service.watched_files.contains(&layout_dir.join("index.css")));
+        assert!(service.watched_files.contains(&root.path().join("unrelated.ts")));
+        assert!(!service.watched_files.contains(&build_dir.join("index.js")));
+        assert!(!service.watched_files.contains(&sdk_dir.join("generated.lua")));
+    }
+
+    #[test]
+    fn poll_debounces_immediate_reloads() {
+        let root = tempfile::TempDir::new().unwrap();
+        let authored = root.path().join("config.lua");
+        let layout_dir = root.path().join("layouts/master-stack");
+        fs::create_dir_all(&layout_dir).unwrap();
+        fs::write(
+            &authored,
+            "return { defaultLayout = 'master-stack', layoutRules = { { index = 0, layout = 'master-stack' } } }",
+        )
+        .unwrap();
+        fs::write(
+            layout_dir.join("index.lua"),
+            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
+        )
+        .unwrap();
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&authored)).unwrap();
+        let _ = service.reload_config().unwrap();
+        fs::write(
+            layout_dir.join("index.lua"),
+            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'changed' }) { h.slot({ id = 'main' }) } end",
+        )
+        .unwrap();
+
+        assert!(!service.drain_source_changes().unwrap());
+
+        thread::sleep(Duration::from_millis(130));
+        assert!(service.drain_source_changes().unwrap());
+    }
+
+    #[test]
+    fn poll_detects_same_length_edit_after_timestamp_resolution_window() {
+        let root = tempfile::TempDir::new().unwrap();
+        let authored = root.path().join("config.lua");
+        let layout_dir = root.path().join("layouts/master-stack");
+        fs::create_dir_all(&layout_dir).unwrap();
+        fs::write(
+            &authored,
+            "return { defaultLayout = 'master-stack', layoutRules = { { index = 0, layout = 'master-stack' } } }",
+        )
+        .unwrap();
+        let layout_path = layout_dir.join("index.lua");
+        fs::write(&layout_path, "return { take = 1 }").unwrap();
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&authored)).unwrap();
+        let _ = service.load_config().unwrap();
+
+        std::thread::sleep(Duration::from_secs(1));
+        fs::write(&layout_path, "return { take = 2 }").unwrap();
+
+        assert!(service.drain_source_changes().unwrap());
+    }
+
+    #[test]
+    fn watcher_expands_coverage_after_new_child_directory_event() {
+        let root = tempfile::TempDir::new().unwrap();
+        let authored = root.path().join("config.lua");
+        let layout_dir = root.path().join("layouts/master-stack");
+        fs::create_dir_all(&layout_dir).unwrap();
+        fs::write(
+            &authored,
+            "return { defaultLayout = 'master-stack', layoutRules = { { index = 0, layout = 'master-stack' } } }",
+        )
+        .unwrap();
+        fs::write(layout_dir.join("index.lua"), "return { take = 1 }").unwrap();
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&authored)).unwrap();
+        let _ = service.load_config().unwrap();
+
+        let nested_dir = layout_dir.join("nested");
+        fs::create_dir(&nested_dir).unwrap();
+        std::thread::sleep(Duration::from_millis(130));
+
+        assert!(!service.drain_source_changes().unwrap());
+
+        fs::write(nested_dir.join("child.lua"), "return { nested = true }").unwrap();
+        std::thread::sleep(Duration::from_millis(130));
+
+        assert!(service.drain_source_changes().unwrap());
+    }
+
+    #[test]
+    fn js_config_watch_set_excludes_prepared_runtime_artifacts() {
+        let config_path =
+            PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
+
+        let _ = service.load_config().unwrap();
+
+        assert!(
+            service
+                .watched_files
+                .contains(&config_path.parent().unwrap().join("layouts/master-stack/index.tsx"))
+        );
+        assert!(
+            service
+                .watched_files
+                .contains(&config_path.parent().unwrap().join("layouts/master-stack/index.css"))
+        );
+        assert!(!service.watched_files.iter().any(|path| path
+            .components()
+            .any(|component| matches!(component, std::path::Component::Normal(name) if name == ".hypreact-build"))));
+        assert!(
+            !service
+                .watched_files
+                .iter()
+                .any(|path| path == Path::new("layouts/master-stack/index.js"))
+        );
     }
 }
 
@@ -282,7 +825,7 @@ pub fn layout_status_for_model(
     model: &mut WmModel,
 ) -> Result<LayoutStatusSnapshot, LayoutRuntimeError> {
     let config_path = Some(service.paths().config_paths.authored_config.display().to_string());
-    let loaded = service.load_config()?;
+    let loaded = service.ensure_loaded_config()?;
 
     apply_layout_selection_to_model(model, &loaded.config);
     let snapshot = state_snapshot_for_model(model);
@@ -311,7 +854,9 @@ pub fn layout_status_for_model(
                         .evaluation
                         .as_ref()
                         .map(|evaluation| {
-                            diagnostics_for_stylesheets(&evaluation.artifact.stylesheets)
+                            record_stylesheet_dependencies(service, &evaluation.artifact);
+                            record_js_runtime_dependencies(service, &evaluation.artifact);
+                            diagnostics_for_stylesheets(service, &evaluation.artifact.stylesheets)
                         })
                         .unwrap_or_default();
                     diagnostics.extend(evaluation.diagnostics.clone());
@@ -483,6 +1028,7 @@ fn build_fallback_scene(
                 source: FALLBACK_LAYOUT_STYLESHEET.to_string(),
             }),
         },
+        dependencies: vec![],
     };
 
     build_scene_from_layout(
@@ -572,11 +1118,12 @@ fn layout_failure_diagnostic(path: Option<&Path>, message: String) -> LayoutDiag
 }
 
 fn scene_failure_diagnostic(
+    service: &mut LayoutRuntimeService,
     artifact: &PreparedLayout,
     error: &LayoutConfigError,
 ) -> LayoutDiagnostic {
     if let LayoutConfigError::EvaluateAuthoredConfig { message, .. } = error {
-        if let Some(diagnostic) = css_scene_failure_diagnostic(artifact, message) {
+        if let Some(diagnostic) = css_scene_failure_diagnostic(service, artifact, message) {
             return diagnostic;
         }
     }
@@ -588,12 +1135,14 @@ fn scene_failure_diagnostic(
 }
 
 fn css_scene_failure_diagnostic(
+    service: &mut LayoutRuntimeService,
     artifact: &PreparedLayout,
     scene_error_message: &str,
 ) -> Option<LayoutDiagnostic> {
     let stylesheet = artifact.stylesheets.layout.as_ref()?;
-    let diagnostic = analyze_stylesheet(&stylesheet.source)
+    let diagnostic = stylesheet_analysis(service, &stylesheet.path, &stylesheet.source)
         .diagnostics
+        .clone()
         .into_iter()
         .find(|diagnostic| matches!(diagnostic.severity, CssDiagnosticSeverity::Error))?;
 
@@ -634,12 +1183,14 @@ fn css_scene_failure_diagnostic(
 }
 
 fn diagnostics_for_stylesheets(
+    service: &mut LayoutRuntimeService,
     stylesheets: &hypreact_core::runtime::prepared_layout::PreparedStylesheets,
 ) -> Vec<LayoutDiagnostic> {
     let mut diagnostics = Vec::new();
 
     if let Some(stylesheet) = stylesheets.global.as_ref() {
         diagnostics.extend(layout_diagnostics_from_stylesheet(
+            service,
             &stylesheet.source,
             Some(stylesheet.path.as_str()),
         ));
@@ -647,6 +1198,7 @@ fn diagnostics_for_stylesheets(
 
     if let Some(stylesheet) = stylesheets.layout.as_ref() {
         diagnostics.extend(layout_diagnostics_from_stylesheet(
+            service,
             &stylesheet.source,
             Some(stylesheet.path.as_str()),
         ));
@@ -655,9 +1207,14 @@ fn diagnostics_for_stylesheets(
     diagnostics
 }
 
-fn layout_diagnostics_from_stylesheet(source: &str, path: Option<&str>) -> Vec<LayoutDiagnostic> {
-    analyze_stylesheet(source)
+fn layout_diagnostics_from_stylesheet(
+    service: &mut LayoutRuntimeService,
+    source: &str,
+    path: Option<&str>,
+) -> Vec<LayoutDiagnostic> {
+    stylesheet_analysis(service, path.unwrap_or("<inline-css>"), source)
         .diagnostics
+        .clone()
         .into_iter()
         .map(|diagnostic| LayoutDiagnostic {
             source: "css".into(),
@@ -690,6 +1247,78 @@ fn layout_diagnostics_from_stylesheet(source: &str, path: Option<&str>) -> Vec<L
         .collect()
 }
 
+fn stylesheet_analysis<'a>(
+    service: &'a mut LayoutRuntimeService,
+    cache_key: &str,
+    source: &str,
+) -> &'a CssAnalysis {
+    let source_hash = stylesheet_source_hash(source);
+    let artifact_key = ArtifactKey::stylesheet_analysis(cache_key.to_string());
+    let cache_miss = service
+        .stylesheet_analysis_cache
+        .get(&artifact_key)
+        .is_none_or(|cached| cached.fingerprint != source_hash);
+    if cache_miss {
+        service.stylesheet_analysis_cache.insert(
+            artifact_key.clone(),
+            ArtifactRecord::new(source_hash, analyze_stylesheet(source)),
+        );
+    }
+    &service.stylesheet_analysis_cache.get(&artifact_key).expect("stylesheet analysis cached").value
+}
+
+fn stylesheet_source_hash(source: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    source.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn record_stylesheet_dependencies(service: &mut LayoutRuntimeService, artifact: &PreparedLayout) {
+    let layout_key = ArtifactKey::layout(artifact.selected.name.clone());
+    let mut stylesheet_keys = Vec::new();
+
+    if let Some(stylesheet) = artifact.stylesheets.global.as_ref() {
+        stylesheet_keys.push(ArtifactKey::stylesheet_analysis(stylesheet.path.clone()));
+    }
+    if let Some(stylesheet) = artifact.stylesheets.layout.as_ref() {
+        stylesheet_keys.push(ArtifactKey::stylesheet_analysis(stylesheet.path.clone()));
+    }
+
+    service.artifact_graph.replace_edges(layout_key, stylesheet_keys);
+}
+
+fn record_js_runtime_dependencies(service: &mut LayoutRuntimeService, artifact: &PreparedLayout) {
+    if artifact.selected.runtime != RuntimeKind::Js {
+        return;
+    }
+
+    let Ok(graph) = decode_runtime_graph_payload(&artifact.runtime_payload) else {
+        return;
+    };
+
+    let graph_key = module_graph_execution_key(&graph);
+    let layout_key = ArtifactKey::layout(artifact.selected.name.clone());
+    let module_graph_key = ArtifactKey::js_module_graph(graph_key.clone());
+    let bytecode_key = ArtifactKey::js_bytecode(graph_key);
+
+    let existing_stylesheet_dependents = service
+        .artifact_graph
+        .dependents_of(&layout_key)
+        .filter(|key| {
+            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut layout_dependents = existing_stylesheet_dependents;
+    layout_dependents.push(module_graph_key.clone());
+    service.artifact_graph.replace_edges(layout_key, layout_dependents);
+    service.artifact_graph.replace_edges(module_graph_key, [bytecode_key]);
+}
+
 pub fn placement_for_workspace(
     service: &mut LayoutRuntimeService,
     model: &WmModel,
@@ -718,7 +1347,7 @@ pub fn directional_focus_candidate(
     model: &mut WmModel,
     direction: NavigationDirection,
 ) -> Result<Option<hypreact_core::WindowId>, LayoutRuntimeError> {
-    let loaded = service.load_config()?;
+    let loaded = service.ensure_loaded_config()?;
 
     apply_layout_selection_to_model(model, &loaded.config);
     let snapshot = state_snapshot_for_model(model);
@@ -927,7 +1556,7 @@ pub fn resize_direction_debug(
         });
     };
 
-    let loaded = service.load_config()?;
+    let loaded = service.ensure_loaded_config()?;
     apply_layout_selection_to_model(model, &loaded.config);
     let snapshot = state_snapshot_for_model(model);
     let Some(workspace) = snapshot.current_workspace().cloned() else {
@@ -1428,7 +2057,9 @@ fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<hypreact_
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::Path;
+    use std::path::PathBuf;
 
     use hypreact_core::WindowId;
     use hypreact_core::focus::FocusScopePath;
@@ -1438,6 +2069,29 @@ mod tests {
     use hypreact_core::{OutputId, WorkspaceId};
 
     use super::*;
+
+    fn isolated_test_config_path() -> PathBuf {
+        let source_root = PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config");
+        let temp_root = tempfile::TempDir::new().expect("temp test config root");
+        let root = temp_root.keep();
+        copy_dir_recursively(&source_root, &root).expect("copy test config fixture");
+        root.join("config.ts")
+    }
+
+    fn copy_dir_recursively(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+        fs::create_dir_all(to)?;
+        for entry in fs::read_dir(from)? {
+            let entry = entry?;
+            let source = entry.path();
+            let destination = to.join(entry.file_name());
+            if entry.file_type()?.is_dir() {
+                copy_dir_recursively(&source, &destination)?;
+            } else {
+                fs::copy(&source, &destination)?;
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn fallback_source_layout_matches_default_workspace_shape() {
@@ -1476,7 +2130,12 @@ mod tests {
 
     #[test]
     fn css_failure_diagnostic_is_classified_as_css() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
         let diagnostic = css_scene_failure_diagnostic(
+            &mut service,
             &PreparedLayout {
                 selected: SelectedLayout {
                     name: "test".into(),
@@ -1492,6 +2151,7 @@ mod tests {
                         source: "slot { display: flex; }".into(),
                     }),
                 },
+                dependencies: vec![],
             },
             "unsupported selector `slot`",
         )
@@ -1500,6 +2160,117 @@ mod tests {
         assert_eq!(diagnostic.source, "css");
         assert_eq!(diagnostic.code, "unsupportedSelector");
         assert!(diagnostic.message.contains("using fallback layout"));
+    }
+
+    #[test]
+    fn stylesheet_analysis_cache_reuses_identical_source() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
+
+        let first = layout_diagnostics_from_stylesheet(
+            &mut service,
+            "window { text-align: center; }",
+            Some("layouts/test/index.css"),
+        );
+        let second = layout_diagnostics_from_stylesheet(
+            &mut service,
+            "window { text-align: center; }",
+            Some("layouts/test/index.css"),
+        );
+
+        assert_eq!(first, second);
+        assert_eq!(service.stylesheet_analysis_cache.len(), 1);
+    }
+
+    #[test]
+    fn records_layout_to_stylesheet_dependency_edges() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
+        let artifact = PreparedLayout {
+            selected: SelectedLayout {
+                name: "master-stack".into(),
+                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.tsx".into(),
+            },
+            runtime_payload: serde_json::Value::Null,
+            stylesheets: PreparedStylesheets {
+                global: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                    path: "styles/global.css".into(),
+                    source: "window { text-align: left; }".into(),
+                }),
+                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                    path: "layouts/master-stack/index.css".into(),
+                    source: "window { text-align: center; }".into(),
+                }),
+            },
+            dependencies: vec![],
+        };
+
+        record_stylesheet_dependencies(&mut service, &artifact);
+
+        let dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::layout("master-stack"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(dependents.len(), 2);
+        assert!(dependents.contains(&ArtifactKey::stylesheet_analysis("styles/global.css")));
+        assert!(
+            dependents
+                .contains(&ArtifactKey::stylesheet_analysis("layouts/master-stack/index.css"))
+        );
+    }
+
+    #[test]
+    fn records_layout_to_js_graph_and_bytecode_dependency_edges() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
+        let graph = hypreact_runtime_js_native::JavaScriptModuleGraph {
+            entry: "layouts/master-stack/index.js".into(),
+            modules: vec![hypreact_runtime_js_native::JavaScriptModule {
+                specifier: "layouts/master-stack/index.js".into(),
+                source: "export default () => ({ type: 'workspace', children: [] });".into(),
+                resolved_imports: BTreeMap::new(),
+            }],
+        };
+        let graph_execution_key = module_graph_execution_key(&graph);
+        let artifact = PreparedLayout {
+            selected: SelectedLayout {
+                name: "master-stack".into(),
+                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.tsx".into(),
+            },
+            runtime_payload: hypreact_runtime_js_native::encode_runtime_graph_payload(&graph, &[]),
+            stylesheets: PreparedStylesheets::default(),
+            dependencies: vec![],
+        };
+
+        record_js_runtime_dependencies(&mut service, &artifact);
+
+        let layout_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::layout("master-stack"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(
+            layout_dependents.contains(&ArtifactKey::js_module_graph(graph_execution_key.clone()))
+        );
+
+        let graph_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::js_module_graph(graph_execution_key.clone()))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(graph_dependents.contains(&ArtifactKey::js_bytecode(graph_execution_key)));
     }
 
     #[test]
@@ -1594,9 +2365,9 @@ mod tests {
 
     #[test]
     fn move_tiled_window_changes_master_stack_placement_order() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
@@ -1646,10 +2417,67 @@ mod tests {
     }
 
     #[test]
-    fn workspace_scene_derives_partition_tree_for_master_stack_layout() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+    fn master_stack_take_change_updates_two_window_placement() {
+        let config_path = isolated_test_config_path();
+        let layout_path =
+            config_path.parent().expect("config root").join("layouts/master-stack/index.tsx");
+
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+
+        let mut model = WmModel::default();
+        model.upsert_output(
+            OutputId::from("eDP-1"),
+            "eDP-1".to_string(),
+            1600,
+            1000,
+            Some(WorkspaceId::from("1")),
+        );
+        model.upsert_workspace(WorkspaceId::from("1"), "1".to_string());
+        model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
+        model.set_workspace_layout_space(
+            WorkspaceId::from("1"),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+        );
+        model.set_current_output(OutputId::from("eDP-1"));
+        model.set_current_workspace(WorkspaceId::from("1"));
+
+        for id in ["master", "stack"] {
+            let window_id = WindowId::from(id.to_string());
+            model.insert_window(
+                window_id.clone(),
+                Some(WorkspaceId::from("1")),
+                Some(OutputId::from("eDP-1")),
+            );
+            model.set_window_mapped(window_id, true);
+        }
+
+        let before = placement_for_workspace(&mut service, &model, "1")
+            .expect("placement before take change")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        let updated = fs::read_to_string(&layout_path)
+            .expect("master-stack source")
+            .replace("take={1}", "take={2}");
+        fs::write(&layout_path, updated).expect("updated master-stack take");
+
+        service.reload_config().expect("reload config after take change");
+
+        let after = placement_for_workspace(&mut service, &model, "1")
+            .expect("placement after take change")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert_ne!(before, after, "changing master slot take should change two-window placement");
+    }
+
+    #[test]
+    fn workspace_scene_derives_partition_tree_for_master_stack_layout() {
+        let config_path = isolated_test_config_path();
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
         let loaded = service.load_config().expect("loaded config");
 
@@ -1836,9 +2664,9 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_workspace_resize_state() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
@@ -1934,9 +2762,9 @@ mod tests {
 
     #[test]
     fn resize_direction_updates_nested_stack_partition_state() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
         let loaded = service.load_config().expect("loaded config");
 
@@ -2028,9 +2856,9 @@ mod tests {
 
     #[test]
     fn repeated_vertical_resize_stops_before_collapsing_stack_branches() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
@@ -2080,9 +2908,9 @@ mod tests {
 
     #[test]
     fn resize_direction_matches_live_four_window_stack_focus_sequence() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();

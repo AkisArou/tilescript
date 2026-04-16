@@ -22,10 +22,11 @@ pub fn load_layout_config(
     handle: &mut HypreactRuntimeHandle,
     config_path: String,
 ) -> Result<LayoutRuntimeStatus, FfiError> {
-    let service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+    let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
         std::path::PathBuf::from(&config_path),
     ))
     .map_err(|error| FfiError::InvalidJson(error.to_string()))?;
+    let _ = service.load_config().map_err(|error| FfiError::InvalidJson(error.to_string()))?;
 
     handle.layout_runtime =
         Some(LayoutRuntimeState { config_path: std::path::PathBuf::from(config_path), service });
@@ -44,6 +45,32 @@ pub fn reload_layout_config(
     }
 
     Ok(layout_runtime_status(handle))
+}
+
+pub fn drain_layout_runtime_source_changes(
+    handle: &mut HypreactRuntimeHandle,
+) -> Result<bool, FfiError> {
+    let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
+        return Ok(false);
+    };
+
+    layout_runtime
+        .service
+        .drain_source_changes()
+        .map_err(|error| FfiError::InvalidJson(error.to_string()))
+}
+
+pub fn layout_runtime_source_change_fd(
+    handle: &mut HypreactRuntimeHandle,
+) -> Result<i32, FfiError> {
+    let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
+        return Ok(-1);
+    };
+
+    layout_runtime
+        .service
+        .source_change_fd()
+        .map_err(|error| FfiError::InvalidJson(error.to_string()))
 }
 
 pub fn layout_runtime_status(handle: &mut HypreactRuntimeHandle) -> LayoutRuntimeStatus {

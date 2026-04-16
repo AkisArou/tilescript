@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use super::native_artifact::NativeDependencySnapshot;
 use super::runtime_kind::RuntimeKind;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,6 +18,8 @@ pub struct PreparedLayout {
     pub runtime_payload: serde_json::Value,
     #[serde(default)]
     pub stylesheets: PreparedStylesheets,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<NativeDependencySnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
