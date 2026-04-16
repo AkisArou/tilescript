@@ -9,7 +9,7 @@ use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::snapshot::WindowSnapshot;
 
 use crate::app_state::AppState;
-use crate::session::{PreviewDiagnostic, PreviewSessionState};
+use crate::session::PreviewSessionState;
 use crate::views::editor::EditorView;
 
 use super::scene::{body_style, frame_style, pane_style};
@@ -119,19 +119,6 @@ fn window_accent(window: &WindowSnapshot) -> String {
     PALETTE[hash % PALETTE.len()].to_string()
 }
 
-fn focused_window_chip_label(app_state: AppState) -> String {
-    let snapshot = app_state.session.get();
-    snapshot
-        .focused_window_id()
-        .as_ref()
-        .and_then(|window_id| snapshot.model.windows.get(window_id))
-        .map(|window| {
-            let app_id = window.app_id.as_deref().unwrap_or("preview");
-            app_id.to_string()
-        })
-        .unwrap_or_else(|| "preview".to_string())
-}
-
 fn claimed_visible_windows(session: &PreviewSessionState) -> Vec<WindowSnapshot> {
     let Some(scene) = session.scene.as_ref() else {
         return Vec::new();
@@ -188,24 +175,39 @@ fn preview_window_render_state_for_id(
     })
 }
 
-fn has_error_diagnostics(session: &PreviewSessionState) -> bool {
-    session.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error")
+fn preview_diagnostics_summary(session: &PreviewSessionState) -> Option<String> {
+    if let Some(error) = session.error.as_ref() {
+        return Some(error.clone());
+    }
+
+    let first = session.diagnostics.first()?;
+    let remaining = session.diagnostics.len().saturating_sub(1);
+
+    Some(if remaining == 0 {
+        format!("{} {} {}: {}", first.severity, first.code, first.path, first.message)
+    } else {
+        format!(
+            "{} {} {}: {} (+{} more)",
+            first.severity, first.code, first.path, first.message, remaining
+        )
+    })
 }
 
-const TOGGLE_BUTTON_BASE: &str = "border px-2 py-0.5 transition-colors duration-150";
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PreviewSurfaceMode {
-    Preview,
-    Editor,
-    Diagnostics,
-    Binds,
+fn preview_diagnostics_tone(session: &PreviewSessionState) -> &'static str {
+    if session.error.is_some()
+        || session.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error")
+    {
+        "error"
+    } else if !session.diagnostics.is_empty() {
+        "warning"
+    } else {
+        "idle"
+    }
 }
 
 #[component]
 pub fn PreviewView() -> impl IntoView {
     let app_state = expect_context::<AppState>();
-    let surface_mode = RwSignal::new(PreviewSurfaceMode::Preview);
 
     {
         let app_state = app_state;
@@ -219,10 +221,6 @@ pub fn PreviewView() -> impl IntoView {
             };
 
             let handle_keydown = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-                if surface_mode.get_untracked() != PreviewSurfaceMode::Preview {
-                    return;
-                }
-
                 if event.default_prevented() || should_ignore_preview_key_event(&event) {
                     return;
                 }
@@ -254,17 +252,15 @@ pub fn PreviewView() -> impl IntoView {
             <div class="grid min-h-0 gap-2">
                 <div class="border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border">
                     <div
-                        class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-terminal-topbar pr-2 text-xs text-terminal-dim"
+                        class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 bg-terminal-topbar px-2 text-xs text-terminal-dim"
                     >
-                        <PreviewWorkspaceTabs surface_mode=surface_mode />
-
-                        <div class="min-w-0 truncate px-2 text-center text-terminal-fg-strong"></div>
-
-                        <PreviewToolbar surface_mode=surface_mode />
+                        <PreviewWorkspaceTabs />
+                        <PreviewDiagnosticsBanner />
+                        <PreviewToolbar />
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-hidden">
-                        <PreviewSurfaceRouter surface_mode=surface_mode />
+                        <PreviewSceneSurface />
                     </div>
                 </div>
             </div>
@@ -274,25 +270,11 @@ pub fn PreviewView() -> impl IntoView {
 }
 
 #[component]
-fn OverlaySurface(children: Children) -> impl IntoView {
-    view! {
-        <div
-            class="relative h-full min-h-72 w-full overflow-hidden bg-terminal-bg"
-            style="background-image: linear-gradient(rgba(10, 10, 10, 0.4), rgba(10, 10, 10, 0.58)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
-        >
-            <div class="preview-layer absolute inset-[2.25rem] border border-terminal-border-strong bg-terminal-bg shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
-                <div class="h-full overflow-hidden">{children()}</div>
-            </div>
-        </div>
-    }
-}
-
-#[component]
-fn PreviewWorkspaceTabs(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
+fn PreviewWorkspaceTabs() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     view! {
-        <div class="flex min-w-0 items-center gap-0 overflow-x-auto">
+        <div class="flex min-w-0 items-center gap-0 overflow-x-auto py-1">
             {move || {
                 app_state
                     .session
@@ -307,13 +289,9 @@ fn PreviewWorkspaceTabs(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl Into
                             <button
                                 class=move || {
                                     if app_state.session.get().active_workspace_name() == current {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-[#2b2b2b] text-terminal-fg"
-                                        )
+                                        "border border-transparent bg-[#2b2b2b] px-2 py-0.5 text-terminal-fg transition-colors duration-150"
                                     } else {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-transparent text-terminal-faint hover:text-terminal-dim"
-                                        )
+                                        "border border-transparent bg-transparent px-2 py-0.5 text-terminal-faint transition-colors duration-150 hover:text-terminal-dim"
                                     }
                                 }
                                 on:click=move |_| {
@@ -327,21 +305,42 @@ fn PreviewWorkspaceTabs(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl Into
                     })
                     .collect_view()
             }}
-            <Show when=move || surface_mode.get() == PreviewSurfaceMode::Preview>
-                <span class="ml-2 min-w-0 truncate text-[12px] text-[#6f7277]">
-                    {move || focused_window_chip_label(app_state)}
-                </span>
-            </Show>
         </div>
     }
 }
 
 #[component]
-fn PreviewToolbar(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
+fn PreviewDiagnosticsBanner() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
     view! {
-        <div class="flex items-center gap-2 justify-self-end">
+        <div
+            class=move || {
+                let session = app_state.session.get();
+                match preview_diagnostics_tone(&session) {
+                    "error" => "min-w-0 truncate py-1 text-terminal-error",
+                    "warning" => "min-w-0 truncate py-1 text-terminal-warn",
+                    _ => "min-w-0 truncate py-1 text-terminal-faint",
+                }
+            }
+            title=move || preview_diagnostics_summary(&app_state.session.get()).unwrap_or_else(|| {
+                "No diagnostics. Preview keeps showing the last successful scene.".to_string()
+            })
+        >
+            {move || {
+                preview_diagnostics_summary(&app_state.session.get())
+                    .unwrap_or_else(|| "No diagnostics. Preview shows the live scene.".to_string())
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn PreviewToolbar() -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        <div class="flex items-center justify-self-end py-1">
             <div class="ui-select-wrap mr-1">
                 <select
                     class="ui-select"
@@ -377,241 +376,6 @@ fn PreviewToolbar(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
                     }}
                 </select>
             </div>
-
-            <PreviewSurfaceModeButton
-                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Preview)
-                label=Signal::derive(move || {
-                    if app_state.session.get().scene.is_some() { "Preview" } else { "" }
-                })
-                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Preview))
-            />
-
-            <PreviewSurfaceModeButton
-                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Editor)
-                label=Signal::derive(move || "Editor")
-                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Editor))
-            />
-
-            <button
-                class=move || {
-                    let session = app_state.session.get();
-                    let has_errors = has_error_diagnostics(&session);
-                    if surface_mode.get() == PreviewSurfaceMode::Diagnostics {
-                        if has_errors {
-                            format!(
-                                "{TOGGLE_BUTTON_BASE} border-terminal-error bg-terminal-error/12 text-terminal-error"
-                            )
-                        } else {
-                            format!(
-                                "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                            )
-                        }
-                    } else if has_errors {
-                        format!(
-                            "{TOGGLE_BUTTON_BASE} border-terminal-error/50 bg-terminal-error/6 text-terminal-error hover:text-terminal-error"
-                        )
-                    } else {
-                        format!(
-                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                        )
-                    }
-                }
-                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Diagnostics)
-            >
-                "Diagnostics"
-            </button>
-
-            <PreviewSurfaceModeButton
-                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Binds)
-                label=Signal::derive(move || "Binds")
-                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Binds))
-            />
-        </div>
-    }
-}
-
-#[component]
-fn PreviewSurfaceModeButton(
-    #[prop(into)] active: Signal<bool>,
-    #[prop(into)] label: Signal<&'static str>,
-    on_click: Callback<()>,
-) -> impl IntoView {
-    view! {
-        <button
-            class=move || {
-                if active.get() {
-                    format!(
-                        "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                    )
-                } else {
-                    format!(
-                        "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                    )
-                }
-            }
-            on:click=move |_| on_click.run(())
-        >
-            {move || label.get()}
-        </button>
-    }
-}
-
-#[component]
-fn PreviewSurfaceRouter(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
-    let app_state = expect_context::<AppState>();
-
-    view! {
-        {move || match surface_mode.get() {
-            PreviewSurfaceMode::Preview => view! { <PreviewSurfaceGate /> }.into_any(),
-            PreviewSurfaceMode::Editor => view! {
-                <OverlaySurface>
-                    <EditorView />
-                </OverlaySurface>
-            }
-                .into_any(),
-            PreviewSurfaceMode::Diagnostics => view! {
-                <OverlaySurface>
-                    <DiagnosticsWindow diagnostics=Signal::derive(move || {
-                        app_state.session.get().diagnostics.clone()
-                    }) />
-                </OverlaySurface>
-            }
-                .into_any(),
-            PreviewSurfaceMode::Binds => view! {
-                <OverlaySurface>
-                    <BindsWindow />
-                </OverlaySurface>
-            }
-                .into_any(),
-        }}
-    }
-}
-
-#[component]
-fn PreviewSurfaceGate() -> impl IntoView {
-    let app_state = expect_context::<AppState>();
-
-    view! {
-        <div class="relative h-full min-h-72 w-full overflow-hidden">
-            <PreviewSceneSurface />
-            <Show when=move || app_state.session.get().scene.is_none()>
-                <div class="absolute inset-0 z-30">
-                    <Show
-                        when=move || {
-                            let session = app_state.session.get();
-                            session.error.is_some() || !session.diagnostics.is_empty()
-                        }
-                        fallback=move || {
-                            view! {
-                                <div class="text-terminal-faint flex h-full min-h-72 items-center justify-center bg-terminal-bg/86 p-3 text-sm backdrop-blur-[1px]">
-                                    "loading wasm preview..."
-                                </div>
-                            }
-                        }
-                    >
-                        <div class="border-terminal-border bg-terminal-bg-subtle/96 text-terminal-muted h-full w-full overflow-auto border p-3 text-sm backdrop-blur-[1px]">
-                            <Show when=move || app_state.session.get().error.is_some()>
-                                <div class="border-terminal-error/40 bg-terminal-error/10 text-terminal-error mb-3 border px-3 py-2">
-                                    {move || app_state.session.get().error.unwrap_or_default()}
-                                </div>
-                            </Show>
-                            <DiagnosticsList diagnostics=Signal::derive(move || {
-                                app_state.session.get().diagnostics.clone()
-                            }) />
-                        </div>
-                    </Show>
-                </div>
-            </Show>
-        </div>
-    }
-}
-
-#[component]
-fn DiagnosticsList(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) -> impl IntoView {
-    view! {
-        <Show
-            when=move || !diagnostics.get().is_empty()
-            fallback=move || view! { <div class="p-2 text-sm text-terminal-faint">"no diagnostics"</div> }
-        >
-            <div class="grid gap-1">
-                {move || {
-                    diagnostics
-                        .get()
-                        .into_iter()
-                        .map(|diagnostic| {
-                            let level_class = if diagnostic.severity == "error" {
-                                "text-terminal-error"
-                            } else {
-                                "text-terminal-warn"
-                            };
-
-                            view! {
-                                <div class="border-terminal-border bg-terminal-bg-panel px-2 py-1 text-terminal-muted border text-sm">
-                                    <div class="flex items-center gap-2 text-xs">
-                                        <span class=level_class>{format!("{} {}", diagnostic.severity, diagnostic.code)}</span>
-                                        <span class="text-terminal-dim">{diagnostic.path.clone()}</span>
-                                    </div>
-                                    <div class="mt-1">{diagnostic.message}</div>
-                                    <div class="mt-1 text-terminal-faint text-xs">{diagnostic.range}</div>
-                                </div>
-                            }
-                        })
-                        .collect_view()
-                }}
-            </div>
-        </Show>
-    }
-}
-
-#[component]
-fn DiagnosticsWindow(#[prop(into)] diagnostics: Signal<Vec<PreviewDiagnostic>>) -> impl IntoView {
-    view! {
-        <div class="h-full w-full overflow-auto bg-[#111317] px-3 py-3 font-mono text-[0.8rem] leading-[1.45] text-[#c9d1d9]">
-            <Show
-                when=move || !diagnostics.get().is_empty()
-                fallback=move || {
-                    view! {
-                        <div class="text-[#8b949e]">
-                            "Apr 15 18:24:03 hypreact-playground diagnostics[913]: -- No entries --"
-                        </div>
-                    }
-                }
-            >
-                <div class="grid auto-rows-min gap-1">
-                    {move || {
-                        diagnostics
-                            .get()
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, diagnostic)| {
-                                let timestamp = format!("Apr 15 18:24:{:02}", (index + 3) % 60);
-                                let severity_color = if diagnostic.severity == "error" {
-                                    "text-[#ff7b72]"
-                                } else {
-                                    "text-[#d29922]"
-                                };
-
-                                view! {
-                                    <div class="border-l-2 border-[#2d333b] pl-3">
-                                        <div class="text-[#8b949e]">
-                                            {timestamp}
-                                            <span class="ml-2 text-[#6cb6ff]">"hypreact-playground"</span>
-                                            <span class="ml-1 text-[#8b949e]">"diagnostics[913]:"</span>
-                                            <span class=format!("ml-2 {}", severity_color)>{format!("{} {}", diagnostic.severity, diagnostic.code)}</span>
-                                        </div>
-                                        <div class="mt-0.5 text-[#c9d1d9]">
-                                            <span class="text-[#8b949e]">{diagnostic.path.clone()}</span>
-                                            <span class="text-[#6e7681]">": "</span>
-                                            <span>{diagnostic.message.clone()}</span>
-                                        </div>
-                                        <div class="mt-0.5 text-[#6e7681]">{diagnostic.range.clone()}</div>
-                                    </div>
-                                }
-                            })
-                            .collect_view()
-                    }}
-                </div>
-            </Show>
         </div>
     }
 }

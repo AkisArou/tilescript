@@ -112,7 +112,6 @@ impl AppState {
     }
 
     pub fn apply_config_error(&self, error: String) {
-        self.loaded_config.set(None);
         self.session.update(|state| state.apply_preview_failure(error.clone()));
         self.request_preview_reevaluation();
     }

@@ -95,14 +95,14 @@ pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> Strin
     if focused {
         return format!(
             "border: {}px solid transparent; {radius_css} background: linear-gradient({background}, {background}) padding-box, {} border-box; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);",
-            border_width.max(1),
+            border_width.max(2),
             border_color,
         );
     }
 
     format!(
         "background: {background}; border: {}px solid {}; {radius_css} box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);",
-        border_width.max(1),
+        border_width.max(2),
         border_color,
     )
 }

@@ -103,14 +103,7 @@ impl PreviewSessionState {
     }
 
     pub fn apply_preview_failure(&mut self, error: String) {
-        self.model.set_focus_tree_value(None);
-        self.scene = None;
-        self.partition_tree = None;
         self.error = Some(error);
-    }
-
-    pub fn workspace_names(&self) -> Vec<String> {
-        self.model.workspaces.values().map(|workspace| workspace.name.clone()).collect()
     }
 
     pub fn active_workspace_name(&self) -> String {
@@ -119,6 +112,10 @@ impl PreviewSessionState {
             .and_then(|workspace_id| self.model.workspaces.get(workspace_id))
             .map(|workspace| workspace.name.clone())
             .unwrap_or_else(|| "none".to_string())
+    }
+
+    pub fn workspace_names(&self) -> Vec<String> {
+        self.model.workspaces.values().map(|workspace| workspace.name.clone()).collect()
     }
 
     pub fn active_layout_name(&self) -> String {
