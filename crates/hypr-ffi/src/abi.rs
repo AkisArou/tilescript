@@ -3,6 +3,7 @@ use std::ffi::c_char;
 #[repr(C)]
 pub struct HypreactWindowSync {
     pub window_id: *const c_char,
+    pub previous_focused_window_id: *const c_char,
     pub workspace_id: *const c_char,
     pub output_id: *const c_char,
     pub is_xwayland: bool,

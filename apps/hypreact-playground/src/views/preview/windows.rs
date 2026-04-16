@@ -127,6 +127,36 @@ fn window_accent(window: &WindowSnapshot) -> String {
     PALETTE[hash % PALETTE.len()].to_string()
 }
 
+fn preview_canvas_rect(session: &PreviewSessionState) -> hypreact_core::LayoutRect {
+    let layout_space = session
+        .model
+        .current_workspace_id()
+        .and_then(|workspace_id| session.model.workspaces.get(workspace_id))
+        .and_then(|workspace| workspace.layout_space)
+        .unwrap_or(hypreact_core::wm::DrawableSpace { width: 1240, height: 760 });
+
+    hypreact_core::LayoutRect {
+        x: 0.0,
+        y: 0.0,
+        width: layout_space.width as f32,
+        height: layout_space.height as f32,
+    }
+}
+
+fn fullscreen_window_render_state(
+    session: &PreviewSessionState,
+) -> Option<PreviewWindowRenderState> {
+    let fullscreen_window =
+        session.visible_windows().into_iter().find(|window| window.mode.is_fullscreen())?;
+
+    Some(PreviewWindowRenderState {
+        accent: window_accent(&fullscreen_window),
+        rect: preview_canvas_rect(session),
+        layout_style: None,
+        window: fullscreen_window,
+    })
+}
+
 #[derive(Clone)]
 pub(super) struct PreviewWindowRenderState {
     pub(super) window: WindowSnapshot,
@@ -138,6 +168,10 @@ pub(super) struct PreviewWindowRenderState {
 pub(super) fn preview_window_render_states(
     session: &PreviewSessionState,
 ) -> Vec<PreviewWindowRenderState> {
+    if let Some(fullscreen_state) = fullscreen_window_render_state(session) {
+        return vec![fullscreen_state];
+    }
+
     let Some(scene) = session.scene.as_ref() else {
         return Vec::new();
     };
@@ -160,6 +194,10 @@ pub(super) fn preview_window_render_state_for_id(
     session: &PreviewSessionState,
     window_id: &hypreact_core::WindowId,
 ) -> Option<PreviewWindowRenderState> {
+    if let Some(fullscreen_state) = fullscreen_window_render_state(session) {
+        return (fullscreen_state.window.id == *window_id).then_some(fullscreen_state);
+    }
+
     let scene = session.scene.as_ref()?;
     let window =
         claimed_visible_windows(session).into_iter().find(|window| window.id == *window_id)?;
@@ -194,6 +232,11 @@ pub(super) fn PreviewSceneSurface() -> impl IntoView {
             class="bg-terminal-bg relative h-full min-h-72 w-full overflow-hidden"
             style="background-image: linear-gradient(var(--color-preview-wallpaper-overlay-top), var(--color-preview-wallpaper-overlay-bottom)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
         >
+            <Show when=move || preview_window_render_states(&app_state.session.get()).is_empty()>
+                <div class="text-terminal-faint/80 pointer-events-none absolute inset-x-0 bottom-[20%] z-10 flex justify-center text-sm tracking-[0.08em]">
+                    "Press Alt+Enter to open a window"
+                </div>
+            </Show>
             <For
                 each=move || preview_window_render_states(&app_state.session.get())
                 key=|state| state.window.id.clone()

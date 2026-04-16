@@ -53,7 +53,11 @@ impl Default for ResizeConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+const fn default_attach_after_focused() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub layouts: Vec<LayoutDefinition>,
@@ -65,6 +69,21 @@ pub struct Config {
     pub layout_rules: Vec<LayoutRule>,
     #[serde(default)]
     pub resize: ResizeConfig,
+    #[serde(default = "default_attach_after_focused", rename = "attachAfterFocused")]
+    pub attach_after_focused: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            layouts: Vec::new(),
+            global_stylesheet_path: None,
+            default_layout: None,
+            layout_rules: Vec::new(),
+            resize: ResizeConfig::default(),
+            attach_after_focused: default_attach_after_focused(),
+        }
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

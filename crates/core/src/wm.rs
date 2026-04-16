@@ -100,6 +100,7 @@ pub struct WmModel {
     pub current_output_id: Option<OutputId>,
     pub focus_tree: Option<FocusTree>,
     pub last_focused_window_id_by_scope: BTreeMap<FocusScopePath, WindowId>,
+    pub focus_history_by_scope: BTreeMap<FocusScopePath, Vec<WindowId>>,
     pub tiled_window_order_by_workspace: BTreeMap<WorkspaceId, Vec<WindowId>>,
     pub resize_state: ResizeState,
 }
@@ -275,6 +276,50 @@ impl WmModel {
         );
 
         self.sync_tiled_window_order_for_window(&id);
+    }
+
+    pub fn attach_tiled_window_after(
+        &mut self,
+        window_id: &WindowId,
+        focused_window_id: &WindowId,
+    ) -> bool {
+        if window_id == focused_window_id {
+            return false;
+        }
+
+        let Some(workspace_id) = self
+            .windows
+            .get(window_id)
+            .and_then(|window| window.workspace_id.clone())
+        else {
+            return false;
+        };
+
+        if !self.window_is_tiled_order_candidate(window_id, &workspace_id)
+            || !self.window_is_tiled_order_candidate(focused_window_id, &workspace_id)
+        {
+            return false;
+        }
+
+        self.sync_tiled_window_order_for_workspace(&workspace_id);
+        let Some(window_order) = self.tiled_window_order_by_workspace.get_mut(&workspace_id) else {
+            return false;
+        };
+
+        let mut updated = window_order.clone();
+        updated.retain(|candidate| candidate != window_id);
+        let Some(focused_index) = updated.iter().position(|candidate| candidate == focused_window_id)
+        else {
+            return false;
+        };
+        updated.insert(focused_index + 1, window_id.clone());
+
+        if *window_order == updated {
+            return false;
+        }
+
+        *window_order = updated;
+        true
     }
 
     pub fn window_is_on_current_workspace(&self, id: WindowId) -> bool {
@@ -514,6 +559,16 @@ impl WmModel {
         self.last_focused_window_id_by_scope.get(scope_key)
     }
 
+    pub fn previous_remembered_focus_for_scope(
+        &self,
+        scope_key: &FocusScopePath,
+        excluded_window_id: &WindowId,
+    ) -> Option<&WindowId> {
+        self.focus_history_by_scope.get(scope_key)?.iter().find(|window_id| {
+            *window_id != excluded_window_id && self.window_is_focus_cycle_candidate(window_id)
+        })
+    }
+
     pub fn set_window_mapped(&mut self, id: WindowId, mapped: bool) {
         if let Some(window) = self.windows.get_mut(&id) {
             window.mapped = mapped;
@@ -693,6 +748,9 @@ impl WmModel {
         {
             for scope_key in scope_path {
                 self.last_focused_window_id_by_scope.insert(scope_key.clone(), window_id.clone());
+                let history = self.focus_history_by_scope.entry(scope_key.clone()).or_default();
+                history.retain(|candidate| candidate != window_id);
+                history.insert(0, window_id.clone());
             }
         }
     }
@@ -706,6 +764,7 @@ impl WmModel {
     fn prune_focus_memory(&mut self) {
         let Some(focus_tree) = self.focus_tree.as_ref() else {
             self.last_focused_window_id_by_scope.clear();
+            self.focus_history_by_scope.clear();
             return;
         };
 
@@ -715,6 +774,16 @@ impl WmModel {
             valid_scope_keys.contains(scope_key)
                 && self.windows.contains_key(window_id)
                 && focus_tree.contains_window(window_id)
+        });
+        self.focus_history_by_scope.retain(|scope_key, window_ids| {
+            if !valid_scope_keys.contains(scope_key) {
+                return false;
+            }
+
+            window_ids.retain(|window_id| {
+                self.windows.contains_key(window_id) && focus_tree.contains_window(window_id)
+            });
+            !window_ids.is_empty()
         });
     }
 
@@ -726,6 +795,16 @@ impl WmModel {
         };
 
         self.sync_tiled_window_order_for_workspace(&workspace_id);
+    }
+
+    fn window_is_tiled_order_candidate(&self, window_id: &WindowId, workspace_id: &WorkspaceId) -> bool {
+        self.windows.get(window_id).is_some_and(|window| {
+            window.workspace_id.as_ref() == Some(workspace_id)
+                && window.mapped
+                && !window.closing
+                && !window.floating
+                && !window.fullscreen
+        })
     }
 
     fn sync_tiled_window_order_for_workspace(&mut self, workspace_id: &WorkspaceId) {
@@ -945,6 +1024,24 @@ mod tests {
         assert_eq!(
             model.ordered_window_ids_for_workspace(&WorkspaceId("1".to_string())),
             original_order
+        );
+    }
+
+    #[test]
+    fn attach_tiled_window_after_inserts_new_window_after_focused_window() {
+        let workspace_id = WorkspaceId("1".to_string());
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+
+        for id in [1, 2, 3, 4] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        assert!(model.attach_tiled_window_after(&window_id(4), &window_id(2)));
+        assert_eq!(
+            model.tiled_window_order_by_workspace.get(&workspace_id),
+            Some(&vec![window_id(1), window_id(2), window_id(4), window_id(3)])
         );
     }
 

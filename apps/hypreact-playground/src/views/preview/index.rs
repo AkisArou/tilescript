@@ -105,7 +105,7 @@ pub fn PreviewView() -> impl IntoView {
         <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2">
             <div class="grid min-h-0 gap-2">
                 <div class="border-terminal-border bg-terminal-bg-subtle flex min-h-0 flex-col overflow-hidden border">
-                    <div class="border-terminal-border grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b bg-terminal-topbar px-2 text-xs text-terminal-dim">
+                    <div class="border-terminal-border grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b bg-terminal-topbar pr-2 text-xs text-terminal-dim">
                         <PreviewWorkspaceTabs />
                         <div class="min-w-0" />
                         <PreviewToolbar />
@@ -282,6 +282,7 @@ pub(super) fn BindsWindow() -> impl IntoView {
         BindsLine::Comment("# Base"),
         BindsLine::Bind { mods: "$mainMod", key: "RETURN", command: "exec", arg: "$openRandom" },
         BindsLine::Bind { mods: "$mainMod", key: "Q", command: "killactive", arg: "" },
+        BindsLine::Bind { mods: "$mainMod", key: "F", command: "fullscreen", arg: "0" },
         BindsLine::Blank,
         BindsLine::Comment("# Move focus with mainMod + hjkl"),
         BindsLine::Bind { mods: "$mainMod", key: "H", command: "hypreact:movefocus", arg: "left" },
@@ -352,10 +353,22 @@ pub(super) fn BindsWindow() -> impl IntoView {
         BindsLine::Bind { mods: "$mainMod", key: "8", command: "workspace", arg: "8" },
         BindsLine::Bind { mods: "$mainMod", key: "9", command: "workspace", arg: "9" },
         BindsLine::Bind { mods: "$mainMod", key: "0", command: "workspace", arg: "10" },
+        BindsLine::Blank,
+        BindsLine::Comment("# Move active window to a workspace with mainMod + SHIFT + [0-9]"),
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "1", command: "movetoworkspace", arg: "1" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "2", command: "movetoworkspace", arg: "2" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "3", command: "movetoworkspace", arg: "3" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "4", command: "movetoworkspace", arg: "4" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "5", command: "movetoworkspace", arg: "5" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "6", command: "movetoworkspace", arg: "6" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "7", command: "movetoworkspace", arg: "7" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "8", command: "movetoworkspace", arg: "8" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "9", command: "movetoworkspace", arg: "9" },
+        BindsLine::Bind { mods: "$mainMod SHIFT", key: "0", command: "movetoworkspace", arg: "10" },
     ];
 
     view! {
-        <div class="h-full w-full overflow-auto bg-[var(--color-preview-config-bg)] px-2 py-2 font-mono text-sm leading-6 text-[var(--color-preview-config-fg)]">
+        <div class="h-full w-full overflow-auto bg-[var(--color-preview-config-bg)] px-2 py-2 font-mono text-[0.8125rem] leading-6 text-[var(--color-preview-config-fg)]">
             <div class="grid auto-rows-min gap-0">
                 <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-2">
                     <div class="pr-2 text-right text-[var(--color-preview-config-line)]">1</div>
@@ -471,12 +484,67 @@ enum PreviewKeyAction {
     Command(WmCommand),
 }
 
-fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
-    let key = event.key();
-    let key_lower = key.to_ascii_lowercase();
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForwardedPreviewKey {
+    key: String,
+    code: String,
+    alt_key: bool,
+    ctrl_key: bool,
+    shift_key: bool,
+}
 
-    if event.alt_key() {
-        if event.shift_key() {
+pub fn handle_forwarded_preview_key(app_state: AppState, payload: &str) -> bool {
+    let Ok(event) = serde_json::from_str::<ForwardedPreviewKey>(payload) else {
+        return false;
+    };
+
+    let action = preview_command_from_parts(
+        &event.key,
+        &event.code,
+        event.alt_key,
+        event.ctrl_key,
+        event.shift_key,
+    );
+    let Some(PreviewKeyAction::Command(command)) = action else {
+        return false;
+    };
+
+    app_state.session.update(|state| state.apply_command(command, None));
+    app_state.request_preview_reevaluation();
+    true
+}
+
+fn preview_command_from_parts(
+    key: &str,
+    code: &str,
+    alt_key: bool,
+    ctrl_key: bool,
+    shift_key: bool,
+) -> Option<PreviewKeyAction> {
+    let key_lower = key.to_ascii_lowercase();
+    let digit_workspace = match code {
+        "Digit1" => Some(1),
+        "Digit2" => Some(2),
+        "Digit3" => Some(3),
+        "Digit4" => Some(4),
+        "Digit5" => Some(5),
+        "Digit6" => Some(6),
+        "Digit7" => Some(7),
+        "Digit8" => Some(8),
+        "Digit9" => Some(9),
+        "Digit0" => Some(10),
+        _ => None,
+    };
+
+    if alt_key {
+        if shift_key {
+            if let Some(workspace) = digit_workspace {
+                return Some(PreviewKeyAction::Command(
+                    WmCommand::AssignFocusedWindowToWorkspace { workspace },
+                ));
+            }
+
             return match key_lower.as_str() {
                 "h" => Some(PreviewKeyAction::Command(WmCommand::MoveDirection {
                     direction: FocusDirection::Left,
@@ -494,7 +562,7 @@ fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
             };
         }
 
-        if event.ctrl_key() {
+        if ctrl_key {
             return match key_lower.as_str() {
                 "h" => Some(PreviewKeyAction::Command(WmCommand::ResizeDirection {
                     direction: FocusDirection::Left,
@@ -512,6 +580,12 @@ fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
             };
         }
 
+        if let Some(workspace) = digit_workspace {
+            return Some(PreviewKeyAction::Command(WmCommand::SelectWorkspace {
+                workspace_id: workspace.to_string().into(),
+            }));
+        }
+
         return match key_lower.as_str() {
             "h" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
                 direction: FocusDirection::Left,
@@ -525,23 +599,16 @@ fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
             "l" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
                 direction: FocusDirection::Right,
             })),
+            "f" => Some(PreviewKeyAction::Command(WmCommand::ToggleFullscreen)),
             "q" => Some(PreviewKeyAction::Command(WmCommand::CloseFocusedWindow)),
             "enter" => Some(PreviewKeyAction::Command(WmCommand::Spawn {
                 command: "$openRandom".to_string(),
             })),
-            "0" => Some(PreviewKeyAction::Command(WmCommand::SelectWorkspace {
-                workspace_id: "10".into(),
-            })),
-            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
-                Some(PreviewKeyAction::Command(WmCommand::SelectWorkspace {
-                    workspace_id: key_lower.as_str().into(),
-                }))
-            }
             _ => None,
         };
     }
 
-    match key.as_str() {
+    match key {
         "[" => Some(PreviewKeyAction::Command(WmCommand::CycleLayout {
             direction: Some(LayoutCycleDirection::Previous),
         })),
@@ -557,7 +624,21 @@ fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
     }
 }
 
+fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
+    preview_command_from_parts(
+        &event.key(),
+        &event.code(),
+        event.alt_key(),
+        event.ctrl_key(),
+        event.shift_key(),
+    )
+}
+
 fn should_ignore_preview_key_event(event: &web_sys::KeyboardEvent) -> bool {
+    if event.alt_key() {
+        return false;
+    }
+
     let Some(target) = event.target() else {
         return false;
     };

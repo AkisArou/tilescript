@@ -261,26 +261,52 @@ pub unsafe extern "C" fn hypreact_runtime_upsert_window_result(
 
         let window = unsafe { &*window };
         let window_id = hypreact_core::WindowId::from(cstr_to_str(window.window_id)?.to_string());
+        let previous_focused_window_id =
+            optional_cstr_to_string(window.previous_focused_window_id)?.map(hypreact_core::WindowId::from);
         let workspace_id = optional_cstr_to_string(window.workspace_id)?.map(WorkspaceId::from);
         let output_id = optional_cstr_to_string(window.output_id)?.map(OutputId::from);
 
-        let changed = runtime_facade::upsert_window(
-            &mut handle.model,
-            window_id,
-            workspace_id,
-            output_id,
-            window.is_xwayland,
-            window.mapped,
-            optional_cstr_to_string(window.title)?,
-            optional_cstr_to_string(window.app_id)?,
-            optional_cstr_to_string(window.class_name)?,
-            optional_cstr_to_string(window.instance)?,
-            optional_cstr_to_string(window.role)?,
-            optional_cstr_to_string(window.window_type)?,
-            window.urgent,
-            window.floating,
-            window.fullscreen,
-        );
+        let changed = match handle.layout_runtime.as_mut() {
+            Some(layout_runtime) => runtime_facade::upsert_window(
+                Some(&mut layout_runtime.service),
+                &mut handle.model,
+                window_id,
+                previous_focused_window_id,
+                workspace_id,
+                output_id,
+                window.is_xwayland,
+                window.mapped,
+                optional_cstr_to_string(window.title)?,
+                optional_cstr_to_string(window.app_id)?,
+                optional_cstr_to_string(window.class_name)?,
+                optional_cstr_to_string(window.instance)?,
+                optional_cstr_to_string(window.role)?,
+                optional_cstr_to_string(window.window_type)?,
+                window.urgent,
+                window.floating,
+                window.fullscreen,
+            ),
+            None => runtime_facade::upsert_window(
+                None,
+                &mut handle.model,
+                window_id,
+                previous_focused_window_id,
+                workspace_id,
+                output_id,
+                window.is_xwayland,
+                window.mapped,
+                optional_cstr_to_string(window.title)?,
+                optional_cstr_to_string(window.app_id)?,
+                optional_cstr_to_string(window.class_name)?,
+                optional_cstr_to_string(window.instance)?,
+                optional_cstr_to_string(window.role)?,
+                optional_cstr_to_string(window.window_type)?,
+                window.urgent,
+                window.floating,
+                window.fullscreen,
+            ),
+        }
+        .map_err(|error| FfiError::InvalidJson(error.to_string()))?;
 
         status_result(StatusResult { changed, focused_window_id: None })
     })) {

@@ -14,6 +14,7 @@ export default {
     { index: 8, layout: "random" },
     { monitor: "eDP-1", layout: "master-stack" },
   ],
+  attachAfterFocused: true,
   resize: {
     stepPx: 96,
     minBranchSizePx: 120,

@@ -12,6 +12,7 @@ use crate::editor_files::{
     AuthoringLanguage, EditorFileKey, WORKSPACE_FS_ROOT, file_by_key, file_key_by_model_path,
     file_layout_language, iter_dynamic_files, model_path, static_files,
 };
+use crate::views::preview::handle_forwarded_preview_key;
 
 use super::buffers::active_buffer_text;
 
@@ -137,6 +138,7 @@ mod wasm {
             extra_libs: JsValue,
             on_change: &Function,
             on_open: &Function,
+            on_preview_key: &Function,
         ) -> Result<Promise, JsValue>;
 
         #[wasm_bindgen(catch, js_name = updateMonacoEditor)]
@@ -145,6 +147,12 @@ mod wasm {
             active_path: &str,
             models: JsValue,
         ) -> Result<(), JsValue>;
+
+        #[wasm_bindgen(catch, js_name = setMonacoVimModeEnabled)]
+        fn set_monaco_vim_mode_enabled_js(handle: &JsValue, enabled: bool) -> Result<(), JsValue>;
+
+        #[wasm_bindgen(catch, js_name = setMonacoEditorFocus)]
+        fn set_monaco_editor_focus_js(handle: &JsValue, focused: bool) -> Result<(), JsValue>;
 
         #[wasm_bindgen(catch, js_name = revealMonacoPosition)]
         fn reveal_monaco_position_js(
@@ -164,6 +172,7 @@ mod wasm {
         handle: JsValue,
         _change_callback: Closure<dyn Fn(String, String)>,
         _open_callback: Closure<dyn Fn(String)>,
+        _preview_key_callback: Closure<dyn Fn(String) -> bool>,
     }
 
     impl MonacoEditorHandle {
@@ -179,6 +188,14 @@ mod wasm {
 
         pub(super) fn reveal_position(&self, line_number: u32, column: u32) -> Result<(), String> {
             reveal_monaco_position_js(&self.handle, line_number, column).map_err(js_error_message)
+        }
+
+        pub(super) fn set_focus(&self, focused: bool) -> Result<(), String> {
+            set_monaco_editor_focus_js(&self.handle, focused).map_err(js_error_message)
+        }
+
+        pub(super) fn set_vim_mode_enabled(&self, enabled: bool) -> Result<(), String> {
+            set_monaco_vim_mode_enabled_js(&self.handle, enabled).map_err(js_error_message)
         }
 
         #[allow(dead_code)]
@@ -199,12 +216,15 @@ mod wasm {
         models: &[MonacoModel],
         on_change: impl Fn(String, String) + 'static,
         on_open: impl Fn(String) + 'static,
+        on_preview_key: impl Fn(String) -> bool + 'static,
     ) -> Result<MonacoEditorHandle, String> {
         let models = serde_wasm_bindgen::to_value(models).map_err(|error| error.to_string())?;
         let extra_libs =
             serde_wasm_bindgen::to_value(&sdk_type_libs()).map_err(|error| error.to_string())?;
         let change_callback = Closure::wrap(Box::new(on_change) as Box<dyn Fn(String, String)>);
         let open_callback = Closure::wrap(Box::new(on_open) as Box<dyn Fn(String)>);
+        let preview_key_callback =
+            Closure::wrap(Box::new(on_preview_key) as Box<dyn Fn(String) -> bool>);
         let promise = create_monaco_editor_js(
             &host,
             active_path.unwrap_or_default(),
@@ -212,6 +232,7 @@ mod wasm {
             extra_libs,
             change_callback.as_ref().unchecked_ref(),
             open_callback.as_ref().unchecked_ref(),
+            preview_key_callback.as_ref().unchecked_ref(),
         )
         .map_err(js_error_message)?;
         let handle = JsFuture::from(promise).await.map_err(js_error_message)?;
@@ -220,6 +241,7 @@ mod wasm {
             handle,
             _change_callback: change_callback,
             _open_callback: open_callback,
+            _preview_key_callback: preview_key_callback,
         })
     }
 
@@ -341,11 +363,17 @@ pub fn MonacoEditorPane() -> impl IntoView {
                             callback_state.select_editor_file(file_id);
                         }
                     },
+                    move |payload| {
+                        handle_forwarded_preview_key(callback_state, &payload)
+                    },
                 )
                 .await;
 
                 match result {
                     Ok(handle) => {
+                        let focused = callback_state.session.get_untracked().active_preview_window_id.as_ref()
+                            == Some(&hypreact_core::window_id("win-preview-editor"));
+                        let _ = handle.set_focus(focused);
                         *monaco_handle.borrow_mut() = Some(handle);
                         monaco_error.set(None);
                     }
@@ -375,6 +403,29 @@ pub fn MonacoEditorPane() -> impl IntoView {
 
             if let Some(handle) = monaco_handle.borrow().as_ref() {
                 if let Err(error) = handle.sync(active_path.as_deref(), &models) {
+                    monaco_error.set(Some(error));
+                }
+            }
+        });
+
+        let monaco_handle = Rc::clone(&_monaco_handle);
+        Effect::new(move |_| {
+            let focused = app_state.session.get().active_preview_window_id.as_ref()
+                == Some(&hypreact_core::window_id("win-preview-editor"));
+
+            if let Some(handle) = monaco_handle.borrow().as_ref() {
+                if let Err(error) = handle.set_focus(focused) {
+                    monaco_error.set(Some(error));
+                }
+            }
+        });
+
+        let monaco_handle = Rc::clone(&_monaco_handle);
+        Effect::new(move |_| {
+            let enabled = app_state.vim_mode_enabled.get();
+
+            if let Some(handle) = monaco_handle.borrow().as_ref() {
+                if let Err(error) = handle.set_vim_mode_enabled(enabled) {
                     monaco_error.set(Some(error));
                 }
             }

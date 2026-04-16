@@ -66,6 +66,7 @@
   --color-preview-frame-shadow-strong: rgba(0, 0, 0, 0.24);
   --color-preview-frame-focus-from: rgba(51, 204, 255, 0.93);
   --color-preview-frame-focus-to: rgba(0, 255, 153, 0.93);
+  --color-preview-fullscreen-shadow: rgba(0, 0, 0, 0.35);
   --color-preview-htop-bg: #0f0f0f;
   --color-preview-htop-fg: #d6d6d6;
   --color-preview-htop-green: #8bd450;

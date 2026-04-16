@@ -21,6 +21,7 @@ export default {
     { index: 5, layout: "primary-stack" },
     { monitor: "eDP-1", layout: "master-stack" },
   ],
+  attachAfterFocused: true,
   resize: {
     stepPx: 96,
     minBranchSizePx: 120,
@@ -52,6 +53,12 @@ Notes:
 - workspace name `"5"` maps to index `4`
 - more specific rules win over broader ones
 - among equally specific rules, later rules win
+
+### `attachAfterFocused`
+
+- default: `true`
+- when `true`, a newly spawned tiled window is inserted immediately after the currently focused tiled window
+- when `false`, new windows keep the existing append behavior
 
 Examples:
 

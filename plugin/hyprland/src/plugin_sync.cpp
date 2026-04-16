@@ -15,6 +15,7 @@
 
 #include "src/Compositor.hpp"
 #include "src/desktop/state/FocusState.hpp"
+#include "src/managers/KeybindManager.hpp"
 #include "src/layout/space/Space.hpp"
 
 namespace hypreact_plugin {
@@ -32,6 +33,7 @@ struct RecentWorkspaceResize {
 
 struct WindowSyncPayload {
   std::string windowId;
+  std::optional<std::string> previousFocusedWindowId;
   std::string workspaceId;
   std::string outputId;
   HypreactWindowSync ffi;
@@ -61,6 +63,30 @@ uintptr_t workspaceToken(const PHLWORKSPACE &workspace) {
   return reinterpret_cast<uintptr_t>(workspace.get());
 }
 
+bool focusHyprlandWindowByHypreactId(const std::string &windowId) {
+  for (const auto &window : g_pCompositor->m_windows) {
+    if (!window || !window->m_isMapped) {
+      continue;
+    }
+
+    if (makeWindowId(window) != windowId) {
+      continue;
+    }
+
+    const auto it = g_pKeybindManager->m_dispatchers.find("focuswindow");
+    if (it == g_pKeybindManager->m_dispatchers.end()) {
+      return false;
+    }
+
+    std::ostringstream address;
+    address << "address:0x" << std::hex
+            << reinterpret_cast<uintptr_t>(window.get());
+    return it->second(address.str()).success;
+  }
+
+  return false;
+}
+
 void forgetWindowId(const PHLWINDOW &window) {
   if (!window) {
     return;
@@ -78,6 +104,7 @@ WindowSyncPayload makeUpsertWindowRequest(const PHLWINDOW &window) {
 
   auto payload = WindowSyncPayload{
       .windowId = windowId,
+      .previousFocusedWindowId = g_lastFocusedWindowId,
       .workspaceId = workspaceId,
       .outputId = outputId,
       .ffi =
@@ -100,6 +127,10 @@ WindowSyncPayload makeUpsertWindowRequest(const PHLWINDOW &window) {
   };
 
   payload.ffi.window_id = payload.windowId.c_str();
+  payload.ffi.previous_focused_window_id =
+      payload.previousFocusedWindowId.has_value()
+          ? payload.previousFocusedWindowId->c_str()
+          : nullptr;
   payload.ffi.workspace_id =
       payload.workspaceId.empty() ? nullptr : payload.workspaceId.c_str();
   payload.ffi.output_id =
@@ -541,9 +572,21 @@ void markWindowClosing(const PHLWINDOW &window, bool closing) {
     return;
   }
 
+  const auto windowId = makeWindowId(window);
   logAndFreeStatusResult("set-window-closing",
-                         runtime()->setWindowClosing(makeWindowId(window),
-                                                     closing));
+                         runtime()->setWindowClosing(windowId, closing));
+
+  if (closing) {
+    const auto nextFocus = runtime()->layoutCloseFocusCandidate(windowId);
+    if (nextFocus.has_value()) {
+      if (focusHyprlandWindowByHypreactId(*nextFocus)) {
+        g_lastFocusedWindowId = nextFocus;
+      }
+    } else if (g_lastFocusedWindowId == std::optional<std::string>(windowId)) {
+      g_lastFocusedWindowId.reset();
+    }
+  }
+
   queueWorkspaceRecalculate(window->m_workspace);
 }
 
@@ -555,6 +598,7 @@ void removeWindow(const PHLWINDOW &window) {
   const auto workspace = window->m_workspace;
   const auto result = runtime()->removeWindow(makeWindowId(window));
   logAndFreeStatusResult("remove-window", result);
+
   if (workspace) {
     queueWorkspaceRecalculate(workspace);
   }

@@ -352,9 +352,7 @@ where
     let removed_was_focused = model.focused_window_id.as_ref() == Some(&removed_id);
     let hinted_window_ids = hinted_window_ids.into_iter().collect::<Vec<_>>();
     let next_focus = removed_was_focused
-        .then(|| {
-            preferred_focus_after_focus_loss(model, &removed_id, hinted_window_ids.iter().cloned())
-        })
+        .then(|| preferred_focus_after_removal(model, &removed_id, hinted_window_ids.iter().cloned()))
         .flatten();
 
     model.remove_window(removed_id);
@@ -511,6 +509,31 @@ where
     preferred_focus_from_order(model, &workspace_scope, &ordered_window_ids, lost_window_id)
 }
 
+fn preferred_focus_after_removal<I>(
+    model: &WmModel,
+    lost_window_id: &WindowId,
+    hinted_window_ids: I,
+) -> Option<WindowId>
+where
+    I: IntoIterator<Item = WindowId>,
+{
+    if let Some(scope_path) = model.focus_scope_path(lost_window_id) {
+        for scope_key in scope_path.iter().rev() {
+            if let Some(candidate) = preferred_focus_for_scope_after_removal(
+                model,
+                scope_key,
+                lost_window_id,
+            ) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    let ordered_window_ids = model.ordered_window_ids_on_current_workspace(hinted_window_ids);
+    let workspace_scope = FocusTree::workspace_scope();
+    preferred_focus_from_order_after_removal(model, &workspace_scope, &ordered_window_ids, lost_window_id)
+}
+
 fn preferred_focus_for_scope(
     model: &WmModel,
     scope_key: &FocusScopePath,
@@ -518,6 +541,15 @@ fn preferred_focus_for_scope(
 ) -> Option<WindowId> {
     let ordered_window_ids = model.focus_scope_descendants(scope_key)?;
     preferred_focus_from_order(model, scope_key, ordered_window_ids, lost_window_id)
+}
+
+fn preferred_focus_for_scope_after_removal(
+    model: &WmModel,
+    scope_key: &FocusScopePath,
+    lost_window_id: &WindowId,
+) -> Option<WindowId> {
+    let ordered_window_ids = model.focus_scope_descendants(scope_key)?;
+    preferred_focus_from_order_after_removal(model, scope_key, ordered_window_ids, lost_window_id)
 }
 
 fn preferred_focus_from_order(
@@ -538,8 +570,8 @@ fn preferred_focus_from_order(
         return None;
     }
 
-    if let Some(remembered_window_id) = model.remembered_focus_for_scope(scope_key)
-        && remembered_window_id != lost_window_id
+    if let Some(remembered_window_id) =
+        model.previous_remembered_focus_for_scope(scope_key, lost_window_id)
         && focusable_candidates.contains(remembered_window_id)
     {
         return Some(remembered_window_id.clone());
@@ -555,6 +587,50 @@ fn preferred_focus_from_order(
         }
 
         for window_id in ordered_window_ids.iter().take(lost_index).rev() {
+            if window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id) {
+                return Some(window_id.clone());
+            }
+        }
+    }
+
+    focusable_candidates.first().cloned()
+}
+
+fn preferred_focus_from_order_after_removal(
+    model: &WmModel,
+    scope_key: &FocusScopePath,
+    ordered_window_ids: &[WindowId],
+    lost_window_id: &WindowId,
+) -> Option<WindowId> {
+    let focusable_candidates = ordered_window_ids
+        .iter()
+        .filter(|window_id| {
+            *window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if focusable_candidates.is_empty() {
+        return None;
+    }
+
+    if let Some(remembered_window_id) =
+        model.previous_remembered_focus_for_scope(scope_key, lost_window_id)
+        && focusable_candidates.contains(remembered_window_id)
+    {
+        return Some(remembered_window_id.clone());
+    }
+
+    if let Some(lost_index) =
+        ordered_window_ids.iter().position(|window_id| window_id == lost_window_id)
+    {
+        for window_id in ordered_window_ids.iter().take(lost_index).rev() {
+            if window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id) {
+                return Some(window_id.clone());
+            }
+        }
+
+        for window_id in ordered_window_ids.iter().skip(lost_index + 1) {
             if window_id != lost_window_id && model.window_is_focus_cycle_candidate(window_id) {
                 return Some(window_id.clone());
             }
@@ -670,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn removing_focused_window_prefers_next_then_previous_without_wrap() {
+    fn removing_focused_window_prefers_previous_then_next_without_wrap() {
         let mut model = WmModel::default();
         model.insert_window(window_id(1), None, None);
         model.insert_window(window_id(2), None, None);
@@ -687,10 +763,10 @@ mod tests {
 
         let update = remove_window(&mut model, window_id(2), Vec::new());
 
-        assert_eq!(update, FocusUpdate::Set(Some(window_id(3))));
-        assert_eq!(model.focused_window_id, Some(window_id(3)));
-        assert_eq!(model.windows.get(&window_id(1)).map(|window| window.focused), Some(false));
-        assert_eq!(model.windows.get(&window_id(3)).map(|window| window.focused), Some(true));
+        assert_eq!(update, FocusUpdate::Set(Some(window_id(1))));
+        assert_eq!(model.focused_window_id, Some(window_id(1)));
+        assert_eq!(model.windows.get(&window_id(1)).map(|window| window.focused), Some(true));
+        assert_eq!(model.windows.get(&window_id(3)).map(|window| window.focused), Some(false));
     }
 
     #[test]
@@ -866,6 +942,28 @@ mod tests {
         model.set_window_focused(Some(window_id(2)));
 
         let update = remove_window(&mut model, window_id(2), Vec::new());
+
+        assert_eq!(update, FocusUpdate::Set(Some(window_id(1))));
+        assert_eq!(model.focused_window_id, Some(window_id(1)));
+    }
+
+    #[test]
+    fn removing_focused_window_prefers_previous_remembered_focus_before_previous_neighbor() {
+        let mut model = WmModel::default();
+        let workspace_id = WorkspaceId::from("1");
+
+        for id in [1, 2, 3, 4] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        model.set_current_workspace(workspace_id);
+        model.set_focus_tree(Some(&flat_root(&[1, 2, 3, 4])));
+        model.set_window_focused(Some(window_id(2)));
+        model.set_window_focused(Some(window_id(1)));
+        model.set_window_focused(Some(window_id(3)));
+
+        let update = remove_window(&mut model, window_id(3), Vec::new());
 
         assert_eq!(update, FocusUpdate::Set(Some(window_id(1))));
         assert_eq!(model.focused_window_id, Some(window_id(1)));

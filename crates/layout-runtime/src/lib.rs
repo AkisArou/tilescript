@@ -1514,8 +1514,10 @@ pub fn remove_window(
 }
 
 pub fn upsert_window(
+    service: Option<&mut LayoutRuntimeService>,
     model: &mut WmModel,
     window_id: hypreact_core::WindowId,
+    previous_focused_window_id: Option<hypreact_core::WindowId>,
     workspace_id: Option<hypreact_core::WorkspaceId>,
     output_id: Option<hypreact_core::OutputId>,
     is_xwayland: bool,
@@ -1529,18 +1531,25 @@ pub fn upsert_window(
     urgent: bool,
     floating: bool,
     fullscreen: bool,
-) -> bool {
+) -> Result<bool, LayoutRuntimeError> {
     if !mapped {
         let changed = model.windows.contains_key(&window_id);
         if changed {
             model.remove_window(window_id);
         }
-        return changed;
+        return Ok(changed);
     }
 
     if let Some(workspace_id) = workspace_id.as_ref() {
         model.upsert_workspace(workspace_id.clone(), workspace_id.as_str().to_string());
     }
+
+    let attach_after_focused = match service {
+        Some(service) => service.ensure_loaded_config()?.config.attach_after_focused,
+        None => true,
+    };
+    let focused_window_id = previous_focused_window_id.or_else(|| model.focused_window_id().cloned());
+    let was_tiled_order_candidate = window_is_tiled_order_candidate(model, &window_id);
 
     let existed = model.windows.contains_key(&window_id);
     if !existed {
@@ -1549,21 +1558,37 @@ pub fn upsert_window(
 
     if let Some(window_model) = model.windows.get_mut(&window_id) {
         window_model.is_xwayland = is_xwayland;
-        window_model.workspace_id = workspace_id;
         window_model.output_id = output_id;
-        window_model.mapped = mapped;
-        window_model.title = title;
-        window_model.app_id = app_id;
-        window_model.class = class;
-        window_model.instance = instance;
-        window_model.role = role;
-        window_model.window_type = window_type;
-        window_model.urgent = urgent;
-        window_model.floating = floating;
-        window_model.fullscreen = fullscreen;
     }
 
-    true
+    model.set_window_workspace(window_id.clone(), workspace_id);
+    model.set_window_floating(window_id.clone(), floating);
+    model.set_window_fullscreen(window_id.clone(), fullscreen);
+    model.set_window_mapped(window_id.clone(), mapped);
+    model.set_window_identity(window_id.clone(), title, app_id, class, instance, role, window_type, urgent);
+
+    if attach_after_focused
+        && !was_tiled_order_candidate
+        && window_is_tiled_order_candidate(model, &window_id)
+        && let Some(focused_window_id) = focused_window_id.as_ref()
+    {
+        model.attach_tiled_window_after(&window_id, focused_window_id);
+    }
+
+    Ok(true)
+}
+
+fn window_is_tiled_order_candidate(
+    model: &WmModel,
+    window_id: &hypreact_core::WindowId,
+) -> bool {
+    model.windows.get(window_id).is_some_and(|window| {
+        window.workspace_id.is_some()
+            && window.mapped
+            && !window.closing
+            && !window.floating
+            && !window.fullscreen
+    })
 }
 
 pub fn move_tiled_window(
@@ -2523,6 +2548,111 @@ mod tests {
         assert!(scene.focus_tree.contains_window(&WindowId::from("w1-b")));
         assert!(!scene.focus_tree.contains_window(&WindowId::from("w2-a")));
         assert!(!scene.focus_tree.contains_window(&WindowId::from("w2-b")));
+    }
+
+    #[test]
+    fn upsert_window_attaches_after_focused_window_by_default() {
+        let config_path = isolated_test_config_path();
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+
+        let workspace_id = WorkspaceId::from("1");
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+
+        for id in ["master", "stack-a", "stack-b"] {
+            let window_id = WindowId::from(id.to_string());
+            model.insert_window(window_id.clone(), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id, true);
+        }
+        model.set_window_focused(Some(WindowId::from("master")));
+
+        upsert_window(
+            Some(&mut service),
+            &mut model,
+            WindowId::from("stack-new"),
+            None,
+            Some(workspace_id.clone()),
+            None,
+            false,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("upsert window");
+
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&workspace_id),
+            vec![
+                WindowId::from("master"),
+                WindowId::from("stack-new"),
+                WindowId::from("stack-a"),
+                WindowId::from("stack-b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn upsert_window_keeps_append_behavior_when_attach_after_focused_is_disabled() {
+        let config_path = isolated_test_config_path();
+        let updated = fs::read_to_string(&config_path)
+            .expect("config source")
+            .replace("attachAfterFocused: true", "attachAfterFocused: false");
+        fs::write(&config_path, updated).expect("updated config");
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+
+        let workspace_id = WorkspaceId::from("1");
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+
+        for id in ["master", "stack-a", "stack-b"] {
+            let window_id = WindowId::from(id.to_string());
+            model.insert_window(window_id.clone(), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id, true);
+        }
+        model.set_window_focused(Some(WindowId::from("master")));
+
+        upsert_window(
+            Some(&mut service),
+            &mut model,
+            WindowId::from("stack-new"),
+            None,
+            Some(workspace_id.clone()),
+            None,
+            false,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("upsert window");
+
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&workspace_id),
+            vec![
+                WindowId::from("master"),
+                WindowId::from("stack-a"),
+                WindowId::from("stack-b"),
+                WindowId::from("stack-new"),
+            ]
+        );
     }
 
     #[test]

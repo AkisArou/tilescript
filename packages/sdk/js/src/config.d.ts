@@ -11,4 +11,5 @@ export interface HypreactConfig {
     stepPx?: number;
     minBranchSizePx?: number;
   };
+  attachAfterFocused: boolean;
 }

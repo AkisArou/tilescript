@@ -2,6 +2,7 @@
 import "monaco-editor/min/vs/editor/editor.main.css";
 import "monaco-editor/esm/vs/editor/editor.main.js";
 import * as monaco from "monaco-editor";
+import { initVimMode } from "monaco-vim";
 import "monaco-editor/esm/vs/language/css/monaco.contribution.js";
 import "monaco-editor/esm/vs/language/typescript/monaco.contribution.js";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
@@ -35,9 +36,39 @@ interface MonacoHostHandle {
   editor: monaco.editor.IStandaloneCodeEditor;
   modelPaths: Set<string>;
   activePath: string | null;
+  previewFocused: boolean;
+  vimModeEnabled: boolean;
+  vimMode?: { dispose: () => void };
   sourceLibs: Map<string, { content: string; dispose: monaco.IDisposable }>;
   changeDisposable?: monaco.IDisposable;
   openerDisposable?: monaco.IDisposable;
+}
+
+function applyMonacoEditorFocus(handle: MonacoHostHandle, focused: boolean) {
+  handle.editor.updateOptions({
+    readOnly: !focused,
+    domReadOnly: !focused,
+  });
+
+  if (focused) {
+    handle.previewFocused = true;
+    handle.editor.focus();
+    return;
+  }
+
+  handle.previewFocused = false;
+}
+
+function applyMonacoVimMode(handle: MonacoHostHandle, enabled: boolean) {
+  if (enabled === handle.vimModeEnabled) return;
+
+  handle.vimMode?.dispose();
+  handle.vimMode = undefined;
+  handle.vimModeEnabled = enabled;
+
+  if (!enabled) return;
+
+  handle.vimMode = initVimMode(handle.editor, null);
 }
 
 const FONT_SIZE = 13;
@@ -380,7 +411,9 @@ function setActiveModel(handle: MonacoHostHandle, activePath: string | null) {
   if (model && handle.editor.getModel() !== model) {
     handle.editor.setModel(model);
     handle.editor.layout();
-    handle.editor.focus();
+    if (handle.previewFocused) {
+      handle.editor.focus();
+    }
   }
 }
 
@@ -391,6 +424,7 @@ export async function createMonacoEditor(
   extraLibs: MonacoExtraLib[],
   onChange: (path: string, value: string) => void,
   onOpen: (payload: string) => void,
+  onPreviewKey: (payload: string) => boolean,
 ) {
   ensureConfigured(extraLibs);
 
@@ -470,6 +504,8 @@ export async function createMonacoEditor(
     editor,
     modelPaths: new Set(),
     activePath: activePath || null,
+    previewFocused: false,
+    vimModeEnabled: false,
     sourceLibs: new Map(),
   };
 
@@ -498,6 +534,26 @@ export async function createMonacoEditor(
     },
   });
 
+  editor.onKeyDown((event) => {
+    if (!event.altKey) return;
+
+    const browserEvent = event.browserEvent;
+    const handled = onPreviewKey(
+      JSON.stringify({
+        key: browserEvent.key,
+        code: browserEvent.code,
+        altKey: browserEvent.altKey,
+        ctrlKey: browserEvent.ctrlKey,
+        shiftKey: browserEvent.shiftKey,
+      }),
+    );
+    if (!handled) return;
+
+    applyMonacoEditorFocus(handle, false);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
   return handle;
 }
 
@@ -511,6 +567,14 @@ export function updateMonacoEditor(
   void syncModels(handle, models).then(() => {
     setActiveModel(handle, activePath || null);
   });
+}
+
+export function setMonacoEditorFocus(handle: MonacoHostHandle, focused: boolean) {
+  applyMonacoEditorFocus(handle, focused);
+}
+
+export function setMonacoVimModeEnabled(handle: MonacoHostHandle, enabled: boolean) {
+  applyMonacoVimMode(handle, enabled);
 }
 
 export function revealMonacoPosition(
@@ -540,6 +604,7 @@ export function disposeMonacoEditor(handle: MonacoHostHandle) {
   }
   handle.changeDisposable?.dispose();
   handle.openerDisposable?.dispose();
+  handle.vimMode?.dispose();
   handle.editor.dispose();
   for (const path of handle.modelPaths) {
     releaseSharedModel(path);

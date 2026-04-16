@@ -1,3 +1,4 @@
+use hypreact_core::window_id;
 use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
@@ -30,13 +31,31 @@ pub fn EditorView() -> impl IntoView {
     });
     let tab_context_menu_file_id =
         Signal::derive(move || tab_context_menu.get().map(|state| state.file_id));
+    let focus_preview_editor = Callback::new(move |_| {
+        app_state.session.update(|state| state.set_focus(window_id("win-preview-editor")));
+        app_state.request_preview_reevaluation();
+    });
 
     view! {
         <section class="grid h-full min-h-0 w-full min-w-0 grid-cols-1 gap-2">
             <section class="border-terminal-border bg-terminal-bg-subtle relative grid min-h-0 overflow-hidden border lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <aside class="border-terminal-border bg-terminal-bg-subtle min-h-0 overflow-auto border-b lg:border-r lg:border-b-0">
-                    <div class="border-terminal-border bg-terminal-bg-bar text-terminal-dim border-b px-2 py-1 text-xs">
-                        {WORKSPACE_ROOT}
+                    <div class="border-terminal-border bg-terminal-bg-bar text-terminal-dim flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
+                        <span class="min-w-0 truncate">{WORKSPACE_ROOT}</span>
+                        <button
+                            class=move || {
+                                if app_state.vim_mode_enabled.get() {
+                                    "border-[var(--color-preview-accent-green)] bg-terminal-bg-hover text-[var(--color-preview-accent-green)] shrink-0 rounded-full border px-2 py-px text-[10px]"
+                                } else {
+                                    "border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg shrink-0 rounded-full border px-2 py-px text-[10px]"
+                                }
+                            }
+                            on:click=move |_| {
+                                app_state.set_vim_mode_enabled(!app_state.vim_mode_enabled.get_untracked());
+                            }
+                        >
+                            "VIM mode"
+                        </button>
                     </div>
                     <div class="border-terminal-border border-b px-2 py-2">
                         <div class="grid grid-cols-3 gap-2 rounded-lg border border-terminal-border bg-[linear-gradient(180deg,var(--color-editor-language-panel-top),var(--color-editor-language-panel-bottom))] p-1.5 shadow-[inset_0_1px_0_var(--color-editor-language-panel-inset)]">
@@ -101,7 +120,11 @@ pub fn EditorView() -> impl IntoView {
                     </div>
                 </aside>
 
-                <div class="flex min-h-0 min-w-0 flex-col overflow-hidden">
+                <div
+                    class="flex min-h-0 min-w-0 flex-col overflow-hidden"
+                    on:mousedown=move |_| focus_preview_editor.run(())
+                    on:click=move |_| focus_preview_editor.run(())
+                >
                     <div class="border-terminal-border bg-terminal-bg-bar flex items-center border-b text-xs">
                         <div class="flex min-w-0 flex-1 gap-px overflow-x-auto">
                             <Show

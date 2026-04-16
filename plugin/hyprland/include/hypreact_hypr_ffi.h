@@ -6,6 +6,7 @@ struct HypreactRuntimeHandle;
 
 struct HypreactWindowSync {
     const char* window_id;
+    const char* previous_focused_window_id;
     const char* workspace_id;
     const char* output_id;
     bool is_xwayland;

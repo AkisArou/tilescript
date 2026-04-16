@@ -17,6 +17,12 @@ pub fn decode_config_value(path: &Path, value: &Value) -> Result<Config, LayoutC
         )?,
         layout_rules: decode_layout_rules(root.get("layoutRules"), path)?,
         resize: decode_resize_config(root.get("resize"), path)?,
+        attach_after_focused: decode_optional_bool(
+            root.get("attachAfterFocused"),
+            path,
+            "root.attachAfterFocused",
+        )?
+        .unwrap_or(true),
     })
 }
 
@@ -104,6 +110,14 @@ fn decode_optional_f32(
     value.map(|value| expect_f32(path, value, field)).transpose()
 }
 
+fn decode_optional_bool(
+    value: Option<&Value>,
+    path: &Path,
+    field: &str,
+) -> Result<Option<bool>, LayoutConfigError> {
+    value.map(|value| expect_bool(path, value, field)).transpose()
+}
+
 fn expect_object<'a>(
     path: &Path,
     value: &'a Value,
@@ -137,6 +151,13 @@ fn expect_string<'a>(
     })
 }
 
+fn expect_bool(path: &Path, value: &Value, field: &str) -> Result<bool, LayoutConfigError> {
+    value.as_bool().ok_or_else(|| LayoutConfigError::DecodeAuthoredConfig {
+        path: path.to_path_buf(),
+        message: format!("expected boolean at {field}"),
+    })
+}
+
 fn expect_f32(path: &Path, value: &Value, field: &str) -> Result<f32, LayoutConfigError> {
     value
         .as_f64()
@@ -155,4 +176,29 @@ fn expect_usize(path: &Path, value: &Value, field: &str) -> Result<usize, Layout
             message: format!("expected non-negative integer at {field}"),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use serde_json::json;
+
+    use super::decode_config_value;
+
+    #[test]
+    fn missing_attach_after_focused_defaults_to_true() {
+        let config = decode_config_value(Path::new("config.ts"), &json!({})).expect("config");
+
+        assert!(config.attach_after_focused);
+    }
+
+    #[test]
+    fn attach_after_focused_decodes_explicit_false() {
+        let config =
+            decode_config_value(Path::new("config.ts"), &json!({ "attachAfterFocused": false }))
+                .expect("config");
+
+        assert!(!config.attach_after_focused);
+    }
 }

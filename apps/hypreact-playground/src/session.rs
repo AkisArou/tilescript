@@ -1,7 +1,7 @@
 use hypreact_config::model::Config;
 use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::focus::{
-    FocusTree, FocusTreeWindowGeometry, preferred_focus_after_removing_window, set_focused_window,
+    FocusTree, FocusTreeWindowGeometry, set_focused_window,
 };
 use hypreact_core::host::{HostAction, dispatch_wm_command};
 use hypreact_core::navigation::{
@@ -66,6 +66,8 @@ pub struct PreviewSessionState {
     pub scene: Option<SceneResponse>,
     pub partition_tree: Option<hypreact_core::resize::PartitionTree>,
     pub manual_layout_by_workspace: BTreeMap<WorkspaceId, LayoutRef>,
+    pub active_preview_window_id: Option<WindowId>,
+    pub active_preview_window_id_by_workspace: BTreeMap<WorkspaceId, WindowId>,
     pub diagnostics: Vec<PreviewDiagnostic>,
     pub event_log: Vec<String>,
     pub last_action: String,
@@ -81,6 +83,11 @@ impl PreviewSessionState {
             scene: None,
             partition_tree: None,
             manual_layout_by_workspace: BTreeMap::new(),
+            active_preview_window_id: Some(window_id("win-preview-editor")),
+            active_preview_window_id_by_workspace: BTreeMap::from([(
+                WorkspaceId::from("1"),
+                window_id("win-preview-editor"),
+            )]),
             diagnostics: Vec::new(),
             event_log: vec!["preview booted from starter source bundle".to_string()],
             last_action: "boot preview".to_string(),
@@ -176,6 +183,10 @@ impl PreviewSessionState {
     }
 
     pub fn set_focus(&mut self, window_id: WindowId) {
+        self.active_preview_window_id = Some(window_id.clone());
+        if let Some(workspace_id) = self.model.current_workspace_id().cloned() {
+            self.active_preview_window_id_by_workspace.insert(workspace_id, window_id.clone());
+        }
         self.apply_command(WmCommand::FocusWindow { window_id }, None);
     }
 
@@ -189,6 +200,13 @@ impl PreviewSessionState {
 
         for action in actions {
             apply_host_action_with_session(self, action, config);
+        }
+
+        if let Some(window_id) = self.model.focused_window_id().cloned() {
+            self.active_preview_window_id = Some(window_id.clone());
+            if let Some(workspace_id) = self.model.current_workspace_id().cloned() {
+                self.active_preview_window_id_by_workspace.insert(workspace_id, window_id);
+            }
         }
 
         let current_workspace_id = self.model.current_workspace_id().cloned();
@@ -302,7 +320,7 @@ fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Co
         HostAction::ReloadConfig => {}
         HostAction::SpawnCommand { command } => {
             if command == "$openRandom" || command == "$randomWindow" {
-                spawn_random_window(model);
+                spawn_random_window(model, config);
             }
         }
         HostAction::SetLayout { name } => {
@@ -341,15 +359,22 @@ fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Co
         }
         HostAction::AssignFocusedWindowToWorkspace { workspace } => {
             if let Some(window_id) = model.focused_window_id().cloned() {
-                model.set_window_workspace(
-                    window_id,
-                    Some(WorkspaceId::from(workspace.to_string())),
-                );
+                let target_workspace = ensure_preview_workspace(model, &workspace.to_string());
+                let current_workspace_id = model.current_workspace_id().cloned();
+
+                model.set_window_workspace(window_id.clone(), Some(target_workspace));
+
+                if current_workspace_id.as_ref()
+                    != model.windows.get(&window_id).and_then(|window| window.workspace_id.as_ref())
+                {
+                    let next_focus = model.preferred_focus_window_on_current_workspace(Vec::new());
+                    model.set_window_focused(next_focus);
+                }
             }
         }
         HostAction::ToggleAssignFocusedWindowToWorkspace { workspace } => {
             if let Some(window_id) = model.focused_window_id().cloned() {
-                let target = WorkspaceId::from(workspace.to_string());
+                let target = ensure_preview_workspace(model, &workspace.to_string());
                 let already_on_target =
                     model.windows.get(&window_id).and_then(|window| window.workspace_id.as_ref())
                         == Some(&target);
@@ -363,10 +388,7 @@ fn apply_host_action(model: &mut WmModel, action: HostAction, config: Option<&Co
         }
         HostAction::CloseFocusedWindow => {
             if let Some(window_id) = model.focused_window_id().cloned() {
-                let next_focus =
-                    preferred_focus_after_removing_window(model, &window_id, Vec::new());
-                model.remove_window(window_id);
-                model.set_window_focused(next_focus);
+                let _ = hypreact_core::focus::remove_window(model, window_id, Vec::new());
             }
         }
         HostAction::FocusDirection { direction } => {
@@ -396,15 +418,89 @@ fn apply_host_action_with_session(
     }
 
     match action {
+        HostAction::ToggleFullscreen => {
+            if let Some(window_id) = state.active_preview_window_id.clone() {
+                state.model.set_window_focused(Some(window_id));
+            }
+            apply_host_action(&mut state.model, HostAction::ToggleFullscreen, config);
+        }
+        HostAction::AssignFocusedWindowToWorkspace { workspace } => {
+            if let Some(window_id) = state.active_preview_window_id.clone() {
+                state.model.set_window_focused(Some(window_id));
+            }
+            apply_host_action(
+                &mut state.model,
+                HostAction::AssignFocusedWindowToWorkspace { workspace },
+                config,
+            );
+            state.active_preview_window_id = state.model.focused_window_id().cloned();
+        }
+        HostAction::CloseFocusedWindow => {
+            if let Some(window_id) = state.active_preview_window_id.clone() {
+                state.model.set_window_focused(Some(window_id));
+            }
+            apply_host_action(&mut state.model, HostAction::CloseFocusedWindow, config);
+            state.active_preview_window_id = state.model.focused_window_id().cloned();
+        }
         HostAction::FocusDirection { direction } => {
             focus_preview_window_by_direction(state, direction);
         }
         HostAction::MoveDirection { direction } => {
+            if let Some(window_id) = state.active_preview_window_id.clone() {
+                state.model.set_window_focused(Some(window_id));
+            }
             move_preview_window_by_direction(state, direction);
+            state.active_preview_window_id = state.model.focused_window_id().cloned();
         }
         HostAction::ResizeDirection { direction } => {
+            if let Some(window_id) = state.active_preview_window_id.clone() {
+                state.model.set_window_focused(Some(window_id));
+            }
             let _ = config;
             resize_preview_window_by_direction(state, direction);
+        }
+        HostAction::FocusWindow { window_id } => {
+            let window_id = WindowId::from(window_id.as_str());
+            state.active_preview_window_id = Some(window_id.clone());
+            if let Some(workspace_id) = state.model.current_workspace_id().cloned() {
+                state.active_preview_window_id_by_workspace.insert(workspace_id, window_id.clone());
+            }
+            apply_host_action(
+                &mut state.model,
+                HostAction::FocusWindow { window_id: window_id.as_str().to_string() },
+                config,
+            );
+        }
+        HostAction::ActivateWorkspace { workspace_id } => {
+            let previous_workspace_id = state.model.current_workspace_id().cloned();
+            if let (Some(previous_workspace_id), Some(window_id)) =
+                (previous_workspace_id, state.active_preview_window_id.clone())
+            {
+                state
+                    .active_preview_window_id_by_workspace
+                    .insert(previous_workspace_id, window_id);
+            }
+
+            apply_host_action(
+                &mut state.model,
+                HostAction::ActivateWorkspace { workspace_id: workspace_id.clone() },
+                config,
+            );
+
+            if let Some(current_workspace_id) = state.model.current_workspace_id().cloned() {
+                let restored_focus = state
+                    .active_preview_window_id_by_workspace
+                    .get(&current_workspace_id)
+                    .cloned()
+                    .filter(|window_id| {
+                        state.model.window_is_on_current_workspace(window_id.clone())
+                    });
+                let next_focus = restored_focus.or_else(|| {
+                    state.model.preferred_focus_window_on_current_workspace(Vec::new())
+                });
+                state.model.set_window_focused(next_focus.clone());
+                state.active_preview_window_id = next_focus;
+            }
         }
         other => apply_host_action(&mut state.model, other, config),
     }
@@ -474,6 +570,9 @@ fn focus_window_by_direction(
         &model.last_focused_window_id_by_scope,
         model.focus_tree.as_ref(),
     );
+    if next.is_none() {
+        return;
+    }
     let _ = set_focused_window(model, next);
 }
 
@@ -617,9 +716,10 @@ fn resize_direction(direction: FocusDirection) -> ResizeDirection {
     }
 }
 
-fn spawn_random_window(model: &mut WmModel) {
+fn spawn_random_window(model: &mut WmModel, config: Option<&Config>) {
     let workspace_id = model.current_workspace_id().cloned();
     let output_id = model.current_output_id().cloned();
+    let focused_window_id = model.focused_window_id().cloned();
     let Some(selection) = select_next_spawn_window(model, workspace_id.as_ref()) else {
         return;
     };
@@ -644,6 +744,13 @@ fn spawn_random_window(model: &mut WmModel) {
         None,
         false,
     );
+
+    if config.is_none_or(|config| config.attach_after_focused)
+        && let Some(focused_window_id) = focused_window_id.as_ref()
+    {
+        model.attach_tiled_window_after(&window_id, focused_window_id);
+    }
+
     model.set_window_focused(Some(window_id));
 }
 

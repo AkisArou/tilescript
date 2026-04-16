@@ -17,6 +17,10 @@ const fn default_preview_animations_enabled() -> bool {
     true
 }
 
+const fn default_vim_mode_enabled() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedAppState {
     authoring_language: AuthoringLanguage,
@@ -28,6 +32,8 @@ struct PersistedAppState {
     dynamic_layouts: Vec<DynamicLayoutFileSet>,
     #[serde(default = "default_preview_animations_enabled")]
     preview_animations_enabled: bool,
+    #[serde(default = "default_vim_mode_enabled")]
+    vim_mode_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +46,7 @@ pub struct AppState {
     pub directory_open_state: RwSignal<BTreeMap<String, bool>>,
     pub dynamic_layouts: RwSignal<Vec<DynamicLayoutFileSet>>,
     pub preview_animations_enabled: RwSignal<bool>,
+    pub vim_mode_enabled: RwSignal<bool>,
     pub latest_config_request_id: RwSignal<u64>,
     pub preview_eval_request: RwSignal<u64>,
     pub loaded_config: RwSignal<Option<hypreact_config::model::Config>>,
@@ -62,6 +69,10 @@ impl AppState {
             .as_ref()
             .map(|state| state.preview_animations_enabled)
             .unwrap_or(default_preview_animations_enabled());
+        let vim_mode_enabled = persisted
+            .as_ref()
+            .map(|state| state.vim_mode_enabled)
+            .unwrap_or(default_vim_mode_enabled());
         let active_file_id = persisted
             .as_ref()
             .and_then(|state| state.active_file_id.clone())
@@ -91,6 +102,7 @@ impl AppState {
             directory_open_state: RwSignal::new(directory_open_state),
             dynamic_layouts: RwSignal::new(dynamic_layouts),
             preview_animations_enabled: RwSignal::new(preview_animations_enabled),
+            vim_mode_enabled: RwSignal::new(vim_mode_enabled),
             latest_config_request_id: RwSignal::new(1),
             preview_eval_request: RwSignal::new(1),
             loaded_config: RwSignal::new(None),
@@ -200,6 +212,15 @@ impl AppState {
         self.persist_ui_state();
     }
 
+    pub fn set_vim_mode_enabled(&self, enabled: bool) {
+        if self.vim_mode_enabled.get_untracked() == enabled {
+            return;
+        }
+
+        self.vim_mode_enabled.set(enabled);
+        self.persist_ui_state();
+    }
+
     pub fn create_layout(&self, layout: DynamicLayoutFileSet) {
         self.dynamic_layouts.update(|layouts| {
             layouts.retain(|candidate| candidate.name != layout.name);
@@ -234,6 +255,7 @@ impl AppState {
             selected_workspace: Some(self.session.get_untracked().active_workspace_name()),
             dynamic_layouts: self.dynamic_layouts.get_untracked(),
             preview_animations_enabled: self.preview_animations_enabled.get_untracked(),
+            vim_mode_enabled: self.vim_mode_enabled.get_untracked(),
         };
         persist_state(&state);
     }
