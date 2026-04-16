@@ -23,6 +23,7 @@ live: plugin
 	@printf 'load with: hyprctl plugin load %s/build/tilescript-hypr-live.so\n' "$$(pwd)"
 
 playground:
+	mkdir -p apps/tilescript-playground/js/dist
 	trunk serve --config apps/tilescript-playground/Trunk.toml --open
 
 clean:

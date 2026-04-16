@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm build:css-lsp-web && vite build",
-    "build:css-lsp-web": "wasm-pack build ../../../crates/css-lsp/web --target web --out-dir generated/css-lsp-web --out-name index --no-opt --no-pack"
+    "build:css-lsp-web": "wasm-pack build ../../../crates/css-lsp/web --target web --out-dir ../../../apps/tilescript-playground/js/generated/css-lsp-web --out-name index --no-opt --no-pack"
   },
   "dependencies": {
     "monaco-editor": "^0.55.1",
