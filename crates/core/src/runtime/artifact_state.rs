@@ -3,10 +3,15 @@ use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ArtifactKind {
+    AuthoredFile,
     Config,
     Layout,
     JsModuleGraph,
+    JsExecutable,
     JsBytecode,
+    LuaCompiledSource,
+    LuaExecutable,
+    LuaBytecode,
     StylesheetAnalysis,
 }
 
@@ -17,6 +22,10 @@ pub struct ArtifactKey {
 }
 
 impl ArtifactKey {
+    pub fn authored_file(identity: impl Into<String>) -> Self {
+        Self { kind: ArtifactKind::AuthoredFile, identity: identity.into() }
+    }
+
     pub fn config(identity: impl Into<String>) -> Self {
         Self { kind: ArtifactKind::Config, identity: identity.into() }
     }
@@ -33,8 +42,24 @@ impl ArtifactKey {
         Self { kind: ArtifactKind::JsModuleGraph, identity: identity.into() }
     }
 
+    pub fn js_executable(identity: impl Into<String>) -> Self {
+        Self { kind: ArtifactKind::JsExecutable, identity: identity.into() }
+    }
+
     pub fn js_bytecode(identity: impl Into<String>) -> Self {
         Self { kind: ArtifactKind::JsBytecode, identity: identity.into() }
+    }
+
+    pub fn lua_executable(identity: impl Into<String>) -> Self {
+        Self { kind: ArtifactKind::LuaExecutable, identity: identity.into() }
+    }
+
+    pub fn lua_compiled_source(identity: impl Into<String>) -> Self {
+        Self { kind: ArtifactKind::LuaCompiledSource, identity: identity.into() }
+    }
+
+    pub fn lua_bytecode(identity: impl Into<String>) -> Self {
+        Self { kind: ArtifactKind::LuaBytecode, identity: identity.into() }
     }
 }
 
@@ -123,6 +148,10 @@ impl ArtifactGraph {
 
     pub fn dependents_of(&self, source: &ArtifactKey) -> impl Iterator<Item = &ArtifactKey> {
         self.outgoing.get(source).into_iter().flat_map(|targets| targets.iter())
+    }
+
+    pub fn sources(&self) -> impl Iterator<Item = &ArtifactKey> {
+        self.outgoing.keys()
     }
 
     pub fn transitive_dependents_of(&self, source: &ArtifactKey) -> BTreeSet<ArtifactKey> {

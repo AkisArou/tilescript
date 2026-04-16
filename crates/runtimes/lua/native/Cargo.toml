@@ -13,3 +13,6 @@ hypreact-runtime-lua-core = { path = "../core" }
 mlua = { workspace = true, features = ["lua54", "vendored", "serialize"] }
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

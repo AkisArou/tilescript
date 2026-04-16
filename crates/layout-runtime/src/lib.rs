@@ -45,6 +45,9 @@ use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
 use tracing::{debug, info};
 
 use hypreact_runtime_js_native::{decode_runtime_graph_payload, module_graph_execution_key};
+use hypreact_runtime_lua_native::{
+    lua_bytecode_artifact_key, lua_compiled_source_artifact_key, lua_executable_artifact_key,
+};
 
 mod runtime_factory;
 mod source_watcher;
@@ -471,7 +474,8 @@ fn authored_sources_newer_than_prepared_cache(
     };
 
     let newest_authored = newest_tree_timestamp(authored_root, &[".hypreact-build", ".sdk"]);
-    let newest_prepared = newest_tree_timestamp(prepared_root, &[".quickjs-bytecode"]);
+    let newest_prepared =
+        newest_tree_timestamp(prepared_root, &[".quickjs-bytecode", ".lua-bytecode"]);
     match (newest_authored, newest_prepared) {
         (Some(authored), Some(prepared)) => authored > prepared,
         (Some(_), None) => true,
@@ -856,6 +860,7 @@ pub fn layout_status_for_model(
                         .map(|evaluation| {
                             record_stylesheet_dependencies(service, &evaluation.artifact);
                             record_js_runtime_dependencies(service, &evaluation.artifact);
+                            record_lua_runtime_dependencies(service, &evaluation.artifact);
                             diagnostics_for_stylesheets(service, &evaluation.artifact.stylesheets)
                         })
                         .unwrap_or_default();
@@ -1317,6 +1322,52 @@ fn record_js_runtime_dependencies(service: &mut LayoutRuntimeService, artifact: 
     layout_dependents.push(module_graph_key.clone());
     service.artifact_graph.replace_edges(layout_key, layout_dependents);
     service.artifact_graph.replace_edges(module_graph_key, [bytecode_key]);
+}
+
+fn record_lua_runtime_dependencies(service: &mut LayoutRuntimeService, artifact: &PreparedLayout) {
+    if artifact.selected.runtime != RuntimeKind::Lua {
+        return;
+    }
+
+    let Some(source) = artifact.runtime_payload.get("source").and_then(serde_json::Value::as_str)
+    else {
+        return;
+    };
+
+    let source_module = artifact
+        .runtime_payload
+        .get("sourceModule")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(&artifact.selected.module);
+    let executable_key = lua_executable_artifact_key(&artifact.selected.module, source);
+    let bytecode_key = lua_bytecode_artifact_key(&artifact.selected.module, source);
+    let layout_key = ArtifactKey::layout(artifact.selected.name.clone());
+    let executable_artifact_key = ArtifactKey::lua_executable(executable_key.clone());
+    let bytecode_artifact_key = ArtifactKey::lua_bytecode(bytecode_key);
+
+    let existing_stylesheet_dependents = service
+        .artifact_graph
+        .dependents_of(&layout_key)
+        .filter(|key| {
+            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let mut layout_dependents = existing_stylesheet_dependents;
+    if Path::new(source_module).extension().and_then(|ext| ext.to_str()) == Some("fnl") {
+        let compiled_source_key =
+            lua_compiled_source_artifact_key(&artifact.selected.module, source_module);
+        let compiled_source_artifact_key = ArtifactKey::lua_compiled_source(compiled_source_key);
+        layout_dependents.push(compiled_source_artifact_key.clone());
+        service
+            .artifact_graph
+            .replace_edges(compiled_source_artifact_key, [executable_artifact_key.clone()]);
+    } else {
+        layout_dependents.push(executable_artifact_key.clone());
+    }
+    service.artifact_graph.replace_edges(layout_key, layout_dependents);
+    service.artifact_graph.replace_edges(executable_artifact_key, [bytecode_artifact_key]);
 }
 
 pub fn placement_for_workspace(
@@ -2271,6 +2322,122 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>();
         assert!(graph_dependents.contains(&ArtifactKey::js_bytecode(graph_execution_key)));
+    }
+
+    #[test]
+    fn records_layout_to_lua_executable_and_bytecode_dependency_edges() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
+        let source = "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
+        let executable_key = lua_executable_artifact_key("layouts/master-stack/index.lua", source);
+        let bytecode_key = lua_bytecode_artifact_key("layouts/master-stack/index.lua", source);
+        let artifact = PreparedLayout {
+            selected: SelectedLayout {
+                name: "master-stack".into(),
+                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Lua,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.lua".into(),
+            },
+            runtime_payload: serde_json::json!({
+                "source": source,
+                "sourceModule": "layouts/master-stack/index.lua",
+            }),
+            stylesheets: PreparedStylesheets::default(),
+            dependencies: vec![],
+        };
+
+        record_lua_runtime_dependencies(&mut service, &artifact);
+
+        let layout_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::layout("master-stack"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(layout_dependents.contains(&ArtifactKey::lua_executable(executable_key.clone())));
+
+        let executable_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::lua_executable(executable_key))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(executable_dependents.contains(&ArtifactKey::lua_bytecode(bytecode_key)));
+    }
+
+    #[test]
+    fn records_fennel_layout_to_compiled_lua_executable_and_bytecode_dependency_edges() {
+        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
+            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
+        ))
+        .unwrap();
+        let compiled_source = "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
+        let source_module = "layouts/master-stack/index.fnl";
+        let compiled_source_key =
+            lua_compiled_source_artifact_key("layouts/master-stack/index.fnl", source_module);
+        let executable_key =
+            lua_executable_artifact_key("layouts/master-stack/index.fnl", compiled_source);
+        let bytecode_key =
+            lua_bytecode_artifact_key("layouts/master-stack/index.fnl", compiled_source);
+        let artifact = PreparedLayout {
+            selected: SelectedLayout {
+                name: "master-stack".into(),
+                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Lua,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.fnl".into(),
+            },
+            runtime_payload: serde_json::json!({
+                "source": compiled_source,
+                "sourceModule": source_module,
+            }),
+            stylesheets: PreparedStylesheets::default(),
+            dependencies: vec![],
+        };
+
+        record_lua_runtime_dependencies(&mut service, &artifact);
+
+        let layout_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::layout("master-stack"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(
+            layout_dependents
+                .contains(&ArtifactKey::lua_compiled_source(compiled_source_key.clone()))
+        );
+
+        let compiled_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::lua_compiled_source(compiled_source_key))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(compiled_dependents.contains(&ArtifactKey::lua_executable(executable_key.clone())));
+
+        let executable_dependents = service
+            .artifact_graph
+            .dependents_of(&ArtifactKey::lua_executable(executable_key))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert!(executable_dependents.contains(&ArtifactKey::lua_bytecode(bytecode_key)));
+    }
+
+    #[test]
+    fn prepared_cache_staleness_ignores_lua_bytecode_cache_directory() {
+        let root = tempfile::TempDir::new().unwrap();
+        let authored_root = root.path().join("authored");
+        let prepared_root = authored_root.join(".hypreact-build");
+        let authored_config = authored_root.join("config.lua");
+        let prepared_config = prepared_root.join("config.js");
+        let bytecode_dir = prepared_root.join(".lua-bytecode");
+
+        fs::create_dir_all(&bytecode_dir).unwrap();
+        fs::write(&authored_config, "return {}\n").unwrap();
+        fs::write(&prepared_config, "{}\n").unwrap();
+
+        std::thread::sleep(Duration::from_secs(1));
+        fs::write(bytecode_dir.join("cache.luac"), b"bytecode").unwrap();
+
+        assert!(!authored_sources_newer_than_prepared_cache(&authored_config, &prepared_config));
     }
 
     #[test]

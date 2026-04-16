@@ -661,7 +661,7 @@ mod tests {
     }
 
     #[test]
-    fn re_prepares_when_runtime_payload_changes_even_if_dependencies_match() {
+    fn reuses_prepared_layout_once_runtime_payload_matches_cached_artifact() {
         let prepare_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let workspace = validation_workspace("master-stack");
         let runtime = StubLayoutRuntime {
@@ -707,6 +707,6 @@ mod tests {
         let _ = service.prepare_for_workspace(&config_a, &workspace).unwrap();
         let _ = service.prepare_for_workspace(&config_b, &workspace).unwrap();
 
-        assert_eq!(prepare_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(prepare_count.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

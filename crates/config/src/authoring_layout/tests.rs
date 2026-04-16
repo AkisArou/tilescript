@@ -184,6 +184,12 @@ struct StubSourceBundleRuntime {
     loaded: Option<PreparedLayout>,
 }
 
+#[derive(Debug, Clone)]
+struct MutableSourceBundleRuntime {
+    config: std::sync::Arc<std::sync::Mutex<Config>>,
+    loaded: Option<PreparedLayout>,
+}
+
 impl SourceBundleConfigRuntime for StubSourceBundleRuntime {
     fn load_config<'a>(
         &'a self,
@@ -197,6 +203,65 @@ impl SourceBundleConfigRuntime for StubSourceBundleRuntime {
 }
 
 impl SourceBundlePreparedLayoutRuntime for StubSourceBundleRuntime {
+    fn prepare_layout<'a>(
+        &'a self,
+        _root_dir: &'a std::path::Path,
+        _sources: &'a SourceBundle,
+        _config: &'a Config,
+        _workspace: &'a WorkspaceSnapshot,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Option<PreparedLayout>, crate::model::LayoutConfigError>>
+                + 'a,
+        >,
+    > {
+        let loaded = self.loaded.clone();
+        Box::pin(async move { Ok(loaded) })
+    }
+
+    fn build_context(
+        &self,
+        state: &StateSnapshot,
+        workspace: &WorkspaceSnapshot,
+        artifact: Option<&PreparedLayout>,
+    ) -> LayoutEvaluationContext {
+        state.layout_context(workspace, artifact.map(|artifact| artifact.selected.clone()))
+    }
+
+    fn evaluate_layout<'a>(
+        &'a self,
+        _root_dir: &'a std::path::Path,
+        _sources: &'a SourceBundle,
+        _artifact: &'a PreparedLayout,
+        _context: &'a LayoutEvaluationContext,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<EvaluatedSourceLayout, crate::model::LayoutConfigError>>
+                + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            Ok(EvaluatedSourceLayout {
+                layout: SourceLayoutNode::Workspace { meta: Default::default(), children: vec![] },
+                dependencies: Default::default(),
+            })
+        })
+    }
+}
+
+impl SourceBundleConfigRuntime for MutableSourceBundleRuntime {
+    fn load_config<'a>(
+        &'a self,
+        _root_dir: &'a std::path::Path,
+        _entry_path: &'a std::path::Path,
+        _sources: &'a SourceBundle,
+    ) -> Pin<Box<dyn Future<Output = Result<Config, crate::model::LayoutConfigError>> + 'a>> {
+        let config = self.config.lock().unwrap().clone();
+        Box::pin(async move { Ok(config) })
+    }
+}
+
+impl SourceBundlePreparedLayoutRuntime for MutableSourceBundleRuntime {
     fn prepare_layout<'a>(
         &'a self,
         _root_dir: &'a std::path::Path,
@@ -522,7 +587,7 @@ fn source_bundle_authoring_layout_service_loads_config() {
         },
         loaded: None,
     };
-    let service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
+    let mut service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
         Box::new(runtime.clone()),
         Box::new(runtime),
     );
@@ -583,4 +648,388 @@ fn source_bundle_authoring_layout_service_evaluates_prepared_layout() {
 
     assert_eq!(evaluated.artifact.selected.name, "master-stack");
     assert!(matches!(evaluated.layout, SourceLayoutNode::Workspace { .. }));
+}
+
+#[test]
+fn source_bundle_authoring_layout_service_records_js_browser_artifact_edges() {
+    let artifact = PreparedLayout {
+        stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+            global: None,
+            layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                path: "layouts/master-stack/index.css".into(),
+                source: "window { text-align: center; }".into(),
+            }),
+        },
+        ..PreparedLayout {
+            selected: SelectedLayout {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.tsx".into(),
+            },
+            runtime_payload: serde_json::json!({
+                "entry": "layouts/master-stack/index.tsx",
+                "modules": [
+                    {
+                        "specifier": "layouts/master-stack/index.tsx",
+                        "source": "import './helpers'; export default (ctx => ({ type: 'workspace', children: [] }));",
+                        "resolved_imports": {"./helpers": "layouts/master-stack/helpers.ts"}
+                    },
+                    {
+                        "specifier": "layouts/master-stack/helpers.ts",
+                        "source": "export const helper = true;",
+                        "resolved_imports": {}
+                    }
+                ]
+            }),
+            stylesheets: Default::default(),
+            dependencies: vec![],
+        }
+    };
+    let runtime = StubSourceBundleRuntime {
+        config: Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.tsx".into(),
+                stylesheet_path: Some("layouts/master-stack/index.css".into()),
+                runtime_cache_payload: Some(runtime_cache_payload("layouts/master-stack/index.tsx")),
+            }],
+            ..Config::default()
+        },
+        loaded: Some(artifact),
+    };
+    let mut service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
+        Box::new(runtime.clone()),
+        Box::new(runtime),
+    );
+    let config = Config {
+        layouts: vec![LayoutDefinition {
+            name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
+            directory: "layouts/master-stack".into(),
+            module: "layouts/master-stack/index.tsx".into(),
+            stylesheet_path: Some("layouts/master-stack/index.css".into()),
+            runtime_cache_payload: Some(runtime_cache_payload("layouts/master-stack/index.tsx")),
+        }],
+        ..Config::default()
+    };
+
+    let sources = SourceBundle::from([
+        (
+            std::path::PathBuf::from("/workspace/layouts/master-stack/index.tsx"),
+            String::from("export default () => ({ type: 'workspace', children: [] })"),
+        ),
+        (
+            std::path::PathBuf::from("/workspace/layouts/master-stack/index.css"),
+            String::from("window { text-align: center; }"),
+        ),
+        (
+            std::path::PathBuf::from("/workspace/layouts/master-stack/helpers.ts"),
+            String::from("export const helper = true;"),
+        ),
+    ]);
+    let _ = block_on(service.evaluate_prepared_for_workspace(
+        std::path::Path::new("/workspace"),
+        &sources,
+        &config,
+        &state(),
+        &workspace(),
+    ))
+    .unwrap();
+
+    let layout_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(layout_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+            && key.identity == "layouts/master-stack/index.css"
+    }));
+    let graph_key = layout_dependents
+        .iter()
+        .find(|key| {
+            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::JsModuleGraph
+        })
+        .cloned()
+        .expect("js module graph dependent");
+    let graph_dependents = service
+        .dependency_graph()
+        .dependents_of(&graph_key)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(graph_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::JsExecutable
+    }));
+
+    let authored_layout_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/layouts/master-stack/index.tsx",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(authored_layout_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            && key.identity == "master-stack"
+    }));
+    let transitive_layout_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/layouts/master-stack/helpers.ts",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(transitive_layout_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            && key.identity == "master-stack"
+    }));
+    let authored_stylesheet_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/layouts/master-stack/index.css",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(authored_stylesheet_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+            && key.identity == "layouts/master-stack/index.css"
+    }));
+}
+
+#[test]
+fn source_bundle_authoring_layout_service_prunes_stale_layout_and_authored_file_nodes() {
+    let config_state = std::sync::Arc::new(std::sync::Mutex::new(Config {
+        layouts: vec![LayoutDefinition {
+            name: "master-stack".into(),
+            runtime: RuntimeKind::Js,
+            directory: "layouts/master-stack".into(),
+            module: "layouts/master-stack/index.tsx".into(),
+            stylesheet_path: Some("layouts/master-stack/index.css".into()),
+            runtime_cache_payload: Some(runtime_cache_payload("layouts/master-stack/index.tsx")),
+        }],
+        ..Config::default()
+    }));
+    let runtime = MutableSourceBundleRuntime {
+        config: config_state.clone(),
+        loaded: Some(prepared_layout("master-stack", "layouts/master-stack/index.tsx")),
+    };
+    let mut service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
+        Box::new(runtime.clone()),
+        Box::new(runtime),
+    );
+    let new_config = Config {
+        layouts: vec![LayoutDefinition {
+            name: "secondary".into(),
+            runtime: RuntimeKind::Js,
+            directory: "layouts/secondary".into(),
+            module: "layouts/secondary/index.tsx".into(),
+            stylesheet_path: None,
+            runtime_cache_payload: Some(runtime_cache_payload("layouts/secondary/index.tsx")),
+        }],
+        ..Config::default()
+    };
+
+    let old_sources = SourceBundle::from([
+        (
+            std::path::PathBuf::from("/workspace/config.ts"),
+            String::from("export default {}"),
+        ),
+        (
+            std::path::PathBuf::from("/workspace/layouts/master-stack/index.tsx"),
+            String::from("export default () => ({ type: 'workspace', children: [] })"),
+        ),
+    ]);
+    let _ = block_on(service.load_config(
+        std::path::Path::new("/workspace"),
+        std::path::Path::new("/workspace/config.ts"),
+        &old_sources,
+    ))
+    .unwrap();
+    let _ = block_on(service.prepare_for_workspace(
+        std::path::Path::new("/workspace"),
+        &old_sources,
+        &config_state.lock().unwrap().clone(),
+        &workspace(),
+    ))
+    .unwrap();
+
+    let new_sources = SourceBundle::from([
+        (
+            std::path::PathBuf::from("/workspace/config.ts"),
+            String::from("export default {}"),
+        ),
+        (
+            std::path::PathBuf::from("/workspace/layouts/secondary/index.tsx"),
+            String::from("export default () => ({ type: 'workspace', children: [] })"),
+        ),
+    ]);
+    *config_state.lock().unwrap() = new_config;
+    let _ = block_on(service.load_config(
+        std::path::Path::new("/workspace"),
+        std::path::Path::new("/workspace/config.ts"),
+        &new_sources,
+    ))
+    .unwrap();
+
+    assert!(service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/layouts/master-stack/index.tsx",
+        ))
+        .next()
+        .is_none());
+    assert!(!service.cached_layouts().any(|layout| layout.selected.name == "master-stack"));
+}
+
+#[test]
+fn source_bundle_authoring_layout_service_records_fennel_browser_artifact_edges() {
+    let artifact = PreparedLayout {
+        selected: SelectedLayout {
+            name: "master-stack".into(),
+            runtime: RuntimeKind::Lua,
+            directory: "layouts/master-stack".into(),
+            module: "layouts/master-stack/index.fnl".into(),
+        },
+        runtime_payload: serde_json::json!({
+            "source": "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end",
+            "sourceModule": "layouts/master-stack/index.fnl",
+        }),
+        stylesheets: Default::default(),
+        dependencies: vec![],
+    };
+    let runtime = StubSourceBundleRuntime {
+        config: Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Lua,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.fnl".into(),
+                stylesheet_path: None,
+                runtime_cache_payload: None,
+            }],
+            ..Config::default()
+        },
+        loaded: Some(artifact),
+    };
+    let mut service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
+        Box::new(runtime.clone()),
+        Box::new(runtime),
+    );
+    let config = Config {
+        layouts: vec![LayoutDefinition {
+            name: "master-stack".into(),
+            runtime: RuntimeKind::Lua,
+            directory: "layouts/master-stack".into(),
+            module: "layouts/master-stack/index.fnl".into(),
+            stylesheet_path: None,
+            runtime_cache_payload: None,
+        }],
+        ..Config::default()
+    };
+
+    let sources = SourceBundle::from([(
+        std::path::PathBuf::from("/workspace/layouts/master-stack/index.fnl"),
+        String::from("(fn [ctx] nil)"),
+    )]);
+    let _ = block_on(service.evaluate_prepared_for_workspace(
+        std::path::Path::new("/workspace"),
+        &sources,
+        &config,
+        &state(),
+        &workspace(),
+    ))
+    .unwrap();
+
+    let layout_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let compiled_key = layout_dependents
+        .iter()
+        .find(|key| {
+            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::LuaCompiledSource
+        })
+        .cloned()
+        .expect("compiled fennel source dependent");
+    let compiled_dependents = service
+        .dependency_graph()
+        .dependents_of(&compiled_key)
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(compiled_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::LuaExecutable
+    }));
+
+    let authored_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/layouts/master-stack/index.fnl",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(authored_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            && key.identity == "master-stack"
+    }));
+}
+
+#[test]
+fn source_bundle_authoring_layout_service_records_config_to_layout_edges() {
+    let runtime = StubSourceBundleRuntime {
+        config: Config {
+            layouts: vec![LayoutDefinition {
+                name: "master-stack".into(),
+                runtime: RuntimeKind::Js,
+                directory: "layouts/master-stack".into(),
+                module: "layouts/master-stack/index.tsx".into(),
+                stylesheet_path: Some("layouts/master-stack/index.css".into()),
+                runtime_cache_payload: Some(runtime_cache_payload("layouts/master-stack/index.tsx")),
+            }],
+            ..Config::default()
+        },
+        loaded: None,
+    };
+    let mut service = SourceBundleAuthoringLayoutService::from_runtime_bundle(
+        Box::new(runtime.clone()),
+        Box::new(runtime),
+    );
+
+    let sources = SourceBundle::from([(
+        std::path::PathBuf::from("/workspace/config.ts"),
+        String::from("export default {}"),
+    )]);
+    let _ = block_on(service.load_config(
+        std::path::Path::new("/workspace"),
+        std::path::Path::new("/workspace/config.ts"),
+        &sources,
+    ))
+    .unwrap();
+
+    let config_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::config(
+            "source-bundle-config",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(config_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            && key.identity == "master-stack"
+    }));
+
+    let authored_config_dependents = service
+        .dependency_graph()
+        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+            "/workspace/config.ts",
+        ))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(authored_config_dependents.iter().any(|key| {
+        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Config
+            && key.identity == "source-bundle-config"
+    }));
 }
