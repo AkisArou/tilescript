@@ -116,9 +116,9 @@ impl AppBuildPlan {
         }
 
         if needs_jsx_runtime
-            && !virtual_modules.iter().any(|name| name == "@hypreact/sdk/jsx-runtime")
+            && !virtual_modules.iter().any(|name| name == "@tilescript/sdk/jsx-runtime")
         {
-            virtual_modules.push("@hypreact/sdk/jsx-runtime".into());
+            virtual_modules.push("@tilescript/sdk/jsx-runtime".into());
         }
 
         Self { script_modules, stylesheet_modules, virtual_modules }
@@ -184,7 +184,7 @@ pub fn compile_app(plan: &AppBuildPlan) -> Result<CompiledApp, CompileError> {
             path.extension().and_then(|extension| extension.to_str()),
             Some("tsx" | "jsx")
         ) {
-            format!("import {{ sp, Fragment }} from \"@hypreact/sdk/jsx-runtime\";\n{source}")
+            format!("import {{ sp, Fragment }} from \"@tilescript/sdk/jsx-runtime\";\n{source}")
         } else {
             source.clone()
         };
@@ -268,10 +268,10 @@ pub fn compiled_app_to_module_graph(
 
         if matches!(module_id, ModuleId::File(path) if matches!(path.extension().and_then(|extension| extension.to_str()), Some("tsx" | "jsx")))
             && compiled_virtuals
-                .contains_key(&ModuleId::Virtual("@hypreact/sdk/jsx-runtime".into()))
+                .contains_key(&ModuleId::Virtual("@tilescript/sdk/jsx-runtime".into()))
         {
             resolved_imports
-                .insert("@hypreact/sdk/jsx-runtime".into(), "@hypreact/sdk/jsx-runtime".into());
+                .insert("@tilescript/sdk/jsx-runtime".into(), "@tilescript/sdk/jsx-runtime".into());
         }
 
         modules.push(JavaScriptModule {

@@ -1,4 +1,4 @@
-use hypreact_core::runtime::runtime_error::RuntimeError;
+use tilescript_core::runtime::runtime_error::RuntimeError;
 use serde::{Deserialize, Serialize};
 
 use crate::module_graph::JavaScriptModuleGraph;

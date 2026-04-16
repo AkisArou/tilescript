@@ -3,14 +3,14 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use hypreact_core::SourceLayoutNode;
-use hypreact_core::runtime::layout_context::{
+use tilescript_core::SourceLayoutNode;
+use tilescript_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
-use hypreact_core::runtime::prepared_layout::PreparedLayout;
-use hypreact_core::runtime::runtime_contract::PreparedLayoutRuntime;
-use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::runtime::prepared_layout::PreparedLayout;
+use tilescript_core::runtime::runtime_contract::PreparedLayoutRuntime;
+use tilescript_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 
 use crate::authoring_layout::{AuthoringLayoutService, SourceBundleAuthoringLayoutService};
 use crate::model::{Config, ConfigPaths, LayoutConfigError};

@@ -1,4 +1,4 @@
-#include "hypreact_plugin_sync.hpp"
+#include "tilescript_hypr_plugin_sync.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -9,16 +9,16 @@
 #include <unordered_map>
 #include <vector>
 
-#include "hypreact_plugin_algorithm.hpp"
-#include "hypreact_hypr_ffi.h"
-#include "hypreact_plugin_runtime.hpp"
+#include "tilescript_hypr_plugin_algorithm.hpp"
+#include "tilescript_hypr_ffi.h"
+#include "tilescript_hypr_plugin_runtime.hpp"
 
 #include "src/Compositor.hpp"
 #include "src/desktop/state/FocusState.hpp"
 #include "src/managers/KeybindManager.hpp"
 #include "src/layout/space/Space.hpp"
 
-namespace hypreact_plugin {
+namespace tilescript_plugin {
 namespace {
 
 struct PendingWorkspaceRecalculation {
@@ -36,19 +36,19 @@ struct WindowSyncPayload {
   std::optional<std::string> previousFocusedWindowId;
   std::string workspaceId;
   std::string outputId;
-  HypreactWindowSync ffi;
+  TilescriptWindowSync ffi;
 };
 
 struct OutputSyncPayload {
   std::string outputId;
   std::string name;
-  HypreactOutputSync ffi;
+  TilescriptOutputSync ffi;
 };
 
 struct WorkspaceLayoutSpaceSyncPayload {
   std::string workspaceId;
   std::string outputId;
-  HypreactWorkspaceLayoutSpaceSync ffi;
+  TilescriptWorkspaceLayoutSpaceSync ffi;
 };
 
 std::unordered_map<WINDOWID, std::string> g_windowIds;
@@ -63,7 +63,7 @@ uintptr_t workspaceToken(const PHLWORKSPACE &workspace) {
   return reinterpret_cast<uintptr_t>(workspace.get());
 }
 
-bool focusHyprlandWindowByHypreactId(const std::string &windowId) {
+bool focusHyprlandWindowByTilescriptId(const std::string &windowId) {
   for (const auto &window : g_pCompositor->m_windows) {
     if (!window || !window->m_isMapped) {
       continue;
@@ -144,16 +144,16 @@ WindowSyncPayload makeUpsertWindowRequest(const PHLWINDOW &window) {
   return payload;
 }
 
-void logStatusResult(const char *label, const HypreactStatusResult &result) {
+void logStatusResult(const char *label, const TilescriptStatusResult &result) {
   if (result.error != nullptr) {
-    std::cerr << "[hypreact] " << label << " failed: " << result.error
+    std::cerr << "[tilescript] " << label << " failed: " << result.error
               << std::endl;
   }
 }
 
-void logAndFreeStatusResult(const char *label, HypreactStatusResult result) {
+void logAndFreeStatusResult(const char *label, TilescriptStatusResult result) {
   logStatusResult(label, result);
-  hypreact_runtime_free_status_result(result);
+  tilescript_runtime_free_status_result(result);
 }
 
 std::string boxToString(const CBox& box) {
@@ -374,7 +374,7 @@ void applyPlacementForWorkspace(const PHLWORKSPACE &workspace) {
   const auto placement =
       runtime()->layoutPlacementForWorkspace(workspaceName(workspace));
   const auto byWindowId = geometryMapFromPlacement(placement);
-  hypreact_runtime_free_placement_result(placement);
+  tilescript_runtime_free_placement_result(placement);
 
   const auto targets = managedTiledTargets(workspace);
   if (targets.empty()) {
@@ -579,7 +579,7 @@ void markWindowClosing(const PHLWINDOW &window, bool closing) {
   if (closing) {
     const auto nextFocus = runtime()->layoutCloseFocusCandidate(windowId);
     if (nextFocus.has_value()) {
-      if (focusHyprlandWindowByHypreactId(*nextFocus)) {
+      if (focusHyprlandWindowByTilescriptId(*nextFocus)) {
         g_lastFocusedWindowId = nextFocus;
       }
     } else if (g_lastFocusedWindowId == std::optional<std::string>(windowId)) {
@@ -658,4 +658,4 @@ void clearSyncState() {
   g_lastFocusedWindowId.reset();
 }
 
-} // namespace hypreact_plugin
+} // namespace tilescript_plugin

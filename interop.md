@@ -1,15 +1,15 @@
 # Interop Plan
 
-This document describes how to make the Rust <-> C++ boundary in `hypreact` as typed and maintainable as possible.
+This document describes how to make the Rust <-> C++ boundary in `tilescript` as typed and maintainable as possible.
 
 Scope:
 
-- Rust FFI crate: `crates/hypr-ffi`
+- Rust FFI crate: `crates/ffi`
 - Hyprland plugin bridge: `plugin/hyprland/`
 
 Non-goals:
 
-- changing user-facing `hyprctl hypreact` JSON output
+- changing user-facing `hyprctl tilescript-hypr` JSON output
 - redesigning Hyprland plugin behavior
 - replacing the C ABI with C++ bindings or code generation right now
 
@@ -31,36 +31,36 @@ These FFI surfaces are already structured and should stay that way.
 
 Input structs:
 
-- `HypreactWindowSync`
-- `HypreactOutputSync`
-- `HypreactWorkspaceLayoutSpaceSync`
-- `HypreactCommandInput`
+- `TilescriptWindowSync`
+- `TilescriptOutputSync`
+- `TilescriptWorkspaceLayoutSpaceSync`
+- `TilescriptCommandInput`
 
 Result structs:
 
-- `HypreactActionResult`
-- `HypreactStatusResult`
-- `HypreactPlacementResult`
-- `HypreactStateResult`
-- `HypreactLayoutStatusResult`
-- `HypreactStringResult`
+- `TilescriptActionResult`
+- `TilescriptStatusResult`
+- `TilescriptPlacementResult`
+- `TilescriptStateResult`
+- `TilescriptLayoutStatusResult`
+- `TilescriptStringResult`
 
 Typed operational calls already in good shape:
 
-- `hypreact_runtime_dispatch_command`
-- `hypreact_runtime_load_layout_config_result`
-- `hypreact_runtime_bootstrap_config_result`
-- `hypreact_runtime_sync_sdk_support_result`
-- `hypreact_runtime_reload_layout_config_result`
-- `hypreact_runtime_layout_placement`
-- `hypreact_runtime_layout_placement_for_workspace`
-- `hypreact_runtime_layout_focus_candidate`
-- `hypreact_runtime_layout_close_focus_candidate`
-- `hypreact_runtime_layout_swap_candidate`
-- `hypreact_runtime_resize_direction`
-- `hypreact_runtime_move_tiled_window`
-- `hypreact_runtime_state_result`
-- `hypreact_runtime_layout_status_result`
+- `tilescript_runtime_dispatch_command`
+- `tilescript_runtime_load_layout_config_result`
+- `tilescript_runtime_bootstrap_config_result`
+- `tilescript_runtime_sync_sdk_support_result`
+- `tilescript_runtime_reload_layout_config_result`
+- `tilescript_runtime_layout_placement`
+- `tilescript_runtime_layout_placement_for_workspace`
+- `tilescript_runtime_layout_focus_candidate`
+- `tilescript_runtime_layout_close_focus_candidate`
+- `tilescript_runtime_layout_swap_candidate`
+- `tilescript_runtime_resize_direction`
+- `tilescript_runtime_move_tiled_window`
+- `tilescript_runtime_state_result`
+- `tilescript_runtime_layout_status_result`
 
 These are the model for the rest of the boundary.
 
@@ -68,16 +68,16 @@ These are the model for the rest of the boundary.
 
 These are the remaining internal FFI calls that still return JSON strings instead of typed status structs:
 
-- `hypreact_runtime_reset_state`
-- `hypreact_runtime_upsert_output`
-- `hypreact_runtime_remove_output`
-- `hypreact_runtime_activate_workspace`
-- `hypreact_runtime_set_workspace_layout_space`
-- `hypreact_runtime_focus_window`
-- `hypreact_runtime_set_window_closing`
-- `hypreact_runtime_remove_window`
-- `hypreact_runtime_upsert_window`
-- `hypreact_runtime_state`
+- `tilescript_runtime_reset_state`
+- `tilescript_runtime_upsert_output`
+- `tilescript_runtime_remove_output`
+- `tilescript_runtime_activate_workspace`
+- `tilescript_runtime_set_workspace_layout_space`
+- `tilescript_runtime_focus_window`
+- `tilescript_runtime_set_window_closing`
+- `tilescript_runtime_remove_window`
+- `tilescript_runtime_upsert_window`
+- `tilescript_runtime_state`
 
 Current plugin bridge usage:
 
@@ -94,7 +94,7 @@ This is the main remaining internal cleanup target.
 
 These surfaces should stay JSON, because they are user-facing or intentionally open-ended.
 
-### `hyprctl hypreact`
+### `hyprctl tilescript-hypr`
 
 Keep this JSON.
 
@@ -105,7 +105,7 @@ Why:
 - it naturally wants nested structured data
 - exact field shape can evolve more easily than a typed C ABI
 
-### Diagnostics payload in `hyprctl hypreact`
+### Diagnostics payload in `hyprctl tilescript-hypr`
 
 Keep this JSON in the `hyprctl` response.
 
@@ -137,18 +137,18 @@ Problems:
 
 This was previously mixed together in one file, but has now been split into:
 
-- `crates/hypr-ffi/src/abi.rs`
+- `crates/ffi/src/abi.rs`
   - `#[repr(C)]` ABI structs and enums only
-- `crates/hypr-ffi/src/runtime_types.rs`
+- `crates/ffi/src/runtime_types.rs`
   - Rust-only runtime helper types
 
 That makes the boundary easier to audit and keeps Rust-only transport helpers out of the ABI module.
 
 ## 3. Diagnostics were previously stringly typed
 
-This used to be carried as `diagnostics_json` inside `HypreactLayoutStatusResult`.
+This used to be carried as `diagnostics_json` inside `TilescriptLayoutStatusResult`.
 
-That is no longer the case. Diagnostics now cross the boundary as typed arrays and are only rendered to JSON when building `hyprctl hypreact` output.
+That is no longer the case. Diagnostics now cross the boundary as typed arrays and are only rendered to JSON when building `hyprctl tilescript-hypr` output.
 
 ## Desired End State
 
@@ -158,10 +158,10 @@ Use typed C ABI structs for plugin/runtime protocol.
 
 Use JSON only for:
 
-- `hyprctl hypreact`
+- `hyprctl tilescript-hypr`
 - optional debug dumps that are explicitly user-facing
 
-Everything else between `plugin.cpp`/`plugin_runtime.cpp` and `crates/hypr-ffi` should be typed.
+Everything else between `plugin.cpp`/`plugin_runtime.cpp` and `crates/ffi` should be typed.
 
 ## Ownership Rule
 
@@ -175,7 +175,7 @@ Avoid raw JSON string payloads for internal protocol.
 
 ## Layering Rule
 
-- Rust `crates/hypr-ffi` owns C ABI types and conversion
+- Rust `crates/ffi` owns C ABI types and conversion
 - C++ `plugin_runtime.cpp` is a thin typed adapter over the FFI
 - `plugin.cpp` should not know or care about Rust JSON payload internals
 
@@ -185,29 +185,29 @@ Avoid raw JSON string payloads for internal protocol.
 
 Replace these FFI functions:
 
-- `hypreact_runtime_reset_state`
-- `hypreact_runtime_upsert_output`
-- `hypreact_runtime_remove_output`
-- `hypreact_runtime_activate_workspace`
-- `hypreact_runtime_set_workspace_layout_space`
-- `hypreact_runtime_focus_window`
-- `hypreact_runtime_set_window_closing`
-- `hypreact_runtime_remove_window`
-- `hypreact_runtime_upsert_window`
+- `tilescript_runtime_reset_state`
+- `tilescript_runtime_upsert_output`
+- `tilescript_runtime_remove_output`
+- `tilescript_runtime_activate_workspace`
+- `tilescript_runtime_set_workspace_layout_space`
+- `tilescript_runtime_focus_window`
+- `tilescript_runtime_set_window_closing`
+- `tilescript_runtime_remove_window`
+- `tilescript_runtime_upsert_window`
 
-With typed `_result` variants returning `HypreactStatusResult`.
+With typed `_result` variants returning `TilescriptStatusResult`.
 
 Recommended naming:
 
-- `hypreact_runtime_reset_state_result`
-- `hypreact_runtime_upsert_output_result`
-- `hypreact_runtime_remove_output_result`
-- `hypreact_runtime_activate_workspace_result`
-- `hypreact_runtime_set_workspace_layout_space_result`
-- `hypreact_runtime_focus_window_result`
-- `hypreact_runtime_set_window_closing_result`
-- `hypreact_runtime_remove_window_result`
-- `hypreact_runtime_upsert_window_result`
+- `tilescript_runtime_reset_state_result`
+- `tilescript_runtime_upsert_output_result`
+- `tilescript_runtime_remove_output_result`
+- `tilescript_runtime_activate_workspace_result`
+- `tilescript_runtime_set_workspace_layout_space_result`
+- `tilescript_runtime_focus_window_result`
+- `tilescript_runtime_set_window_closing_result`
+- `tilescript_runtime_remove_window_result`
+- `tilescript_runtime_upsert_window_result`
 
 Why `_result`:
 
@@ -219,9 +219,9 @@ Implementation note:
 - keep the old JSON functions briefly only if necessary during migration
 - otherwise remove them directly if plugin code is updated in the same patch
 
-## Stage 2. Extend `HypreactStatusResult` where needed
+## Stage 2. Extend `TilescriptStatusResult` where needed
 
-Current `HypreactStatusResult`:
+Current `TilescriptStatusResult`:
 
 - `changed`
 - `error`
@@ -235,7 +235,7 @@ That field already exists in Rust-side `StatusResult`, but not in the C ABI stru
 Recommended shape:
 
 ```c
-struct HypreactStatusResult {
+struct TilescriptStatusResult {
     bool changed;
     char* focused_window_id;
     char* error;
@@ -263,7 +263,7 @@ After Stage 1, these methods should stop returning `std::string` JSON payloads:
 - `Runtime::removeWindow`
 - `Runtime::upsertWindow`
 
-They should instead return `HypreactStatusResult`.
+They should instead return `TilescriptStatusResult`.
 
 Then remove:
 
@@ -278,7 +278,7 @@ Current plugin flow logs raw JSON strings for sync calls.
 Replace with something like:
 
 ```cpp
-void logStatusResult(const char* label, const HypreactStatusResult& result);
+void logStatusResult(const char* label, const TilescriptStatusResult& result);
 ```
 
 Then sync sites can do:
@@ -306,30 +306,30 @@ Completed.
 
 Current status:
 
-- `HypreactLayoutStatusResult` contains typed diagnostics entries and a count
+- `TilescriptLayoutStatusResult` contains typed diagnostics entries and a count
 
 Recommended end state:
 
 ```c
-struct HypreactDiagnosticRange {
+struct TilescriptDiagnosticRange {
     unsigned int start_line;
     unsigned int start_column;
     unsigned int end_line;
     unsigned int end_column;
 };
 
-struct HypreactDiagnostic {
+struct TilescriptDiagnostic {
     char* source;
     char* severity;
     char* code;
     char* message;
     char* path;
-    HypreactDiagnosticRange range;
+    TilescriptDiagnosticRange range;
 };
 
 ```
 
-Implemented as embedded diagnostics in `HypreactLayoutStatusResult`.
+Implemented as embedded diagnostics in `TilescriptLayoutStatusResult`.
 
 Why this shape works:
 
@@ -337,24 +337,24 @@ Why this shape works:
 - plugin notifications and `hyprctl` status consume the same typed data
 - only the final `hyprctl` response is JSON
 
-## Stage 7. Remove `hypreact_runtime_state(...)` JSON function
+## Stage 7. Remove `tilescript_runtime_state(...)` JSON function
 
 This one is easy cleanup.
 
 Current:
 
-- both `hypreact_runtime_state(...)` JSON and `hypreact_runtime_state_result(...)` typed exist
+- both `tilescript_runtime_state(...)` JSON and `tilescript_runtime_state_result(...)` typed exist
 
 Plan:
 
-- remove `hypreact_runtime_state(...)`
-- keep only `hypreact_runtime_state_result(...)`
+- remove `tilescript_runtime_state(...)`
+- keep only `tilescript_runtime_state_result(...)`
 
 This is low-risk and should happen early.
 
 ## Stage 8. Keep command dispatch typed
 
-`hypreact_runtime_dispatch_command(...)` is already on the right track.
+`tilescript_runtime_dispatch_command(...)` is already on the right track.
 
 Keep:
 
@@ -363,7 +363,7 @@ Keep:
 
 Potential future improvement:
 
-- consider splitting `HypreactCommandInput` into more explicit tagged payload structs if it grows significantly
+- consider splitting `TilescriptCommandInput` into more explicit tagged payload structs if it grows significantly
 
 But this is not urgent.
 
@@ -371,11 +371,11 @@ But this is not urgent.
 
 Do this in order:
 
-1. add `focused_window_id` to C ABI `HypreactStatusResult`
+1. add `focused_window_id` to C ABI `TilescriptStatusResult`
 2. convert all internal JSON sync calls to typed `_result` APIs
 3. update `plugin_runtime.cpp` to use typed status results
 4. remove `Runtime::take(...)`
-5. remove `hypreact_runtime_state(...)` JSON API
+5. remove `tilescript_runtime_state(...)` JSON API
 6. split FFI ABI types from Rust-only helper structs
 7. replace `diagnostics_json` with typed diagnostics arrays
 
@@ -387,15 +387,15 @@ This order gives the biggest cleanliness win early without forcing a huge one-sh
 
 ## Concrete File-Level Plan
 
-## `plugin/hyprland/include/hypreact_hypr_ffi.h`
+## `plugin/hyprland/include/tilescript_hypr_ffi.h`
 
 Current state:
 
-- `HypreactStatusResult` includes `focused_window_id`
+- `TilescriptStatusResult` includes `focused_window_id`
 - typed diagnostics structs are present
 - old JSON-returning internal declarations are removed
 
-## `crates/hypr-ffi/src/lib.rs`
+## `crates/ffi/src/lib.rs`
 
 Current state:
 
@@ -416,10 +416,10 @@ Current state:
 Current state:
 
 - internal sync is not treated as JSON text
-- JSON is built only for `hyprctl hypreact`
+- JSON is built only for `hyprctl tilescript-hypr`
 - `hyprctl` diagnostics JSON is derived from typed diagnostics
 
-## `crates/hypr-ffi/src/abi.rs` and `crates/hypr-ffi/src/runtime_types.rs`
+## `crates/ffi/src/abi.rs` and `crates/ffi/src/runtime_types.rs`
 
 Current state:
 
@@ -431,7 +431,7 @@ The boundary is considered clean when all of these are true:
 
 - no internal plugin/runtime state-sync call returns JSON text
 - `Runtime::take(...)` is gone
-- `plugin.cpp` only parses/builds JSON for `hyprctl hypreact`
+- `plugin.cpp` only parses/builds JSON for `hyprctl tilescript-hypr`
 - all operational FFI calls use typed result structs
 - diagnostics are typed, not stuffed into `diagnostics_json`
 - free rules are explicit and symmetric for every typed allocated result
@@ -451,4 +451,4 @@ Further work, if needed, should focus on:
 
 1. keeping new FFI additions in the split `abi.rs` / `runtime_types.rs` shape
 2. preserving typed plugin/runtime protocol for all new internal operations
-3. keeping JSON confined to `hyprctl hypreact` and other explicitly user-facing inspection output
+3. keeping JSON confined to `hyprctl tilescript-hypr` and other explicitly user-facing inspection output

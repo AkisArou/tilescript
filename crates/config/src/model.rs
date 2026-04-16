@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
-use hypreact_core::types::LayoutRef;
-use hypreact_core::{LayoutSpace, OutputId, ResolvedLayoutNode};
-use hypreact_scene::SceneRequest;
+use tilescript_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::types::LayoutRef;
+use tilescript_core::{LayoutSpace, OutputId, ResolvedLayoutNode};
+use tilescript_scene::SceneRequest;
 use thiserror::Error;
 use tracing::debug;
 
@@ -121,9 +121,9 @@ pub struct ConfigDiscoveryOptions {
 pub fn config_discovery_options_from_env() -> ConfigDiscoveryOptions {
     ConfigDiscoveryOptions {
         home_dir: std::env::var_os("HOME").map(PathBuf::from),
-        config_dir_override: std::env::var_os("HYPREACT_CONFIG_DIR").map(PathBuf::from),
-        cache_dir_override: std::env::var_os("HYPREACT_CACHE_DIR").map(PathBuf::from),
-        authored_config_override: std::env::var_os("HYPREACT_AUTHORED_CONFIG").map(PathBuf::from),
+        config_dir_override: std::env::var_os("TILESCRIPT_CONFIG_DIR").map(PathBuf::from),
+        cache_dir_override: std::env::var_os("TILESCRIPT_CACHE_DIR").map(PathBuf::from),
+        authored_config_override: std::env::var_os("TILESCRIPT_AUTHORED_CONFIG").map(PathBuf::from),
     }
 }
 
@@ -143,7 +143,7 @@ impl ConfigPaths {
         let config_root =
             match config_dir_override {
                 Some(path) => path,
-                None => home_dir.as_ref().map(|path| path.join(".config/hypreact")).ok_or_else(
+                None => home_dir.as_ref().map(|path| path.join(".config/tilescript")).ok_or_else(
                     || LayoutConfigError::ReadConfig {
                         path: PathBuf::from(
                             "config discovery requires a home_dir or config_dir_override",
@@ -154,7 +154,7 @@ impl ConfigPaths {
         let cache_root = match cache_dir_override {
             Some(path) => path,
             None => {
-                home_dir.as_ref().map(|path| path.join(".cache/hypreact")).ok_or_else(|| {
+                home_dir.as_ref().map(|path| path.join(".cache/tilescript")).ok_or_else(|| {
                     LayoutConfigError::ReadConfig {
                         path: PathBuf::from(
                             "config discovery requires a home_dir or cache_dir_override",
@@ -386,11 +386,11 @@ impl From<&LayoutDefinition> for LayoutRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hypreact_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets};
-    use hypreact_core::runtime::runtime_kind::RuntimeKind;
-    use hypreact_core::snapshot::OutputSnapshot;
-    use hypreact_core::types::LayoutRef;
-    use hypreact_core::{OutputId, WorkspaceId};
+    use tilescript_core::runtime::prepared_layout::{PreparedLayout, PreparedStylesheets};
+    use tilescript_core::runtime::runtime_kind::RuntimeKind;
+    use tilescript_core::snapshot::OutputSnapshot;
+    use tilescript_core::types::LayoutRef;
+    use tilescript_core::{OutputId, WorkspaceId};
     use std::fs;
 
     fn workspace(layout_name: &str) -> WorkspaceSnapshot {
@@ -428,7 +428,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
-            resize_state: hypreact_core::resize::ResizeState::default(),
+            resize_state: tilescript_core::resize::ResizeState::default(),
         }
     }
 
@@ -516,7 +516,7 @@ mod tests {
             .build_scene_request(
                 &state_snapshot(),
                 &WorkspaceSnapshot {
-                    layout_space: Some(hypreact_core::wm::DrawableSpace {
+                    layout_space: Some(tilescript_core::wm::DrawableSpace {
                         width: 1600,
                         height: 983,
                     }),
@@ -581,7 +581,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
-            resize_state: hypreact_core::resize::ResizeState::default(),
+            resize_state: tilescript_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -620,7 +620,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into()],
-            resize_state: hypreact_core::resize::ResizeState::default(),
+            resize_state: tilescript_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -682,7 +682,7 @@ mod tests {
             windows: vec![],
             visible_window_ids: vec![],
             workspace_names: vec!["1".into(), "2".into()],
-            resize_state: hypreact_core::resize::ResizeState::default(),
+            resize_state: tilescript_core::resize::ResizeState::default(),
         };
 
         let request = config
@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn loads_config_from_json_path() {
         let temp_dir = std::env::temp_dir();
-        let config_path = temp_dir.join("hypreact-config-test.json");
+        let config_path = temp_dir.join("tilescript-config-test.json");
         fs::write(
             &config_path,
             r#"{"layouts":[{"name":"master-stack","directory":"layouts/master-stack","module":"layouts/master-stack.js","stylesheet_path":"layouts/master-stack/index.css"}]}"#,
@@ -770,7 +770,7 @@ mod tests {
     #[test]
     fn rejects_legacy_runtime_payload_field_in_layout_definition() {
         let temp_dir = std::env::temp_dir();
-        let config_path = temp_dir.join("hypreact-config-legacy-runtime-payload-test.json");
+        let config_path = temp_dir.join("tilescript-config-legacy-runtime-payload-test.json");
         fs::write(
             &config_path,
             r#"{"layouts":[{"name":"master-stack","directory":"layouts/master-stack","module":"layouts/master-stack.js","runtime_payload":{"entry":"layouts/master-stack.js","modules":[]}}]}"#,
@@ -787,9 +787,9 @@ mod tests {
     #[test]
     fn discovers_default_config_paths_from_home_dir() {
         let temp_dir = std::env::temp_dir();
-        let home_dir = temp_dir.join("hypreact-config-discovery-home");
-        let config_dir = home_dir.join(".config/hypreact");
-        let data_dir = home_dir.join(".cache/hypreact");
+        let home_dir = temp_dir.join("tilescript-config-discovery-home");
+        let config_dir = home_dir.join(".config/tilescript");
+        let data_dir = home_dir.join(".cache/tilescript");
         let _ = fs::create_dir_all(&config_dir);
         let _ = fs::create_dir_all(&data_dir);
         fs::write(config_dir.join("config.tsx"), "export default {};").unwrap();
@@ -800,8 +800,8 @@ mod tests {
         })
         .unwrap();
 
-        assert!(paths.authored_config.ends_with(".config/hypreact/config.tsx"));
-        assert!(paths.prepared_config.ends_with(".cache/hypreact/config.js"));
+        assert!(paths.authored_config.ends_with(".config/tilescript/config.tsx"));
+        assert!(paths.prepared_config.ends_with(".cache/tilescript/config.js"));
 
         let _ = fs::remove_file(config_dir.join("config.tsx"));
     }
@@ -809,9 +809,9 @@ mod tests {
     #[test]
     fn discovers_fennel_config_from_home_dir() {
         let temp_dir = std::env::temp_dir();
-        let home_dir = temp_dir.join("hypreact-config-discovery-fennel-home");
-        let config_dir = home_dir.join(".config/hypreact");
-        let data_dir = home_dir.join(".cache/hypreact");
+        let home_dir = temp_dir.join("tilescript-config-discovery-fennel-home");
+        let config_dir = home_dir.join(".config/tilescript");
+        let data_dir = home_dir.join(".cache/tilescript");
         let _ = fs::create_dir_all(&config_dir);
         let _ = fs::create_dir_all(&data_dir);
         fs::write(config_dir.join("config.fnl"), "{:defaultLayout \"master-stack\"}").unwrap();
@@ -822,8 +822,8 @@ mod tests {
         })
         .unwrap();
 
-        assert!(paths.authored_config.ends_with(".config/hypreact/config.fnl"));
-        assert!(paths.prepared_config.ends_with(".cache/hypreact/config.js"));
+        assert!(paths.authored_config.ends_with(".config/tilescript/config.fnl"));
+        assert!(paths.prepared_config.ends_with(".cache/tilescript/config.js"));
 
         let _ = fs::remove_file(config_dir.join("config.fnl"));
     }
@@ -831,8 +831,8 @@ mod tests {
     #[test]
     fn discovery_prefers_override_directories() {
         let temp_dir = std::env::temp_dir();
-        let config_dir = temp_dir.join("hypreact-config-override-config");
-        let cache_dir = temp_dir.join("hypreact-config-override-cache");
+        let config_dir = temp_dir.join("tilescript-config-override-config");
+        let cache_dir = temp_dir.join("tilescript-config-override-cache");
         let _ = fs::create_dir_all(&config_dir);
         let _ = fs::create_dir_all(&cache_dir);
         fs::write(config_dir.join("config.js"), "module.exports = {};").unwrap();

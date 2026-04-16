@@ -1,5 +1,5 @@
 [package]
-name = "hypreact-runtime-lua-core"
+name = "tilescript-runtime-lua-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,5 +8,5 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-hypreact-core = { path = "../../../core" }
+tilescript-core = { path = "../../../core" }
 thiserror.workspace = true

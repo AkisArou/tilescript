@@ -8,11 +8,11 @@
 - `crates/runtimes/js/core` - shared JS graph, compile, payload, and loader logic
 - `crates/runtimes/js/native` - native QuickJS authored config and layout runtime
 - `crates/layout-runtime` - end-to-end workspace evaluation and placement logic
-- `crates/hypr-ffi` - Rust bridge exposed to the Hyprland plugin
-- `apps/hypreact-playground` - browser playground modeled on `spiders-wm-www` preview/editor/system flow
+- `crates/ffi` - Rust bridge exposed to the Hyprland plugin
+- `apps/tilescript-playground` - browser playground modeled on `spiders-wm-www` preview/editor/system flow
 - `plugin/hyprland/src/plugin.cpp` - Hyprland-side plugin adapter
 - `packages/sdk/js` - authored config/layout SDK surface
-- `packages/lsp/vscode` - VS Code client for `hypreact-css-lsp`
+- `packages/lsp/vscode` - VS Code client for `tilescript-css-lsp`
 - `dev/test-config` - local authored config fixture
 - `examples/js` - JavaScript/TypeScript starter config
 - `examples/lua` - Lua starter config
@@ -34,11 +34,11 @@ make live
 Rust:
 
 ```sh
-cargo test -p hypreact-scene
-cargo test -p hypreact-layout-runtime
-cargo test -p hypreact-runtime-js-core
-cargo test -p hypreact-runtime-js-native
-cargo build --release -p hypreact-hypr-ffi
+cargo test -p tilescript-scene
+cargo test -p tilescript-layout-runtime
+cargo test -p tilescript-runtime-js-core
+cargo test -p tilescript-runtime-js-native
+cargo build --release -p tilescript-ffi
 ```
 
 Plugin:
@@ -48,7 +48,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-`cmake --build build` now builds the Rust release FFI staticlib automatically before linking `build/hypreact.so`.
+`cmake --build build` now builds the Rust release FFI staticlib automatically before linking `build/tilescript-hypr.so`.
 
 JS tooling:
 
@@ -56,7 +56,7 @@ JS tooling:
 pnpm install
 pnpm fmt
 pnpm lint
-pnpm --filter hypreact-css-lsp-vscode run check
+pnpm --filter tilescript-css-lsp-vscode run check
 ```
 
 Playground:
@@ -65,13 +65,13 @@ Playground:
 make playground
 ```
 
-`apps/hypreact-playground` intentionally follows the `spiders-wm-www` shape for the applicable browser features:
+`apps/tilescript-playground` intentionally follows the `spiders-wm-www` shape for the applicable browser features:
 
 - preview route
 - editor route with workspace file tree and live buffers
 - system route with state/diagnostics
 
-It does not carry over old `spiders-wm-www` pieces that do not apply in `hypreact` yet, such as the CLI route and the Monaco/browser IPC stack.
+It does not carry over old `spiders-wm-www` pieces that do not apply in `tilescript` yet, such as the CLI route and the Monaco/browser IPC stack.
 
 ## Hyprland Development Loop
 
@@ -79,8 +79,8 @@ Typical plugin loop:
 
 ```sh
 make plugin
-cp build/hypreact.so build/hypreact-live.so
-hyprctl plugin load /absolute/path/to/build/hypreact-live.so
+cp build/tilescript-hypr.so build/tilescript-hypr-live.so
+hyprctl plugin load /absolute/path/to/build/tilescript-hypr-live.so
 ```
 
 Use a fresh `.so` filename when testing repeatedly to avoid stale deleted plugin mappings.
@@ -88,12 +88,12 @@ Use a fresh `.so` filename when testing repeatedly to avoid stale deleted plugin
 Useful runtime inspection commands:
 
 ```sh
-hyprctl hypreact
-hyprctl hypreact reload-layouts
-hyprctl hypreact debug-layout-workspace 1
+hyprctl tilescript-hypr
+hyprctl tilescript-hypr reload-layouts
+hyprctl tilescript-hypr debug-layout-workspace 1
 ```
 
-`hyprctl hypreact` returns plugin/runtime status, layout load state, errors, and structured CSS diagnostics.
+`hyprctl tilescript-hypr` returns plugin/runtime status, layout load state, errors, and structured CSS diagnostics.
 
 ## Authoring Fixtures
 

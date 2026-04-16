@@ -4,25 +4,25 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use hypreact_config::config_decode::decode_config_value;
-use hypreact_config::layout_decode::decode_layout_value;
-use hypreact_config::model::{Config, ConfigPaths, LayoutConfigError, LayoutDefinition};
-use hypreact_config::runtime::RuntimeBundle;
-use hypreact_config::selection::validate_layout_selection;
-use hypreact_core::SourceLayoutNode;
-use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
-use hypreact_core::runtime::native_artifact::{
+use tilescript_config::config_decode::decode_config_value;
+use tilescript_config::layout_decode::decode_layout_value;
+use tilescript_config::model::{Config, ConfigPaths, LayoutConfigError, LayoutDefinition};
+use tilescript_config::runtime::RuntimeBundle;
+use tilescript_config::selection::validate_layout_selection;
+use tilescript_core::SourceLayoutNode;
+use tilescript_core::runtime::layout_context::LayoutEvaluationContext;
+use tilescript_core::runtime::native_artifact::{
     NativeDependencySnapshot, load_cached_stylesheet, load_text_dependency,
 };
-use hypreact_core::runtime::prepared_layout::{
+use tilescript_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets,
 };
-use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
-use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
-use hypreact_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
-use hypreact_runtime_lua_core::LUA_SDK_SOURCE;
+use tilescript_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
+use tilescript_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
+use tilescript_runtime_lua_core::LUA_SDK_SOURCE;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value};
 
 const LUA_BYTECODE_SCHEMA_TOKEN: &str = "lua-bytecode-v1";
@@ -201,7 +201,7 @@ impl PreparedLayoutRuntime for LuaPreparedLayoutRuntime {
     }
 }
 
-impl hypreact_config::runtime::AuthoringConfigRuntime for LuaPreparedLayoutRuntime {
+impl tilescript_config::runtime::AuthoringConfigRuntime for LuaPreparedLayoutRuntime {
     fn load_authored_config(&self, path: &Path) -> Result<Config, RuntimeError> {
         load_authored_config(path).map_err(config_error)
     }
@@ -358,7 +358,7 @@ fn load_stylesheet(path: Option<&str>) -> Option<PreparedStylesheet> {
 
 fn create_lua_runtime() -> Result<Lua, mlua::Error> {
     let lua = Lua::new();
-    preload_hypreact_sdk(&lua)?;
+    preload_tilescript_sdk(&lua)?;
     preload_fennel_compiler(&lua)?;
     Ok(lua)
 }
@@ -500,11 +500,11 @@ fn prune_stale_lua_bytecode_cache(
     Ok(pruned)
 }
 
-fn preload_hypreact_sdk(lua: &Lua) -> Result<(), mlua::Error> {
+fn preload_tilescript_sdk(lua: &Lua) -> Result<(), mlua::Error> {
     let package: Table = lua.globals().get("package")?;
     let preload: Table = package.get("preload")?;
     let loader = lua.create_function(|lua, ()| lua.load(LUA_SDK_SOURCE).eval::<Table>())?;
-    preload.set("hypreact", loader)?;
+    preload.set("tilescript", loader)?;
     Ok(())
 }
 
@@ -582,13 +582,13 @@ pub fn lua_bytecode_artifact_key(module: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hypreact_config::model::supported_authored_config_names;
-    use hypreact_config::runtime::AuthoringConfigRuntime;
+    use tilescript_config::model::supported_authored_config_names;
+    use tilescript_config::runtime::AuthoringConfigRuntime;
 
     #[test]
     fn loads_lua_authored_config_and_discovers_lua_layouts() {
         let root = std::env::temp_dir().join(format!(
-            "hypreact-lua-config-{}",
+            "tilescript-lua-config-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
@@ -599,7 +599,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             root.join("layouts/master-stack/index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main', take = 1 }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main', take = 1 }) } end",
         )
         .unwrap();
 
@@ -614,13 +614,13 @@ mod tests {
     #[test]
     fn evaluates_lua_layout_dsl() {
         let root = std::env::temp_dir().join(format!(
-            "hypreact-lua-layout-{}",
+            "tilescript-lua-layout-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
         std::fs::write(
             root.join("layouts/master-stack/index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }), h.when(#ctx.windows > 1) { h.group({ class = 'stack' }) { h.slot({ id = 'stack-slot' }) } } } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }), h.when(#ctx.windows > 1) { h.group({ class = 'stack' }) { h.slot({ id = 'stack-slot' }) } } } end",
         )
         .unwrap();
 
@@ -640,19 +640,19 @@ mod tests {
             resize: Default::default(),
         };
         let workspace = WorkspaceSnapshot {
-            id: hypreact_core::WorkspaceId::from("ws-1"),
+            id: tilescript_core::WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: None,
             layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+            effective_layout: Some(tilescript_core::types::LayoutRef { name: "master-stack".into() }),
         };
         let state = StateSnapshot {
             focused_window_id: None,
             current_output_id: None,
-            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            current_workspace_id: Some(tilescript_core::WorkspaceId::from("ws-1")),
             outputs: vec![],
             workspaces: vec![workspace.clone()],
             windows: vec![],
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn loads_fennel_authored_config_and_discovers_fennel_layouts() {
         let root = std::env::temp_dir().join(format!(
-            "hypreact-fennel-config-{}",
+            "tilescript-fennel-config-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
@@ -696,7 +696,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             root.join("layouts/master-stack/index.fnl"),
-            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"root\"}) [(h.slot {:id \"main\" :take 1})]))",
+            "(local h (require \"tilescript\"))\n(fn [ctx] ((h.workspace {:id \"root\"}) [(h.slot {:id \"main\" :take 1})]))",
         )
         .unwrap();
 
@@ -712,13 +712,13 @@ mod tests {
     #[test]
     fn evaluates_fennel_layout_dsl() {
         let root = std::env::temp_dir().join(format!(
-            "hypreact-fennel-layout-{}",
+            "tilescript-fennel-layout-{}",
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir_all(root.join("layouts/master-stack")).unwrap();
         std::fs::write(
             root.join("layouts/master-stack/index.fnl"),
-            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"frame\"}) [(h.slot {:id \"master\" :take 1})]))",
+            "(local h (require \"tilescript\"))\n(fn [ctx] ((h.workspace {:id \"frame\"}) [(h.slot {:id \"master\" :take 1})]))",
         )
         .unwrap();
 
@@ -738,19 +738,19 @@ mod tests {
             resize: Default::default(),
         };
         let workspace = WorkspaceSnapshot {
-            id: hypreact_core::WorkspaceId::from("ws-1"),
+            id: tilescript_core::WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: None,
             layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+            effective_layout: Some(tilescript_core::types::LayoutRef { name: "master-stack".into() }),
         };
         let state = StateSnapshot {
             focused_window_id: None,
             current_output_id: None,
-            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            current_workspace_id: Some(tilescript_core::WorkspaceId::from("ws-1")),
             outputs: vec![],
             workspaces: vec![workspace.clone()],
             windows: vec![],
@@ -793,19 +793,19 @@ mod tests {
             resize: Default::default(),
         };
         let workspace = WorkspaceSnapshot {
-            id: hypreact_core::WorkspaceId::from("ws-1"),
+            id: tilescript_core::WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: None,
             layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+            effective_layout: Some(tilescript_core::types::LayoutRef { name: "master-stack".into() }),
         };
         let state = StateSnapshot {
             focused_window_id: None,
             current_output_id: None,
-            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            current_workspace_id: Some(tilescript_core::WorkspaceId::from("ws-1")),
             outputs: vec![],
             workspaces: vec![workspace.clone()],
             windows: vec![],
@@ -817,7 +817,7 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("layouts/master-stack")).unwrap();
         std::fs::write(
             temp.path().join("layouts/master-stack/index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }) } end",
         )
         .unwrap();
 
@@ -833,8 +833,8 @@ mod tests {
     fn rebuild_prepared_config_prunes_stale_lua_bytecode_entries() {
         let temp = tempfile::TempDir::new().unwrap();
         let authored_config = temp.path().join("config.lua");
-        let prepared_config = temp.path().join(".hypreact-build/config.js");
-        let bytecode_dir = temp.path().join(".hypreact-build/.lua-bytecode");
+        let prepared_config = temp.path().join(".tilescript-build/config.js");
+        let bytecode_dir = temp.path().join(".tilescript-build/.lua-bytecode");
         let runtime = LuaPreparedLayoutRuntime::with_bytecode_root(Some(bytecode_dir.clone()));
         let layout_dir = temp.path().join("layouts/master-stack");
         std::fs::create_dir_all(&layout_dir).unwrap();
@@ -846,7 +846,7 @@ mod tests {
         .unwrap();
 
         let original_source =
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }) } end";
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master', take = 1 }) } end";
         std::fs::write(layout_dir.join("index.lua"), original_source).unwrap();
 
         let refresh = runtime.rebuild_prepared_config(&authored_config, &prepared_config).unwrap();
@@ -854,19 +854,19 @@ mod tests {
 
         let config = load_authored_config(&authored_config).unwrap();
         let workspace = WorkspaceSnapshot {
-            id: hypreact_core::WorkspaceId::from("ws-1"),
+            id: tilescript_core::WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: None,
             layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+            effective_layout: Some(tilescript_core::types::LayoutRef { name: "master-stack".into() }),
         };
         let state = StateSnapshot {
             focused_window_id: None,
             current_output_id: None,
-            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            current_workspace_id: Some(tilescript_core::WorkspaceId::from("ws-1")),
             outputs: vec![],
             workspaces: vec![workspace.clone()],
             windows: vec![],
@@ -884,7 +884,7 @@ mod tests {
 
         std::fs::write(
             layout_dir.join("index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'changed' }) { h.slot({ id = 'master', take = 2 }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'changed' }) { h.slot({ id = 'master', take = 2 }) } end",
         )
         .unwrap();
 
@@ -897,8 +897,8 @@ mod tests {
     fn rebuild_prepared_config_prunes_stale_fennel_bytecode_entries() {
         let temp = tempfile::TempDir::new().unwrap();
         let authored_config = temp.path().join("config.fnl");
-        let prepared_config = temp.path().join(".hypreact-build/config.js");
-        let bytecode_dir = temp.path().join(".hypreact-build/.lua-bytecode");
+        let prepared_config = temp.path().join(".tilescript-build/config.js");
+        let bytecode_dir = temp.path().join(".tilescript-build/.lua-bytecode");
         let runtime = LuaPreparedLayoutRuntime::with_bytecode_root(Some(bytecode_dir.clone()));
         let layout_dir = temp.path().join("layouts/master-stack");
         std::fs::create_dir_all(&layout_dir).unwrap();
@@ -910,7 +910,7 @@ mod tests {
         .unwrap();
 
         let original_source =
-            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"frame\"}) [(h.slot {:id \"master\" :take 1})]))";
+            "(local h (require \"tilescript\"))\n(fn [ctx] ((h.workspace {:id \"frame\"}) [(h.slot {:id \"master\" :take 1})]))";
         std::fs::write(layout_dir.join("index.fnl"), original_source).unwrap();
 
         let refresh = runtime.rebuild_prepared_config(&authored_config, &prepared_config).unwrap();
@@ -918,19 +918,19 @@ mod tests {
 
         let config = load_authored_config(&authored_config).unwrap();
         let workspace = WorkspaceSnapshot {
-            id: hypreact_core::WorkspaceId::from("ws-1"),
+            id: tilescript_core::WorkspaceId::from("ws-1"),
             name: "1".into(),
             output_id: None,
             layout_space: None,
             active_workspaces: vec!["1".into()],
             focused: true,
             visible: true,
-            effective_layout: Some(hypreact_core::types::LayoutRef { name: "master-stack".into() }),
+            effective_layout: Some(tilescript_core::types::LayoutRef { name: "master-stack".into() }),
         };
         let state = StateSnapshot {
             focused_window_id: None,
             current_output_id: None,
-            current_workspace_id: Some(hypreact_core::WorkspaceId::from("ws-1")),
+            current_workspace_id: Some(tilescript_core::WorkspaceId::from("ws-1")),
             outputs: vec![],
             workspaces: vec![workspace.clone()],
             windows: vec![],
@@ -949,7 +949,7 @@ mod tests {
 
         std::fs::write(
             layout_dir.join("index.fnl"),
-            "(local h (require \"hypreact\"))\n(fn [ctx] ((h.workspace {:id \"changed\"}) [(h.slot {:id \"master\" :take 2})]))",
+            "(local h (require \"tilescript\"))\n(fn [ctx] ((h.workspace {:id \"changed\"}) [(h.slot {:id \"master\" :take 2})]))",
         )
         .unwrap();
 

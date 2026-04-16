@@ -339,5 +339,5 @@ fn classify_import_specifier(specifier: &str) -> ImportedModule {
 }
 
 fn is_virtual_sdk_specifier(specifier: &str) -> bool {
-    specifier.starts_with("@hypreact/sdk/")
+    specifier.starts_with("@tilescript/sdk/")
 }

@@ -1,6 +1,6 @@
 # Fennel Runtime Plan
 
-This document describes how Fennel should fit into `hypreact` as a first-class authoring language.
+This document describes how Fennel should fit into `tilescript` as a first-class authoring language.
 
 The goal is clean code, not compatibility.
 
@@ -55,7 +55,7 @@ The authored API should mirror the Lua DSL exactly, just in Fennel syntax.
 Example equivalent of `examples/lua/layouts/master-stack/index.lua`:
 
 ```fennel
-(local h (require :hypreact))
+(local h (require :tilescript))
 
 (fn layout [ctx]
   ((h.workspace {:id "frame"})

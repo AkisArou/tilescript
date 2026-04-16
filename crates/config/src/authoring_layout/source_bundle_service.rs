@@ -1,13 +1,13 @@
-use hypreact_core::SourceLayoutNode;
-use hypreact_core::runtime::artifact_state::{
+use tilescript_core::SourceLayoutNode;
+use tilescript_core::runtime::artifact_state::{
     ArtifactGraph, ArtifactKey, ArtifactRecord, ArtifactRegistry,
 };
-use hypreact_core::runtime::layout_context::{
+use tilescript_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
-use hypreact_core::runtime::prepared_layout::PreparedLayout;
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::runtime::prepared_layout::PreparedLayout;
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
 
 use crate::model::{Config, LayoutConfigError};
 use crate::runtime::{SourceBundle, SourceBundleConfigRuntime, SourceBundlePreparedLayoutRuntime};
@@ -166,7 +166,7 @@ impl SourceBundleAuthoringLayoutService {
         let active_layouts = config.layouts.iter().map(|layout| layout.name.as_str()).collect::<std::collections::BTreeSet<_>>();
         let mut removed_layouts = Vec::new();
         self.layout_artifacts.retain(|key, _| {
-            let keep = key.kind != hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            let keep = key.kind != tilescript_core::runtime::artifact_state::ArtifactKind::Layout
                 || active_layouts.contains(key.identity.as_str());
             if !keep {
                 removed_layouts.push(key.clone());
@@ -243,7 +243,7 @@ impl SourceBundleAuthoringLayoutService {
         let stale_keys = self
             .artifact_graph
             .sources()
-            .filter(|key| key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::AuthoredFile)
+            .filter(|key| key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::AuthoredFile)
             .filter(|key| {
                 let path = std::path::PathBuf::from(&key.identity);
                 !sources.contains_key(&path) || !valid_authored_files.contains(&path)

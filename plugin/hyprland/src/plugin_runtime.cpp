@@ -1,4 +1,4 @@
-#include "hypreact_plugin_runtime.hpp"
+#include "tilescript_hypr_plugin_runtime.hpp"
 
 #include <array>
 #include <cctype>
@@ -21,7 +21,7 @@
 
 extern char** environ;
 
-namespace hypreact_plugin {
+namespace tilescript_plugin {
 
 namespace {
 
@@ -56,13 +56,13 @@ void spawnHyprctlCommand(std::vector<std::string> args) {
     }).detach();
 }
 
-void logStatusResult(const char* label, const HypreactStatusResult& result) {
+void logStatusResult(const char* label, const TilescriptStatusResult& result) {
     if (result.error != nullptr) {
-        std::cerr << "[hypreact] " << label << " failed: " << result.error << std::endl;
+        std::cerr << "[tilescript] " << label << " failed: " << result.error << std::endl;
     }
 }
 
-void notifyHypreact(const std::string& text, uint64_t icon = ICON_WARNING, uint64_t time = 5000) {
+void notifyTilescript(const std::string& text, uint64_t icon = ICON_WARNING, uint64_t time = 5000) {
     if (g_pluginHandle == nullptr) {
         return;
     }
@@ -74,7 +74,7 @@ void notifyHypreact(const std::string& text, uint64_t icon = ICON_WARNING, uint6
     });
 }
 
-void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
+void notifyDiagnostics(const TilescriptLayoutStatusResult& layout) {
     auto setPersistentError = [](const std::string& text) {
         if (!g_pluginHandle || g_lastPersistentErrorBannerText == text) {
             return;
@@ -97,7 +97,7 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
 
     std::optional<std::string> persistentErrorText;
     if (layout.error != nullptr) {
-        persistentErrorText = std::string{"hypreact: "} + layout.error;
+        persistentErrorText = std::string{"tilescript: "} + layout.error;
     } else {
         for (size_t i = 0; i < layout.diagnostic_count; ++i) {
             const auto& diagnostic = layout.diagnostics[i];
@@ -109,7 +109,7 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
             const std::string path = diagnostic.path == nullptr ? "" : diagnostic.path;
             const auto source = diagnostic.source == nullptr ? "diagnostic" : diagnostic.source;
             std::ostringstream text;
-            text << "hypreact " << source << ": " << message;
+            text << "tilescript " << source << ": " << message;
             if (!path.empty()) {
                 text << " (" << path;
                 if (diagnostic.range.start_line > 0) {
@@ -162,7 +162,7 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
     g_lastDiagnosticNotificationKey = key;
 
     if (layout.error != nullptr) {
-        notifyHypreact(std::string{"hypreact: "} + layout.error, ICON_ERROR, 8000);
+        notifyTilescript(std::string{"tilescript: "} + layout.error, ICON_ERROR, 8000);
     }
 
     if (layout.diagnostics == nullptr || layout.diagnostic_count == 0) {
@@ -175,7 +175,7 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
         const std::string path = diagnostic.path == nullptr ? "" : diagnostic.path;
         const auto source = diagnostic.source == nullptr ? "diagnostic" : diagnostic.source;
         std::ostringstream text;
-        text << "hypreact " << source << ": " << message;
+        text << "tilescript " << source << ": " << message;
         if (!path.empty()) {
             text << " (" << path;
             if (diagnostic.range.start_line > 0) {
@@ -186,7 +186,7 @@ void notifyDiagnostics(const HypreactLayoutStatusResult& layout) {
 
         const auto severity = diagnostic.severity == nullptr ? "" : diagnostic.severity;
         const auto icon = severity == "error" ? ICON_ERROR : ICON_WARNING;
-        notifyHypreact(text.str(), icon, 7000);
+        notifyTilescript(text.str(), icon, 7000);
     }
 }
 
@@ -204,7 +204,7 @@ std::optional<std::filesystem::path> defaultConfigRoot() {
         return std::nullopt;
     }
 
-    return std::filesystem::path(home) / ".config" / "hypreact";
+    return std::filesystem::path(home) / ".config" / "tilescript";
 }
 
 std::optional<std::filesystem::path> discoverConfigEntryInDirectory(const std::filesystem::path& root) {
@@ -257,146 +257,146 @@ std::optional<std::filesystem::path> resolveConfiguredConfigRoot() {
 }
 
 void syncSdkSupport(const std::filesystem::path& configRoot) {
-    const auto result = hypreact_runtime_sync_sdk_support_result(configRoot.c_str());
+    const auto result = tilescript_runtime_sync_sdk_support_result(configRoot.c_str());
     logStatusResult("sdk-sync", result);
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
 }
 
 void bootstrapConfigRoot(const std::filesystem::path& configRoot) {
-    const auto result = hypreact_runtime_bootstrap_config_result(configRoot.c_str());
+    const auto result = tilescript_runtime_bootstrap_config_result(configRoot.c_str());
     logStatusResult("config-bootstrap", result);
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
 }
 
 } // namespace
 
-Runtime::Runtime() : handle_(hypreact_runtime_new()) {}
+Runtime::Runtime() : handle_(tilescript_runtime_new()) {}
 
 Runtime::~Runtime() {
     if (handle_ != nullptr) {
-        hypreact_runtime_free(handle_);
+        tilescript_runtime_free(handle_);
     }
 }
 
-HypreactStatusResult Runtime::resetState() const {
-    return hypreact_runtime_reset_state_result(handle_);
+TilescriptStatusResult Runtime::resetState() const {
+    return tilescript_runtime_reset_state_result(handle_);
 }
 
-HypreactStatusResult Runtime::upsertOutput(const HypreactOutputSync& output) const {
-    return hypreact_runtime_upsert_output_result(handle_, &output);
+TilescriptStatusResult Runtime::upsertOutput(const TilescriptOutputSync& output) const {
+    return tilescript_runtime_upsert_output_result(handle_, &output);
 }
 
-HypreactStatusResult Runtime::removeOutput(const std::string& outputId) const {
-    return hypreact_runtime_remove_output_result(handle_, outputId.c_str());
+TilescriptStatusResult Runtime::removeOutput(const std::string& outputId) const {
+    return tilescript_runtime_remove_output_result(handle_, outputId.c_str());
 }
 
-HypreactStatusResult Runtime::activateWorkspace(const std::string& workspaceId, const std::string& outputId) const {
-    return hypreact_runtime_activate_workspace_result(handle_, workspaceId.c_str(), outputId.empty() ? nullptr : outputId.c_str());
+TilescriptStatusResult Runtime::activateWorkspace(const std::string& workspaceId, const std::string& outputId) const {
+    return tilescript_runtime_activate_workspace_result(handle_, workspaceId.c_str(), outputId.empty() ? nullptr : outputId.c_str());
 }
 
-HypreactStatusResult Runtime::setWorkspaceLayoutSpace(const HypreactWorkspaceLayoutSpaceSync& layoutSpace) const {
-    return hypreact_runtime_set_workspace_layout_space_result(handle_, &layoutSpace);
+TilescriptStatusResult Runtime::setWorkspaceLayoutSpace(const TilescriptWorkspaceLayoutSpaceSync& layoutSpace) const {
+    return tilescript_runtime_set_workspace_layout_space_result(handle_, &layoutSpace);
 }
 
-HypreactStatusResult Runtime::focusWindow(const std::optional<std::string>& windowId) const {
-    return hypreact_runtime_focus_window_result(handle_, windowId ? windowId->c_str() : nullptr);
+TilescriptStatusResult Runtime::focusWindow(const std::optional<std::string>& windowId) const {
+    return tilescript_runtime_focus_window_result(handle_, windowId ? windowId->c_str() : nullptr);
 }
 
-HypreactStatusResult Runtime::setWindowClosing(const std::string& windowId, bool closing) const {
-    return hypreact_runtime_set_window_closing_result(handle_, windowId.c_str(), closing);
+TilescriptStatusResult Runtime::setWindowClosing(const std::string& windowId, bool closing) const {
+    return tilescript_runtime_set_window_closing_result(handle_, windowId.c_str(), closing);
 }
 
-HypreactStatusResult Runtime::removeWindow(const std::string& windowId) const {
-    return hypreact_runtime_remove_window_result(handle_, windowId.c_str());
+TilescriptStatusResult Runtime::removeWindow(const std::string& windowId) const {
+    return tilescript_runtime_remove_window_result(handle_, windowId.c_str());
 }
 
-HypreactStatusResult Runtime::upsertWindow(const HypreactWindowSync& window) const {
-    return hypreact_runtime_upsert_window_result(handle_, &window);
+TilescriptStatusResult Runtime::upsertWindow(const TilescriptWindowSync& window) const {
+    return tilescript_runtime_upsert_window_result(handle_, &window);
 }
 
-HypreactStatusResult Runtime::loadLayoutConfig(const std::string& configPath) const {
-    return hypreact_runtime_load_layout_config_result(handle_, configPath.c_str());
+TilescriptStatusResult Runtime::loadLayoutConfig(const std::string& configPath) const {
+    return tilescript_runtime_load_layout_config_result(handle_, configPath.c_str());
 }
 
-HypreactStatusResult Runtime::reloadLayoutConfig() const {
-    return hypreact_runtime_reload_layout_config_result(handle_);
+TilescriptStatusResult Runtime::reloadLayoutConfig() const {
+    return tilescript_runtime_reload_layout_config_result(handle_);
 }
 
-HypreactStatusResult Runtime::drainLayoutSourceChanges() const {
-    return hypreact_runtime_poll_layout_sources_result(handle_);
+TilescriptStatusResult Runtime::drainLayoutSourceChanges() const {
+    return tilescript_runtime_poll_layout_sources_result(handle_);
 }
 
 int Runtime::layoutSourceChangeFd() const {
-    return hypreact_runtime_layout_source_change_fd(handle_);
+    return tilescript_runtime_layout_source_change_fd(handle_);
 }
 
-HypreactLayoutStatusResult Runtime::layoutStatusResult() const {
-    return hypreact_runtime_layout_status_result(handle_);
+TilescriptLayoutStatusResult Runtime::layoutStatusResult() const {
+    return tilescript_runtime_layout_status_result(handle_);
 }
 
-HypreactPlacementResult Runtime::layoutPlacement() const {
-    const auto layout = hypreact_runtime_layout_status_result(handle_);
+TilescriptPlacementResult Runtime::layoutPlacement() const {
+    const auto layout = tilescript_runtime_layout_status_result(handle_);
     notifyDiagnostics(layout);
-    hypreact_runtime_free_layout_status_result(layout);
-    return hypreact_runtime_layout_placement(handle_);
+    tilescript_runtime_free_layout_status_result(layout);
+    return tilescript_runtime_layout_placement(handle_);
 }
 
-HypreactPlacementResult Runtime::layoutPlacementForWorkspace(const std::string& workspaceId) const {
-    const auto layout = hypreact_runtime_layout_status_result(handle_);
+TilescriptPlacementResult Runtime::layoutPlacementForWorkspace(const std::string& workspaceId) const {
+    const auto layout = tilescript_runtime_layout_status_result(handle_);
     notifyDiagnostics(layout);
-    hypreact_runtime_free_layout_status_result(layout);
-    return hypreact_runtime_layout_placement_for_workspace(handle_, workspaceId.c_str());
+    tilescript_runtime_free_layout_status_result(layout);
+    return tilescript_runtime_layout_placement_for_workspace(handle_, workspaceId.c_str());
 }
 
 std::optional<std::string> Runtime::layoutFocusCandidate(const std::string& direction) const {
-    const auto result = hypreact_runtime_layout_focus_candidate(handle_, direction.c_str());
+    const auto result = tilescript_runtime_layout_focus_candidate(handle_, direction.c_str());
     if (result.value == nullptr) {
         return std::nullopt;
     }
 
     std::string value(result.value);
-    hypreact_string_free(result.value);
+    tilescript_string_free(result.value);
     return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
 }
 
 std::optional<std::string> Runtime::layoutCloseFocusCandidate(const std::string& windowId) const {
-    const auto result = hypreact_runtime_layout_close_focus_candidate(handle_, windowId.c_str());
+    const auto result = tilescript_runtime_layout_close_focus_candidate(handle_, windowId.c_str());
     if (result.value == nullptr) {
         return std::nullopt;
     }
 
     std::string value(result.value);
-    hypreact_string_free(result.value);
+    tilescript_string_free(result.value);
     return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
 }
 
 std::optional<std::string> Runtime::layoutSwapCandidate(const std::string& direction) const {
-    const auto result = hypreact_runtime_layout_swap_candidate(handle_, direction.c_str());
+    const auto result = tilescript_runtime_layout_swap_candidate(handle_, direction.c_str());
     if (result.value == nullptr) {
         return std::nullopt;
     }
 
     std::string value(result.value);
-    hypreact_string_free(result.value);
+    tilescript_string_free(result.value);
     return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
 }
 
 bool Runtime::moveTiledWindow(const std::string& firstWindowId, const std::string& secondWindowId) const {
-    const auto result = hypreact_runtime_move_tiled_window(handle_, firstWindowId.c_str(), secondWindowId.c_str());
+    const auto result = tilescript_runtime_move_tiled_window(handle_, firstWindowId.c_str(), secondWindowId.c_str());
     const auto changed = result.changed;
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
     return changed;
 }
 
 bool Runtime::resizeDirection(const std::string& direction) const {
-    const auto result = hypreact_runtime_resize_direction(handle_, direction.c_str());
+    const auto result = tilescript_runtime_resize_direction(handle_, direction.c_str());
     const auto changed = result.changed;
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
     return changed;
 }
 
-HypreactStateResult Runtime::stateResult() const {
-    return hypreact_runtime_state_result(handle_);
+TilescriptStateResult Runtime::stateResult() const {
+    return tilescript_runtime_state_result(handle_);
 }
 
 Runtime* runtime() {
@@ -474,11 +474,11 @@ void loadLayoutRuntimeConfig() {
 
     const auto result = g_runtime->loadLayoutConfig(configEntry->string());
     logStatusResult("layout-runtime", result);
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
 
     const auto layout = g_runtime->layoutStatusResult();
     notifyDiagnostics(layout);
-    hypreact_runtime_free_layout_status_result(layout);
+    tilescript_runtime_free_layout_status_result(layout);
 }
 
 bool layoutRuntimeLoaded() {
@@ -488,7 +488,7 @@ bool layoutRuntimeLoaded() {
 
     const auto status = g_runtime->layoutStatusResult();
     const auto loaded = status.loaded;
-    hypreact_runtime_free_layout_status_result(status);
+    tilescript_runtime_free_layout_status_result(status);
     return loaded;
 }
 
@@ -500,7 +500,7 @@ bool drainLayoutRuntimeSourceChanges() {
     const auto result = g_runtime->drainLayoutSourceChanges();
     const bool changed = result.changed;
     logStatusResult("drain-layout-source-changes", result);
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
     return changed;
 }
 
@@ -525,4 +525,4 @@ void watchLayoutRuntimeSources(const std::function<void()>& callback) {
     });
 }
 
-} // namespace hypreact_plugin
+} // namespace tilescript_plugin

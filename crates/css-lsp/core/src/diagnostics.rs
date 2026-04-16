@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use hypreact_css::analysis::{
+use tilescript_css::analysis::{
     CssDiagnostic, CssDiagnosticCode, CssDiagnosticSeverity, CssSymbolKind, analyze_stylesheet,
 };
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, Url};
@@ -59,7 +59,7 @@ fn diagnostic_code(code: CssDiagnosticCode) -> &'static str {
 fn project_selector_diagnostics(
     uri: &Url,
     source: &str,
-    analysis: &hypreact_css::analysis::CssAnalysis,
+    analysis: &tilescript_css::analysis::CssAnalysis,
     project_index: &ProjectIndex,
 ) -> Vec<Diagnostic> {
     let Some(path) = crate::uri::path_from_url(uri) else {
@@ -166,7 +166,7 @@ fn project_selector_diagnostic(
         },
         severity: Some(DiagnosticSeverity::WARNING),
         code: Some(NumberOrString::String(code.to_string())),
-        source: Some("hypreact-css-lsp".to_string()),
+        source: Some("tilescript-css-lsp".to_string()),
         message,
         ..Diagnostic::default()
     }

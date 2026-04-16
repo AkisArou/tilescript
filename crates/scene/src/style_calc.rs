@@ -1,4 +1,4 @@
-use hypreact_core::ResolvedLayoutNode;
+use tilescript_core::ResolvedLayoutNode;
 
 use crate::css::apply::ApplyCompiledDeclaration;
 use crate::css::{CompiledStyleSheet, ComputedStyle, CssValueError};

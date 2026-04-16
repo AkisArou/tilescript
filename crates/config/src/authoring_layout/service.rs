@@ -2,20 +2,20 @@ use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use hypreact_core::runtime::artifact_state::{
+use tilescript_core::runtime::artifact_state::{
     ArtifactGraph, ArtifactKey, ArtifactRecord, ArtifactRegistry,
 };
-use hypreact_core::runtime::layout_context::{
+use tilescript_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
-use hypreact_core::runtime::native_artifact::dependencies_match;
-use hypreact_core::runtime::prepared_layout::PreparedLayout;
-use hypreact_core::runtime::runtime_contract::PreparedLayoutRuntime;
-use hypreact_core::runtime::runtime_error::RuntimeError;
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
-use hypreact_core::types::LayoutRef;
-use hypreact_core::{SourceLayoutNode, WorkspaceId};
+use tilescript_core::runtime::native_artifact::dependencies_match;
+use tilescript_core::runtime::prepared_layout::PreparedLayout;
+use tilescript_core::runtime::runtime_contract::PreparedLayoutRuntime;
+use tilescript_core::runtime::runtime_error::RuntimeError;
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::types::LayoutRef;
+use tilescript_core::{SourceLayoutNode, WorkspaceId};
 use tracing::{debug, info, warn};
 
 use super::config_paths;
@@ -128,7 +128,7 @@ impl AuthoringLayoutService {
         &self,
         paths: &ConfigPaths,
     ) -> Result<
-        (Config, Option<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary>),
+        (Config, Option<tilescript_core::runtime::runtime_error::RuntimeRefreshSummary>),
         AuthoringLayoutServiceError,
     > {
         prepared_cache::load_config_with_cache_update(self.config_runtime.as_ref(), paths)
@@ -146,7 +146,7 @@ impl AuthoringLayoutService {
         paths: &ConfigPaths,
         _config: &Config,
     ) -> Result<
-        hypreact_core::runtime::runtime_error::RuntimeRefreshSummary,
+        tilescript_core::runtime::runtime_error::RuntimeRefreshSummary,
         AuthoringLayoutServiceError,
     > {
         prepared_cache::write_prepared_config(self.config_runtime.as_ref(), paths)
@@ -270,7 +270,7 @@ impl AuthoringLayoutService {
         self.layout_artifacts
             .iter()
             .filter_map(|(key, entry)| match key.kind {
-                hypreact_core::runtime::artifact_state::ArtifactKind::Layout => {
+                tilescript_core::runtime::artifact_state::ArtifactKind::Layout => {
                     Some((key.identity.clone(), entry.value.clone()))
                 }
                 _ => None,
@@ -290,7 +290,7 @@ impl AuthoringLayoutService {
     fn prune_layout_artifacts(&mut self, config: &Config) {
         let mut removed = Vec::new();
         self.layout_artifacts.retain(|key, _| {
-            let keep = key.kind != hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+            let keep = key.kind != tilescript_core::runtime::artifact_state::ArtifactKind::Layout
                 || config.layouts.iter().any(|layout| layout.name == key.identity);
             if !keep {
                 removed.push(key.clone());
@@ -315,7 +315,7 @@ impl AuthoringLayoutService {
             .layout_artifacts
             .iter()
             .filter_map(|(key, _)| match key.kind {
-                hypreact_core::runtime::artifact_state::ArtifactKind::Layout => Some(key.clone()),
+                tilescript_core::runtime::artifact_state::ArtifactKind::Layout => Some(key.clone()),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -372,12 +372,12 @@ fn validation_workspace(layout_name: &str) -> WorkspaceSnapshot {
 mod tests {
     use super::*;
     use crate::model::LayoutDefinition;
-    use hypreact_core::runtime::prepared_layout::{
+    use tilescript_core::runtime::prepared_layout::{
         PreparedStylesheet, PreparedStylesheets, SelectedLayout,
     };
-    use hypreact_core::runtime::runtime_contract::LayoutModuleContract;
-    use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
-    use hypreact_core::runtime::runtime_kind::RuntimeKind;
+    use tilescript_core::runtime::runtime_contract::LayoutModuleContract;
+    use tilescript_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+    use tilescript_core::runtime::runtime_kind::RuntimeKind;
     use std::path::Path;
 
     #[derive(Debug, Clone, Default)]
@@ -466,7 +466,7 @@ mod tests {
             default_layout: Some("master-stack".into()),
             ..Config::default()
         };
-        let paths = ConfigPaths::new("config.lua", ".hypreact-build/config.js");
+        let paths = ConfigPaths::new("config.lua", ".tilescript-build/config.js");
         let mut service = AuthoringLayoutService::with_paths(
             StubConfigRuntime {
                 config: config.clone(),
@@ -501,7 +501,7 @@ mod tests {
             },
             runtime_payload: serde_json::json!({ "source": "return function() end" }),
             stylesheets: PreparedStylesheets { global: None, layout: Some(stylesheet) },
-            dependencies: vec![hypreact_core::runtime::native_artifact::NativeDependencySnapshot {
+            dependencies: vec![tilescript_core::runtime::native_artifact::NativeDependencySnapshot {
                 path: stylesheet_path.to_string_lossy().into_owned(),
                 content_hash: {
                     use std::collections::hash_map::DefaultHasher;
@@ -563,7 +563,7 @@ mod tests {
                     source: ".master-slot { flex: 1; }".into(),
                 }),
             },
-            dependencies: vec![hypreact_core::runtime::native_artifact::NativeDependencySnapshot {
+            dependencies: vec![tilescript_core::runtime::native_artifact::NativeDependencySnapshot {
                 path: stylesheet_path.to_string_lossy().into_owned(),
                 content_hash: {
                     use std::collections::hash_map::DefaultHasher;
@@ -631,7 +631,7 @@ mod tests {
                     }),
                 },
                 dependencies: vec![
-                    hypreact_core::runtime::native_artifact::NativeDependencySnapshot {
+                    tilescript_core::runtime::native_artifact::NativeDependencySnapshot {
                         path: stylesheet_path.to_string_lossy().into_owned(),
                         content_hash: first_hash,
                     },

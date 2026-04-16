@@ -1,6 +1,6 @@
-/** @jsxImportSource @hypreact/sdk */
+/** @jsxImportSource @tilescript/sdk */
 
-import type { SlotProps } from "@hypreact/sdk/layout";
+import type { SlotProps } from "@tilescript/sdk/layout";
 
 export function StackSlot(props: SlotProps) {
   return <slot class="stack-group__item" {...props} />;

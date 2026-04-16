@@ -7,45 +7,45 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use hypreact_config::authoring_layout::{
+use tilescript_config::authoring_layout::{
     AuthoringLayoutService, AuthoringLayoutServiceError, PreparedLayoutEvaluation,
 };
-use hypreact_config::model::{Config, ConfigDiscoveryOptions, ConfigPaths, LayoutConfigError};
-use hypreact_config::runtime::build_authoring_layout_service;
-use hypreact_core::focus::preferred_focus_after_removing_window;
-use hypreact_core::focus::{FocusTree, FocusTreeWindowGeometry};
-use hypreact_core::navigation::WindowGeometryCandidate;
-use hypreact_core::navigation::{NavigationDirection, select_directional_focus_candidate};
-use hypreact_core::query::state_snapshot_for_model;
-use hypreact_core::resize::{
+use tilescript_config::model::{Config, ConfigDiscoveryOptions, ConfigPaths, LayoutConfigError};
+use tilescript_config::runtime::build_authoring_layout_service;
+use tilescript_core::focus::preferred_focus_after_removing_window;
+use tilescript_core::focus::{FocusTree, FocusTreeWindowGeometry};
+use tilescript_core::navigation::WindowGeometryCandidate;
+use tilescript_core::navigation::{NavigationDirection, select_directional_focus_candidate};
+use tilescript_core::query::state_snapshot_for_model;
+use tilescript_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
     PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
     ResizeDirection, apply_resize_step, gc_resize_state, scale_authored_share_units,
     select_resize_candidate,
 };
-use hypreact_core::runtime::artifact_state::{
+use tilescript_core::runtime::artifact_state::{
     ArtifactGraph, ArtifactKey, ArtifactRecord, ArtifactRegistry,
 };
-use hypreact_core::runtime::prepared_layout::{
+use tilescript_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheets, SelectedLayout,
 };
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
-use hypreact_core::wm::WindowGeometry;
-use hypreact_core::wm::WmModel;
-use hypreact_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
-use hypreact_css::analysis::{
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::wm::WindowGeometry;
+use tilescript_core::wm::WmModel;
+use tilescript_core::{LayoutNodeMeta, RemainingTake, SlotTake, SourceLayoutNode};
+use tilescript_css::analysis::{
     CssAnalysis, CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet,
 };
-use hypreact_scene::Display;
-use hypreact_scene::FlexDirectionValue;
-use hypreact_scene::ast::ValidatedLayoutTree;
-use hypreact_scene::pipeline::SceneCache;
-use hypreact_scene::{LayoutSnapshotNode, SceneResponse};
+use tilescript_scene::Display;
+use tilescript_scene::FlexDirectionValue;
+use tilescript_scene::ast::ValidatedLayoutTree;
+use tilescript_scene::pipeline::SceneCache;
+use tilescript_scene::{LayoutSnapshotNode, SceneResponse};
 use tracing::{debug, info};
 
-use hypreact_runtime_js_native::{decode_runtime_graph_payload, module_graph_execution_key};
-use hypreact_runtime_lua_native::{
+use tilescript_runtime_js_native::{decode_runtime_graph_payload, module_graph_execution_key};
+use tilescript_runtime_lua_native::{
     lua_bytecode_artifact_key, lua_compiled_source_artifact_key, lua_executable_artifact_key,
 };
 
@@ -92,7 +92,7 @@ impl LayoutRuntimePaths {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".hypreact-build");
+            .join(".tilescript-build");
         Self { config_paths: ConfigPaths::new(authored_config, prepared_parent.join("config.js")) }
     }
 }
@@ -124,11 +124,11 @@ pub struct LayoutWorkspaceEvaluation {
 pub struct LayoutWorkspaceScene {
     pub evaluation: Option<PreparedLayoutEvaluation>,
     pub scene: SceneResponse,
-    pub window_geometries: std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
+    pub window_geometries: std::collections::BTreeMap<tilescript_core::WindowId, WindowGeometry>,
     pub focus_tree: FocusTree,
     pub partition_tree: PartitionTree,
     pub geometry_candidates: Vec<WindowGeometryCandidate>,
-    pub ordered_window_ids: Vec<hypreact_core::WindowId>,
+    pub ordered_window_ids: Vec<tilescript_core::WindowId>,
     pub diagnostics: Vec<LayoutDiagnostic>,
     pub error: Option<String>,
 }
@@ -139,9 +139,9 @@ pub struct LayoutStatusSnapshot {
     pub workspace_names: Option<Vec<String>>,
     pub loaded: bool,
     pub selected_layout_name: Option<String>,
-    pub layout: Option<hypreact_core::SourceLayoutNode>,
-    pub window_geometries: Vec<(hypreact_core::WindowId, WindowGeometry)>,
-    pub ordered_window_ids: Vec<hypreact_core::WindowId>,
+    pub layout: Option<tilescript_core::SourceLayoutNode>,
+    pub window_geometries: Vec<(tilescript_core::WindowId, WindowGeometry)>,
+    pub ordered_window_ids: Vec<tilescript_core::WindowId>,
     pub error: Option<String>,
     pub diagnostics: Vec<LayoutDiagnostic>,
 }
@@ -473,7 +473,7 @@ fn authored_sources_newer_than_prepared_cache(
         return false;
     };
 
-    let newest_authored = newest_tree_timestamp(authored_root, &[".hypreact-build", ".sdk"]);
+    let newest_authored = newest_tree_timestamp(authored_root, &[".tilescript-build", ".sdk"]);
     let newest_prepared =
         newest_tree_timestamp(prepared_root, &[".quickjs-bytecode", ".lua-bytecode"]);
     match (newest_authored, newest_prepared) {
@@ -571,7 +571,7 @@ fn resolve_authored_watch_path(authored_root: &Path, path: &str) -> Option<PathB
 
 fn path_uses_runtime_cache_dir(path: &Path) -> bool {
     path.components().any(|component| {
-        matches!(component, std::path::Component::Normal(name) if name == ".hypreact-build" || name == ".sdk")
+        matches!(component, std::path::Component::Normal(name) if name == ".tilescript-build" || name == ".sdk")
     })
 }
 
@@ -601,7 +601,7 @@ fn collect_authored_source_paths(root: &Path, watched: &mut BTreeSet<PathBuf>) {
         if file_type.is_dir() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name == ".hypreact-build" || name == ".sdk" {
+            if name == ".tilescript-build" || name == ".sdk" {
                 continue;
             }
             collect_authored_source_paths(&path, watched);
@@ -650,7 +650,7 @@ fn diff_watched_fingerprints(
 #[cfg(test)]
 mod runtime_watch_tests {
     use super::*;
-    use hypreact_core::WorkspaceId;
+    use tilescript_core::WorkspaceId;
     use std::thread;
 
     #[test]
@@ -658,7 +658,7 @@ mod runtime_watch_tests {
         let root = tempfile::TempDir::new().unwrap();
         let authored = root.path().join("config.lua");
         let layout_dir = root.path().join("layouts/master-stack");
-        let build_dir = root.path().join(".hypreact-build/layouts/master-stack");
+        let build_dir = root.path().join(".tilescript-build/layouts/master-stack");
         let sdk_dir = root.path().join(".sdk/runtime");
         fs::create_dir_all(&layout_dir).unwrap();
         fs::create_dir_all(&build_dir).unwrap();
@@ -670,7 +670,7 @@ mod runtime_watch_tests {
         .unwrap();
         fs::write(
             layout_dir.join("index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
         )
         .unwrap();
         fs::write(layout_dir.join("index.css"), ".master { flex: 1; }").unwrap();
@@ -709,7 +709,7 @@ mod runtime_watch_tests {
         .unwrap();
         fs::write(
             layout_dir.join("index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'root' }) { h.slot({ id = 'main' }) } end",
         )
         .unwrap();
 
@@ -718,7 +718,7 @@ mod runtime_watch_tests {
         let _ = service.reload_config().unwrap();
         fs::write(
             layout_dir.join("index.lua"),
-            "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'changed' }) { h.slot({ id = 'main' }) } end",
+            "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'changed' }) { h.slot({ id = 'main' }) } end",
         )
         .unwrap();
 
@@ -783,8 +783,8 @@ mod runtime_watch_tests {
 
     #[test]
     fn js_config_watch_set_excludes_prepared_runtime_artifacts() {
-        let config_path =
-            PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config/config.ts");
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -803,7 +803,7 @@ mod runtime_watch_tests {
         );
         assert!(!service.watched_files.iter().any(|path| path
             .components()
-            .any(|component| matches!(component, std::path::Component::Normal(name) if name == ".hypreact-build"))));
+            .any(|component| matches!(component, std::path::Component::Normal(name) if name == ".tilescript-build"))));
         assert!(
             !service
                 .watched_files
@@ -958,7 +958,7 @@ fn layout_workspace_scene(
 fn workspace_windows(
     state: &StateSnapshot,
     workspace: &WorkspaceSnapshot,
-) -> Vec<hypreact_core::snapshot::WindowSnapshot> {
+) -> Vec<tilescript_core::snapshot::WindowSnapshot> {
     state
         .windows
         .iter()
@@ -983,7 +983,7 @@ fn build_scene_from_layout(
     workspace: &WorkspaceSnapshot,
     artifact: &PreparedLayout,
     layout: SourceLayoutNode,
-    workspace_windows: &[hypreact_core::snapshot::WindowSnapshot],
+    workspace_windows: &[tilescript_core::snapshot::WindowSnapshot],
     error_path: &Path,
 ) -> Result<SceneResponse, LayoutConfigError> {
     let resolved = ValidatedLayoutTree::new(layout)
@@ -1022,7 +1022,7 @@ fn build_fallback_scene(
     state: &StateSnapshot,
     workspace: &WorkspaceSnapshot,
     selected_layout: Option<&SelectedLayout>,
-    workspace_windows: &[hypreact_core::snapshot::WindowSnapshot],
+    workspace_windows: &[tilescript_core::snapshot::WindowSnapshot],
 ) -> Result<SceneResponse, LayoutRuntimeError> {
     let artifact = PreparedLayout {
         selected: selected_layout
@@ -1031,7 +1031,7 @@ fn build_fallback_scene(
         runtime_payload: serde_json::Value::Null,
         stylesheets: PreparedStylesheets {
             global: None,
-            layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+            layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                 path: format!("{}/fallback.css", artifact_style_directory(workspace)),
                 source: FALLBACK_LAYOUT_STYLESHEET.to_string(),
             }),
@@ -1067,7 +1067,7 @@ fn selected_layout_for_workspace(
         .unwrap_or_else(|| "layouts/fallback".to_string());
 
     SelectedLayout {
-        runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+        runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Js,
         module: fallback_module
             .map(str::to_string)
             .unwrap_or_else(|| format!("{directory}/index.tsx")),
@@ -1192,7 +1192,7 @@ fn css_scene_failure_diagnostic(
 
 fn diagnostics_for_stylesheets(
     service: &mut LayoutRuntimeService,
-    stylesheets: &hypreact_core::runtime::prepared_layout::PreparedStylesheets,
+    stylesheets: &tilescript_core::runtime::prepared_layout::PreparedStylesheets,
 ) -> Vec<LayoutDiagnostic> {
     let mut diagnostics = Vec::new();
 
@@ -1316,7 +1316,7 @@ fn record_js_runtime_dependencies(service: &mut LayoutRuntimeService, artifact: 
         .artifact_graph
         .dependents_of(&layout_key)
         .filter(|key| {
-            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+            key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -1352,7 +1352,7 @@ fn record_lua_runtime_dependencies(service: &mut LayoutRuntimeService, artifact:
         .artifact_graph
         .dependents_of(&layout_key)
         .filter(|key| {
-            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+            key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -1377,7 +1377,7 @@ pub fn placement_for_workspace(
     service: &mut LayoutRuntimeService,
     model: &WmModel,
     workspace_id: &str,
-) -> Result<Vec<(hypreact_core::WindowId, WindowGeometry)>, LayoutRuntimeError> {
+) -> Result<Vec<(tilescript_core::WindowId, WindowGeometry)>, LayoutRuntimeError> {
     let Some(target_workspace) =
         model.workspaces.keys().find(|id| id.as_str() == workspace_id).cloned()
     else {
@@ -1400,7 +1400,7 @@ pub fn directional_focus_candidate(
     service: &mut LayoutRuntimeService,
     model: &mut WmModel,
     direction: NavigationDirection,
-) -> Result<Option<hypreact_core::WindowId>, LayoutRuntimeError> {
+) -> Result<Option<tilescript_core::WindowId>, LayoutRuntimeError> {
     let loaded = service.ensure_loaded_config()?;
 
     apply_layout_selection_to_model(model, &loaded.config);
@@ -1426,8 +1426,8 @@ pub fn directional_focus_candidate(
 
 pub fn close_focus_candidate(
     model: &WmModel,
-    window_id: &hypreact_core::WindowId,
-) -> Option<hypreact_core::WindowId> {
+    window_id: &tilescript_core::WindowId,
+) -> Option<tilescript_core::WindowId> {
     preferred_focus_after_removing_window(model, window_id, Vec::new())
 }
 
@@ -1437,7 +1437,7 @@ pub fn reset_model(model: &mut WmModel) {
 
 pub fn upsert_output(
     model: &mut WmModel,
-    output_id: hypreact_core::OutputId,
+    output_id: tilescript_core::OutputId,
     name: String,
     logical_width: u32,
     logical_height: u32,
@@ -1447,7 +1447,7 @@ pub fn upsert_output(
     model.upsert_output(output_id, name, logical_width, logical_height, current_workspace_id);
 }
 
-pub fn remove_output(model: &mut WmModel, output_id: &hypreact_core::OutputId) -> bool {
+pub fn remove_output(model: &mut WmModel, output_id: &tilescript_core::OutputId) -> bool {
     let changed = model.outputs.contains_key(output_id);
     model.remove_output(output_id);
     changed
@@ -1455,8 +1455,8 @@ pub fn remove_output(model: &mut WmModel, output_id: &hypreact_core::OutputId) -
 
 pub fn activate_workspace(
     model: &mut WmModel,
-    workspace_id: hypreact_core::WorkspaceId,
-    output_id: Option<hypreact_core::OutputId>,
+    workspace_id: tilescript_core::WorkspaceId,
+    output_id: Option<tilescript_core::OutputId>,
 ) {
     let workspace_name = workspace_id.as_str().to_string();
     model.upsert_workspace(workspace_id.clone(), workspace_name);
@@ -1473,9 +1473,9 @@ pub fn activate_workspace(
 
 pub fn set_workspace_layout_space(
     model: &mut WmModel,
-    workspace_id: hypreact_core::WorkspaceId,
-    output_id: Option<hypreact_core::OutputId>,
-    drawable_space: hypreact_core::wm::DrawableSpace,
+    workspace_id: tilescript_core::WorkspaceId,
+    output_id: Option<tilescript_core::OutputId>,
+    drawable_space: tilescript_core::wm::DrawableSpace,
 ) {
     model.upsert_workspace(workspace_id.clone(), workspace_id.as_str().to_string());
     if let Some(output_id) = output_id {
@@ -1484,13 +1484,13 @@ pub fn set_workspace_layout_space(
     model.set_workspace_layout_space(workspace_id, Some(drawable_space));
 }
 
-pub fn focus_window(model: &mut WmModel, window_id: Option<hypreact_core::WindowId>) {
+pub fn focus_window(model: &mut WmModel, window_id: Option<tilescript_core::WindowId>) {
     model.set_window_focused(window_id);
 }
 
 pub fn set_window_closing(
     model: &mut WmModel,
-    window_id: &hypreact_core::WindowId,
+    window_id: &tilescript_core::WindowId,
     closing: bool,
 ) -> bool {
     let changed = model.windows.contains_key(window_id);
@@ -1502,13 +1502,13 @@ pub fn set_window_closing(
 
 pub fn remove_window(
     model: &mut WmModel,
-    window_id: hypreact_core::WindowId,
-) -> (bool, Option<hypreact_core::WindowId>) {
+    window_id: tilescript_core::WindowId,
+) -> (bool, Option<tilescript_core::WindowId>) {
     let changed = model.windows.contains_key(&window_id);
-    let update = hypreact_core::focus::remove_window(model, window_id, Vec::new());
+    let update = tilescript_core::focus::remove_window(model, window_id, Vec::new());
     let focused_window_id = match update {
-        hypreact_core::focus::FocusUpdate::Set(window_id) => window_id,
-        hypreact_core::focus::FocusUpdate::Unchanged => None,
+        tilescript_core::focus::FocusUpdate::Set(window_id) => window_id,
+        tilescript_core::focus::FocusUpdate::Unchanged => None,
     };
     (changed, focused_window_id)
 }
@@ -1516,10 +1516,10 @@ pub fn remove_window(
 pub fn upsert_window(
     service: Option<&mut LayoutRuntimeService>,
     model: &mut WmModel,
-    window_id: hypreact_core::WindowId,
-    previous_focused_window_id: Option<hypreact_core::WindowId>,
-    workspace_id: Option<hypreact_core::WorkspaceId>,
-    output_id: Option<hypreact_core::OutputId>,
+    window_id: tilescript_core::WindowId,
+    previous_focused_window_id: Option<tilescript_core::WindowId>,
+    workspace_id: Option<tilescript_core::WorkspaceId>,
+    output_id: Option<tilescript_core::OutputId>,
     is_xwayland: bool,
     mapped: bool,
     title: Option<String>,
@@ -1580,7 +1580,7 @@ pub fn upsert_window(
 
 fn window_is_tiled_order_candidate(
     model: &WmModel,
-    window_id: &hypreact_core::WindowId,
+    window_id: &tilescript_core::WindowId,
 ) -> bool {
     model.windows.get(window_id).is_some_and(|window| {
         window.workspace_id.is_some()
@@ -1593,8 +1593,8 @@ fn window_is_tiled_order_candidate(
 
 pub fn move_tiled_window(
     model: &mut WmModel,
-    first_window_id: &hypreact_core::WindowId,
-    second_window_id: &hypreact_core::WindowId,
+    first_window_id: &tilescript_core::WindowId,
+    second_window_id: &tilescript_core::WindowId,
 ) -> bool {
     model.move_tiled_window(first_window_id, second_window_id)
 }
@@ -1745,7 +1745,7 @@ fn geometry_candidates_from_focus_tree(
         .collect::<Vec<_>>()
 }
 
-fn ordered_window_ids_from_scene(root: &LayoutSnapshotNode) -> Vec<hypreact_core::WindowId> {
+fn ordered_window_ids_from_scene(root: &LayoutSnapshotNode) -> Vec<tilescript_core::WindowId> {
     let mut ids = Vec::new();
     collect_ordered_window_ids(root, &mut ids);
     ids
@@ -1767,7 +1767,7 @@ fn collect_partitions_from_scene(
     tree: &mut PartitionTree,
     path: &mut Vec<PartitionId>,
     is_root: bool,
-) -> Vec<hypreact_core::WindowId> {
+) -> Vec<tilescript_core::WindowId> {
     let path_len_before_children = path.len();
     let child_window_sets = node
         .children()
@@ -1833,7 +1833,7 @@ fn collect_partitions_from_scene(
 fn partition_branches_from_child(
     parent: &LayoutSnapshotNode,
     child: &LayoutSnapshotNode,
-    child_windows: &[hypreact_core::WindowId],
+    child_windows: &[tilescript_core::WindowId],
     index: usize,
 ) -> Vec<PartitionBranch> {
     if child_windows.is_empty() {
@@ -1926,7 +1926,7 @@ fn fallback_branch_id(
     }
 }
 
-fn partition_axis_from_style(computed: &hypreact_scene::ComputedStyle) -> Option<PartitionAxis> {
+fn partition_axis_from_style(computed: &tilescript_scene::ComputedStyle) -> Option<PartitionAxis> {
     (computed.display == Some(Display::Flex)).then(|| match computed.flex_direction {
         Some(FlexDirectionValue::Column) | Some(FlexDirectionValue::ColumnReverse) => {
             PartitionAxis::Vertical
@@ -1975,7 +1975,7 @@ fn inferred_max_share(_node: &LayoutSnapshotNode) -> Option<u32> {
 fn apply_inferred_min_shares(
     branches: &mut [PartitionBranch],
     axis: PartitionAxis,
-    partition_rect: hypreact_core::LayoutRect,
+    partition_rect: tilescript_core::LayoutRect,
     resize_behavior: ResizeBehaviorConfig,
 ) {
     let partition_main_size = match axis {
@@ -2076,7 +2076,7 @@ fn branch_is_fixed(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> bo
         PartitionAxis::Vertical => styles.layout.height,
     };
 
-    if matches!(explicit_main_size, Some(hypreact_scene::SizeValue::LengthPercentage(_))) {
+    if matches!(explicit_main_size, Some(tilescript_scene::SizeValue::LengthPercentage(_))) {
         return true;
     }
 
@@ -2102,7 +2102,7 @@ fn structural_partition_id(node: &LayoutSnapshotNode, path: &[PartitionId]) -> S
     }
 }
 
-fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<hypreact_core::WindowId>) {
+fn collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<tilescript_core::WindowId>) {
     if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = node {
         out.push(window_id.clone());
         return;
@@ -2120,17 +2120,17 @@ mod tests {
     use std::path::Path;
     use std::path::PathBuf;
 
-    use hypreact_core::WindowId;
-    use hypreact_core::focus::FocusScopePath;
-    use hypreact_core::navigation::{NavigationDirection, select_directional_focus_candidate};
-    use hypreact_core::query::state_snapshot_for_model;
-    use hypreact_core::wm::WmModel;
-    use hypreact_core::{OutputId, WorkspaceId};
+    use tilescript_core::WindowId;
+    use tilescript_core::focus::FocusScopePath;
+    use tilescript_core::navigation::{NavigationDirection, select_directional_focus_candidate};
+    use tilescript_core::query::state_snapshot_for_model;
+    use tilescript_core::wm::WmModel;
+    use tilescript_core::{OutputId, WorkspaceId};
 
     use super::*;
 
     fn isolated_test_config_path() -> PathBuf {
-        let source_root = PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config");
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/test-config");
         let temp_root = tempfile::TempDir::new().expect("temp test config root");
         let root = temp_root.keep();
         copy_dir_recursively(&source_root, &root).expect("copy test config fixture");
@@ -2189,23 +2189,24 @@ mod tests {
 
     #[test]
     fn css_failure_diagnostic_is_classified_as_css() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
         let diagnostic = css_scene_failure_diagnostic(
             &mut service,
             &PreparedLayout {
                 selected: SelectedLayout {
                     name: "test".into(),
-                    runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+                    runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Js,
                     directory: "layouts/test".into(),
                     module: "layouts/test/index.tsx".into(),
                 },
                 runtime_payload: serde_json::Value::Null,
                 stylesheets: PreparedStylesheets {
                     global: None,
-                    layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                    layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                         path: "layouts/test/index.css".into(),
                         source: "slot { display: flex; }".into(),
                     }),
@@ -2223,10 +2224,11 @@ mod tests {
 
     #[test]
     fn stylesheet_analysis_cache_reuses_identical_source() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
 
         let first = layout_diagnostics_from_stylesheet(
             &mut service,
@@ -2245,24 +2247,25 @@ mod tests {
 
     #[test]
     fn records_layout_to_stylesheet_dependency_edges() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
         let artifact = PreparedLayout {
             selected: SelectedLayout {
                 name: "master-stack".into(),
-                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+                runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.tsx".into(),
             },
             runtime_payload: serde_json::Value::Null,
             stylesheets: PreparedStylesheets {
-                global: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                global: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "styles/global.css".into(),
                     source: "window { text-align: left; }".into(),
                 }),
-                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "layouts/master-stack/index.css".into(),
                     source: "window { text-align: center; }".into(),
                 }),
@@ -2288,13 +2291,14 @@ mod tests {
 
     #[test]
     fn records_layout_to_js_graph_and_bytecode_dependency_edges() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
-        let graph = hypreact_runtime_js_native::JavaScriptModuleGraph {
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
+        let graph = tilescript_runtime_js_native::JavaScriptModuleGraph {
             entry: "layouts/master-stack/index.js".into(),
-            modules: vec![hypreact_runtime_js_native::JavaScriptModule {
+            modules: vec![tilescript_runtime_js_native::JavaScriptModule {
                 specifier: "layouts/master-stack/index.js".into(),
                 source: "export default () => ({ type: 'workspace', children: [] });".into(),
                 resolved_imports: BTreeMap::new(),
@@ -2304,11 +2308,11 @@ mod tests {
         let artifact = PreparedLayout {
             selected: SelectedLayout {
                 name: "master-stack".into(),
-                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Js,
+                runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Js,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.tsx".into(),
             },
-            runtime_payload: hypreact_runtime_js_native::encode_runtime_graph_payload(&graph, &[]),
+            runtime_payload: tilescript_runtime_js_native::encode_runtime_graph_payload(&graph, &[]),
             stylesheets: PreparedStylesheets::default(),
             dependencies: vec![],
         };
@@ -2334,17 +2338,18 @@ mod tests {
 
     #[test]
     fn records_layout_to_lua_executable_and_bytecode_dependency_edges() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
-        let source = "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
+        let source = "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
         let executable_key = lua_executable_artifact_key("layouts/master-stack/index.lua", source);
         let bytecode_key = lua_bytecode_artifact_key("layouts/master-stack/index.lua", source);
         let artifact = PreparedLayout {
             selected: SelectedLayout {
                 name: "master-stack".into(),
-                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Lua,
+                runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Lua,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.lua".into(),
             },
@@ -2375,11 +2380,12 @@ mod tests {
 
     #[test]
     fn records_fennel_layout_to_compiled_lua_executable_and_bytecode_dependency_edges() {
-        let mut service = LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(
-            "/home/akisarou/projects/hypreact/dev/test-config/config.ts",
-        ))
-        .unwrap();
-        let compiled_source = "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .unwrap();
+        let compiled_source = "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end";
         let source_module = "layouts/master-stack/index.fnl";
         let compiled_source_key =
             lua_compiled_source_artifact_key("layouts/master-stack/index.fnl", source_module);
@@ -2390,7 +2396,7 @@ mod tests {
         let artifact = PreparedLayout {
             selected: SelectedLayout {
                 name: "master-stack".into(),
-                runtime: hypreact_core::runtime::runtime_kind::RuntimeKind::Lua,
+                runtime: tilescript_core::runtime::runtime_kind::RuntimeKind::Lua,
                 directory: "layouts/master-stack".into(),
                 module: "layouts/master-stack/index.fnl".into(),
             },
@@ -2433,7 +2439,7 @@ mod tests {
     fn prepared_cache_staleness_ignores_lua_bytecode_cache_directory() {
         let root = tempfile::TempDir::new().unwrap();
         let authored_root = root.path().join("authored");
-        let prepared_root = authored_root.join(".hypreact-build");
+        let prepared_root = authored_root.join(".tilescript-build");
         let authored_config = authored_root.join("config.lua");
         let prepared_config = prepared_root.join("config.js");
         let bytecode_dir = prepared_root.join(".lua-bytecode");
@@ -2498,9 +2504,10 @@ mod tests {
 
     #[test]
     fn workspace_scene_builds_focus_tree_for_only_current_workspace_windows() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
         let loaded = service.load_config().expect("loaded config");
 
@@ -2674,7 +2681,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -2727,7 +2734,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -2783,7 +2790,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -2838,7 +2845,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -2877,10 +2884,10 @@ mod tests {
     #[test]
     fn workspace_scene_tracks_nested_explicit_partitions() {
         let scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
-            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
-            styles: Some(hypreact_scene::SceneNodeStyle {
-                layout: hypreact_scene::ComputedStyle {
+            meta: tilescript_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
+            styles: Some(tilescript_scene::SceneNodeStyle {
+                layout: tilescript_scene::ComputedStyle {
                     display: Some(Display::Flex),
                     flex_direction: Some(FlexDirectionValue::Row),
                     ..Default::default()
@@ -2888,18 +2895,18 @@ mod tests {
             }),
             children: vec![
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("master".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 0.0,
                         y: 0.0,
                         width: 960.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(3.0),
                             ..Default::default()
                         },
@@ -2908,15 +2915,15 @@ mod tests {
                     children: vec![],
                 },
                 LayoutSnapshotNode::Group {
-                    meta: hypreact_core::LayoutNodeMeta::default(),
-                    rect: hypreact_core::LayoutRect {
+                    meta: tilescript_core::LayoutNodeMeta::default(),
+                    rect: tilescript_core::LayoutRect {
                         x: 960.0,
                         y: 0.0,
                         width: 640.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             display: Some(Display::Flex),
                             flex_direction: Some(FlexDirectionValue::Column),
                             flex_grow: Some(2.0),
@@ -2925,18 +2932,18 @@ mod tests {
                     }),
                     children: vec![
                         LayoutSnapshotNode::Window {
-                            meta: hypreact_core::LayoutNodeMeta {
+                            meta: tilescript_core::LayoutNodeMeta {
                                 id: Some("stack-a".into()),
                                 ..Default::default()
                             },
-                            rect: hypreact_core::LayoutRect {
+                            rect: tilescript_core::LayoutRect {
                                 x: 960.0,
                                 y: 0.0,
                                 width: 640.0,
                                 height: 500.0,
                             },
-                            styles: Some(hypreact_scene::SceneNodeStyle {
-                                layout: hypreact_scene::ComputedStyle {
+                            styles: Some(tilescript_scene::SceneNodeStyle {
+                                layout: tilescript_scene::ComputedStyle {
                                     flex_grow: Some(1.0),
                                     ..Default::default()
                                 },
@@ -2945,18 +2952,18 @@ mod tests {
                             children: vec![],
                         },
                         LayoutSnapshotNode::Window {
-                            meta: hypreact_core::LayoutNodeMeta {
+                            meta: tilescript_core::LayoutNodeMeta {
                                 id: Some("stack-b".into()),
                                 ..Default::default()
                             },
-                            rect: hypreact_core::LayoutRect {
+                            rect: tilescript_core::LayoutRect {
                                 x: 960.0,
                                 y: 500.0,
                                 width: 640.0,
                                 height: 500.0,
                             },
-                            styles: Some(hypreact_scene::SceneNodeStyle {
-                                layout: hypreact_scene::ComputedStyle {
+                            styles: Some(tilescript_scene::SceneNodeStyle {
+                                layout: tilescript_scene::ComputedStyle {
                                     flex_grow: Some(1.0),
                                     ..Default::default()
                                 },
@@ -2999,7 +3006,7 @@ mod tests {
                 &WindowId::from("stack-a"),
                 ResizeDirection::Down,
             ),
-            Some(hypreact_core::resize::ResizeCandidate {
+            Some(tilescript_core::resize::ResizeCandidate {
                 partition_id: nested_partition_id,
                 grow_branch_index: 0,
                 shrink_branch_index: 1,
@@ -3026,7 +3033,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -3046,7 +3053,7 @@ mod tests {
             resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Right,
+                tilescript_core::resize::ResizeDirection::Right,
             )
             .expect("resize result")
         );
@@ -3062,7 +3069,7 @@ mod tests {
             resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Left,
+                tilescript_core::resize::ResizeDirection::Left,
             )
             .expect("reverse resize result")
         );
@@ -3078,7 +3085,7 @@ mod tests {
             resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Right,
+                tilescript_core::resize::ResizeDirection::Right,
             )
             .expect("stack right resize result")
         );
@@ -3093,7 +3100,7 @@ mod tests {
             resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Left,
+                tilescript_core::resize::ResizeDirection::Left,
             )
             .expect("stack left resize result")
         );
@@ -3125,7 +3132,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -3160,7 +3167,7 @@ mod tests {
             select_resize_candidate(
                 &scene.partition_tree,
                 &WindowId::from("stack-c"),
-                hypreact_core::resize::ResizeDirection::Down,
+                tilescript_core::resize::ResizeDirection::Down,
             )
             .is_some()
         );
@@ -3169,7 +3176,7 @@ mod tests {
             resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Down,
+                tilescript_core::resize::ResizeDirection::Down,
             )
             .expect("resize result")
         );
@@ -3185,7 +3192,7 @@ mod tests {
         assert_eq!(nested_adjustment.branch_shares, vec![12, 12, 16, 8, 12]);
 
         assert!(
-            resize_direction(&mut service, &mut model, hypreact_core::resize::ResizeDirection::Up,)
+            resize_direction(&mut service, &mut model, tilescript_core::resize::ResizeDirection::Up,)
                 .expect("reverse vertical resize result")
         );
 
@@ -3218,7 +3225,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -3236,7 +3243,7 @@ mod tests {
 
         let _ = service.reload_config().expect("reloaded config");
 
-        while resize_direction(&mut service, &mut model, hypreact_core::resize::ResizeDirection::Up)
+        while resize_direction(&mut service, &mut model, tilescript_core::resize::ResizeDirection::Up)
             .expect("vertical resize result")
         {}
 
@@ -3270,7 +3277,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -3289,7 +3296,7 @@ mod tests {
         let debug = resize_direction_debug(
             &mut service,
             &mut model,
-            hypreact_core::resize::ResizeDirection::Right,
+            tilescript_core::resize::ResizeDirection::Right,
         )
         .expect("stack right resize debug");
         assert_eq!(
@@ -3314,7 +3321,7 @@ mod tests {
         let debug = resize_direction_debug(
             &mut service,
             &mut model,
-            hypreact_core::resize::ResizeDirection::Left,
+            tilescript_core::resize::ResizeDirection::Left,
         )
         .expect("stack left resize debug");
         assert_eq!(
@@ -3339,9 +3346,9 @@ mod tests {
 
     #[test]
     fn resize_direction_allows_horizontal_resize_for_top_stack_window() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = isolated_test_config_path();
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
@@ -3356,7 +3363,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("1"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("1"));
@@ -3375,7 +3382,7 @@ mod tests {
         let debug = resize_direction_debug(
             &mut service,
             &mut model,
-            hypreact_core::resize::ResizeDirection::Right,
+            tilescript_core::resize::ResizeDirection::Right,
         )
         .expect("top stack right resize debug");
 
@@ -3395,9 +3402,10 @@ mod tests {
 
     #[test]
     fn resize_direction_respects_fixed_branch_constraints() {
-        let config_path = "/home/akisarou/projects/hypreact/dev/test-config/config.ts";
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dev/test-config/config.ts");
         let mut service =
-            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(config_path))
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
 
         let mut model = WmModel::default();
@@ -3414,7 +3422,7 @@ mod tests {
         model.attach_workspace_to_output(WorkspaceId::from("6"), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
             WorkspaceId::from("6"),
-            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
         model.set_current_workspace(WorkspaceId::from("6"));
@@ -3434,7 +3442,7 @@ mod tests {
             !resize_direction(
                 &mut service,
                 &mut model,
-                hypreact_core::resize::ResizeDirection::Left,
+                tilescript_core::resize::ResizeDirection::Left,
             )
             .expect("resize result")
         );
@@ -3447,10 +3455,10 @@ mod tests {
     fn scene_resize_adjustments_survive_branch_reorder_and_insertion_by_branch_id() {
         let partition_id = PartitionId::new("frame");
         let initial_scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
-            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
-            styles: Some(hypreact_scene::SceneNodeStyle {
-                layout: hypreact_scene::ComputedStyle {
+            meta: tilescript_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
+            styles: Some(tilescript_scene::SceneNodeStyle {
+                layout: tilescript_scene::ComputedStyle {
                     display: Some(Display::Flex),
                     flex_direction: Some(FlexDirectionValue::Row),
                     ..Default::default()
@@ -3458,18 +3466,18 @@ mod tests {
             }),
             children: vec![
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("master".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 0.0,
                         y: 0.0,
                         width: 960.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(3.0),
                             ..Default::default()
                         },
@@ -3478,18 +3486,18 @@ mod tests {
                     children: vec![],
                 },
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("stack".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 960.0,
                         y: 0.0,
                         width: 640.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(2.0),
                             ..Default::default()
                         },
@@ -3500,10 +3508,10 @@ mod tests {
             ],
         };
         let reordered_scene = LayoutSnapshotNode::Workspace {
-            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
-            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
-            styles: Some(hypreact_scene::SceneNodeStyle {
-                layout: hypreact_scene::ComputedStyle {
+            meta: tilescript_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
+            styles: Some(tilescript_scene::SceneNodeStyle {
+                layout: tilescript_scene::ComputedStyle {
                     display: Some(Display::Flex),
                     flex_direction: Some(FlexDirectionValue::Row),
                     ..Default::default()
@@ -3511,18 +3519,18 @@ mod tests {
             }),
             children: vec![
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("stack".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 0.0,
                         y: 0.0,
                         width: 640.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(2.0),
                             ..Default::default()
                         },
@@ -3531,18 +3539,18 @@ mod tests {
                     children: vec![],
                 },
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("extra".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 640.0,
                         y: 0.0,
                         width: 160.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(1.0),
                             ..Default::default()
                         },
@@ -3551,18 +3559,18 @@ mod tests {
                     children: vec![],
                 },
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("master".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 800.0,
                         y: 0.0,
                         width: 800.0,
                         height: 1000.0,
                     },
-                    styles: Some(hypreact_scene::SceneNodeStyle {
-                        layout: hypreact_scene::ComputedStyle {
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
                             flex_grow: Some(3.0),
                             ..Default::default()
                         },
@@ -3587,7 +3595,7 @@ mod tests {
                 min_branch_main_size_px: DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX,
             },
         );
-        let mut resize_state = hypreact_core::resize::WorkspaceResizeState::default();
+        let mut resize_state = tilescript_core::resize::WorkspaceResizeState::default();
         let candidate = select_resize_candidate(
             &initial_tree,
             &WindowId::from("master"),
@@ -3624,7 +3632,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(
-            hypreact_core::resize::reconciled_branch_shares(
+            tilescript_core::resize::reconciled_branch_shares(
                 adjustment,
                 &reordered_branch_ids,
                 &reordered_defaults,
@@ -3636,10 +3644,10 @@ mod tests {
     #[test]
     fn flex_partition_is_inferred_from_display_and_direction() {
         let scene = LayoutSnapshotNode::Group {
-            meta: hypreact_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
-            rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 1000.0, height: 700.0 },
-            styles: Some(hypreact_scene::SceneNodeStyle {
-                layout: hypreact_scene::ComputedStyle {
+            meta: tilescript_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 1000.0, height: 700.0 },
+            styles: Some(tilescript_scene::SceneNodeStyle {
+                layout: tilescript_scene::ComputedStyle {
                     display: Some(Display::Flex),
                     flex_direction: Some(FlexDirectionValue::Row),
                     ..Default::default()
@@ -3647,21 +3655,21 @@ mod tests {
             }),
             children: vec![
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("left".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect { x: 0.0, y: 0.0, width: 500.0, height: 700.0 },
+                    rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 500.0, height: 700.0 },
                     styles: None,
                     window_id: Some(WindowId::from("left")),
                     children: vec![],
                 },
                 LayoutSnapshotNode::Window {
-                    meta: hypreact_core::LayoutNodeMeta {
+                    meta: tilescript_core::LayoutNodeMeta {
                         id: Some("right".into()),
                         ..Default::default()
                     },
-                    rect: hypreact_core::LayoutRect {
+                    rect: tilescript_core::LayoutRect {
                         x: 500.0,
                         y: 0.0,
                         width: 500.0,
@@ -3689,7 +3697,7 @@ mod tests {
                 &WindowId::from("left"),
                 ResizeDirection::Right
             ),
-            Some(hypreact_core::resize::ResizeCandidate {
+            Some(tilescript_core::resize::ResizeCandidate {
                 partition_id: PartitionId::new("frame"),
                 grow_branch_index: 0,
                 shrink_branch_index: 1,

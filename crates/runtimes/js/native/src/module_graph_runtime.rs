@@ -10,7 +10,7 @@ use rquickjs::{
     loader::{Loader, Resolver},
 };
 
-use hypreact_runtime_js_core::JavaScriptModuleGraph;
+use tilescript_runtime_js_core::JavaScriptModuleGraph;
 
 pub struct QuickJsExecutionCache {
     entries: HashMap<String, QuickJsExecutionCacheEntry>,
@@ -49,7 +49,7 @@ struct PersistedBytecodeModule {
     file_name: String,
 }
 
-const QUICKJS_BYTECODE_SCHEMA_VERSION: &str = "hypreact-quickjs-bytecode-v1";
+const QUICKJS_BYTECODE_SCHEMA_VERSION: &str = "tilescript-quickjs-bytecode-v1";
 const QUICKJS_ENGINE_VERSION: &str = "rquickjs-core-0.11.0";
 
 impl std::fmt::Debug for QuickJsExecutionCache {
@@ -842,7 +842,7 @@ impl Loader for SessionLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hypreact_runtime_js_core::JavaScriptModule;
+    use tilescript_runtime_js_core::JavaScriptModule;
 
     #[test]
     fn execution_cache_reuses_compiled_entry_graph() {

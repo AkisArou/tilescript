@@ -38,9 +38,9 @@ packages/lsp/vscode/server/
 !.vscode/extensions.json
 .idea/
 
-dev/test-config/.hypreact/
-dev/test-config/.hypreact-build/
-examples/js/.hypreact/
-examples/js/.hypreact-build/
-examples/lua/.hypreact/
-examples/lua/.hypreact-build/
+dev/test-config/.tilescript/
+dev/test-config/.tilescript-build/
+examples/js/.tilescript/
+examples/js/.tilescript-build/
+examples/lua/.tilescript/
+examples/lua/.tilescript-build/

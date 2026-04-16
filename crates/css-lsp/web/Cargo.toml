@@ -1,5 +1,5 @@
 [package]
-name = "hypreact-css-lsp-web"
+name = "tilescript-css-lsp-web"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-hypreact-css-lsp-core = { path = "../core" }
+tilescript-css-lsp-core = { path = "../core" }
 js-sys.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true

@@ -1,11 +1,11 @@
-#include "hypreact_plugin_dispatchers.hpp"
+#include "tilescript_hypr_plugin_dispatchers.hpp"
 
 #include <optional>
 #include <sstream>
 #include <string>
 
-#include "hypreact_plugin_sync.hpp"
-#include "hypreact_plugin_runtime.hpp"
+#include "tilescript_hypr_plugin_sync.hpp"
+#include "tilescript_hypr_plugin_runtime.hpp"
 
 #include "src/Compositor.hpp"
 #include "src/desktop/state/FocusState.hpp"
@@ -13,7 +13,7 @@
 #include "src/layout/space/Space.hpp"
 #include "src/plugins/PluginAPI.hpp"
 
-namespace hypreact_plugin {
+namespace tilescript_plugin {
 namespace {
 
 std::optional<std::string> normalizeDirection(const std::string &arg) {
@@ -33,7 +33,7 @@ std::optional<std::string> normalizeDirection(const std::string &arg) {
   return std::nullopt;
 }
 
-PHLWINDOW windowFromHypreactId(const std::string &windowId,
+PHLWINDOW windowFromTilescriptId(const std::string &windowId,
                                const DispatcherCallbacks &callbacks) {
   for (const auto &window : g_pCompositor->m_windows) {
     if (!window || !window->m_isMapped) {
@@ -49,7 +49,7 @@ PHLWINDOW windowFromHypreactId(const std::string &windowId,
 }
 
 SDispatchResult
-hypreactMoveFocusDispatcher(std::string arg,
+tilescriptMoveFocusDispatcher(std::string arg,
                             const DispatcherCallbacks &callbacks) {
   if (!runtime()) {
     return {.success = false, .error = "runtime not initialized"};
@@ -73,7 +73,7 @@ hypreactMoveFocusDispatcher(std::string arg,
     return {};
   }
 
-  const auto targetWindow = windowFromHypreactId(*target, callbacks);
+  const auto targetWindow = windowFromTilescriptId(*target, callbacks);
   if (!targetWindow) {
     return {.success = false, .error = "target window not found"};
   }
@@ -85,7 +85,7 @@ hypreactMoveFocusDispatcher(std::string arg,
 }
 
 SDispatchResult
-hypreactMoveWindowDispatcher(std::string arg,
+tilescriptMoveWindowDispatcher(std::string arg,
                              const DispatcherCallbacks &callbacks) {
   if (!runtime()) {
     return {.success = false, .error = "runtime not initialized"};
@@ -118,7 +118,7 @@ hypreactMoveWindowDispatcher(std::string arg,
     return {};
   }
 
-  const auto candidateWindow = windowFromHypreactId(*candidateId, callbacks);
+  const auto candidateWindow = windowFromTilescriptId(*candidateId, callbacks);
   if (!candidateWindow) {
     return {.success = false, .error = "target window not found"};
   }
@@ -137,7 +137,7 @@ hypreactMoveWindowDispatcher(std::string arg,
 }
 
 SDispatchResult
-hypreactResizeWindowDispatcher(std::string arg,
+tilescriptResizeWindowDispatcher(std::string arg,
                                const DispatcherCallbacks &callbacks) {
   if (!runtime()) {
     return {.success = false, .error = "runtime not initialized"};
@@ -185,23 +185,23 @@ hypreactResizeWindowDispatcher(std::string arg,
 
 } // namespace
 
-void registerHypreactDispatchers(HANDLE pluginHandle,
+void registerTilescriptDispatchers(HANDLE pluginHandle,
                                  const DispatcherCallbacks &callbacks) {
-  HyprlandAPI::addDispatcherV2(pluginHandle, "hypreact:movefocus",
+  HyprlandAPI::addDispatcherV2(pluginHandle, "tilescript:movefocus",
                                [callbacks](std::string arg) {
-                                 return hypreactMoveFocusDispatcher(
+                                 return tilescriptMoveFocusDispatcher(
                                      std::move(arg), callbacks);
                                });
-  HyprlandAPI::addDispatcherV2(pluginHandle, "hypreact:movewindow",
+  HyprlandAPI::addDispatcherV2(pluginHandle, "tilescript:movewindow",
                                [callbacks](std::string arg) {
-                                 return hypreactMoveWindowDispatcher(
+                                 return tilescriptMoveWindowDispatcher(
                                      std::move(arg), callbacks);
                                });
-  HyprlandAPI::addDispatcherV2(pluginHandle, "hypreact:resizewindow",
+  HyprlandAPI::addDispatcherV2(pluginHandle, "tilescript:resizewindow",
                                [callbacks](std::string arg) {
-                                 return hypreactResizeWindowDispatcher(
+                                 return tilescriptResizeWindowDispatcher(
                                      std::move(arg), callbacks);
                                });
 }
 
-} // namespace hypreact_plugin
+} // namespace tilescript_plugin

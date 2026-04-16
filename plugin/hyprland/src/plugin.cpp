@@ -4,13 +4,13 @@
 
 #include <json/json.h>
 
-#include "hypreact_hypr_ffi.h"
-#include "hypreact_plugin_algorithm.hpp"
-#include "hypreact_plugin_dispatchers.hpp"
-#include "hypreact_plugin_hooks.hpp"
-#include "hypreact_plugin_query.hpp"
-#include "hypreact_plugin_runtime.hpp"
-#include "hypreact_plugin_sync.hpp"
+#include "tilescript_hypr_ffi.h"
+#include "tilescript_hypr_plugin_algorithm.hpp"
+#include "tilescript_hypr_plugin_dispatchers.hpp"
+#include "tilescript_hypr_plugin_hooks.hpp"
+#include "tilescript_hypr_plugin_query.hpp"
+#include "tilescript_hypr_plugin_runtime.hpp"
+#include "tilescript_hypr_plugin_sync.hpp"
 
 #include "src/Compositor.hpp"
 #include "src/SharedDefs.hpp"
@@ -22,56 +22,56 @@ inline HANDLE PHANDLE = nullptr;
 
 namespace {
 
-using hypreact_plugin::applyPlacementForWorkspace;
-using hypreact_plugin::clearConfigPathValue;
-using hypreact_plugin::clearHooks;
-using hypreact_plugin::clearPluginHandle;
-using hypreact_plugin::clearSyncState;
-using hypreact_plugin::createRuntime;
-using hypreact_plugin::destroyRuntime;
-using hypreact_plugin::layoutRuntimeLoaded;
-using hypreact_plugin::loadLayoutRuntimeConfig;
-using hypreact_plugin::makeWindowId;
-using hypreact_plugin::markRecentWorkspaceResize;
-using hypreact_plugin::drainLayoutRuntimeSourceChanges;
-using hypreact_plugin::queueWorkspaceRecalculate;
-using hypreact_plugin::recalculateWorkspace;
-using hypreact_plugin::resyncAll;
-using hypreact_plugin::runtime;
-using hypreact_plugin::setConfigPathValue;
-using hypreact_plugin::setPluginHandle;
-using hypreact_plugin::stringify;
-using hypreact_plugin::syncFocusedWindow;
-using hypreact_plugin::syncWindow;
-using hypreact_plugin::syncWorkspace;
-using hypreact_plugin::syncWorkspaceLayoutSpace;
-using hypreact_plugin::syncWorkspaceWindows;
-using hypreact_plugin::trim;
-using hypreact_plugin::workspaceName;
+using tilescript_plugin::applyPlacementForWorkspace;
+using tilescript_plugin::clearConfigPathValue;
+using tilescript_plugin::clearHooks;
+using tilescript_plugin::clearPluginHandle;
+using tilescript_plugin::clearSyncState;
+using tilescript_plugin::createRuntime;
+using tilescript_plugin::destroyRuntime;
+using tilescript_plugin::layoutRuntimeLoaded;
+using tilescript_plugin::loadLayoutRuntimeConfig;
+using tilescript_plugin::makeWindowId;
+using tilescript_plugin::markRecentWorkspaceResize;
+using tilescript_plugin::drainLayoutRuntimeSourceChanges;
+using tilescript_plugin::queueWorkspaceRecalculate;
+using tilescript_plugin::recalculateWorkspace;
+using tilescript_plugin::resyncAll;
+using tilescript_plugin::runtime;
+using tilescript_plugin::setConfigPathValue;
+using tilescript_plugin::setPluginHandle;
+using tilescript_plugin::stringify;
+using tilescript_plugin::syncFocusedWindow;
+using tilescript_plugin::syncWindow;
+using tilescript_plugin::syncWorkspace;
+using tilescript_plugin::syncWorkspaceLayoutSpace;
+using tilescript_plugin::syncWorkspaceWindows;
+using tilescript_plugin::trim;
+using tilescript_plugin::workspaceName;
 
 SP<SHyprCtlCommand> g_queryCommand;
 
 SDispatchResult callDispatcher(const std::string &name, const std::string &arg);
 void refreshWorkspaceAlgorithms();
 
-std::string fromFfiDirection(HypreactDirection direction) {
+std::string fromFfiDirection(TilescriptDirection direction) {
   switch (direction) {
-  case HYPREACT_DIRECTION_LEFT:
+  case TILESCRIPT_DIRECTION_LEFT:
     return "left";
-  case HYPREACT_DIRECTION_RIGHT:
+  case TILESCRIPT_DIRECTION_RIGHT:
     return "right";
-  case HYPREACT_DIRECTION_UP:
+  case TILESCRIPT_DIRECTION_UP:
     return "up";
-  case HYPREACT_DIRECTION_DOWN:
+  case TILESCRIPT_DIRECTION_DOWN:
     return "down";
   }
 
   return "left";
 }
 
-void registerHypreactDispatchers() {
-  hypreact_plugin::registerHypreactDispatchers(
-      PHANDLE, hypreact_plugin::DispatcherCallbacks{
+void registerTilescriptDispatchers() {
+  tilescript_plugin::registerTilescriptDispatchers(
+      PHANDLE, tilescript_plugin::DispatcherCallbacks{
                    .callDispatcher = callDispatcher,
                    .makeWindowId = makeWindowId,
                    .syncWorkspace = syncWorkspace,
@@ -86,23 +86,23 @@ void registerHypreactDispatchers() {
 }
 
 void refreshWorkspaceAlgorithms() {
-  hypreact_plugin::refreshWorkspaceAlgorithms();
+  tilescript_plugin::refreshWorkspaceAlgorithms();
 }
 
 bool drainLayoutRuntimeSourceChangesCallback() {
-  return hypreact_plugin::drainLayoutRuntimeSourceChanges();
+  return tilescript_plugin::drainLayoutRuntimeSourceChanges();
 }
 
-void registerHypreactAlgorithm() {
-  hypreact_plugin::registerHypreactAlgorithm(
-      PHANDLE, hypreact_plugin::AlgorithmCallbacks{
+void registerTilescriptAlgorithm() {
+  tilescript_plugin::registerTilescriptAlgorithm(
+      PHANDLE, tilescript_plugin::AlgorithmCallbacks{
                    .makeWindowId = makeWindowId,
                    .workspaceName = workspaceName,
                });
 }
 
-void unregisterHypreactAlgorithm() {
-  hypreact_plugin::unregisterHypreactAlgorithm(PHANDLE);
+void unregisterTilescriptAlgorithm() {
+  tilescript_plugin::unregisterTilescriptAlgorithm(PHANDLE);
 }
 
 SDispatchResult callDispatcher(const std::string &name,
@@ -117,7 +117,7 @@ SDispatchResult callDispatcher(const std::string &name,
   return it->second(arg);
 }
 
-SDispatchResult applyActions(const HypreactActionResult &response) {
+SDispatchResult applyActions(const TilescriptActionResult &response) {
   if (response.error != nullptr) {
     return {.passEvent = false,
             .success = false,
@@ -129,71 +129,71 @@ SDispatchResult applyActions(const HypreactActionResult &response) {
     SDispatchResult result;
 
     switch (action.kind) {
-    case HYPREACT_ACTION_SPAWN_COMMAND:
+    case TILESCRIPT_ACTION_SPAWN_COMMAND:
       result = callDispatcher("exec",
                               action.string_value ? action.string_value : "");
       break;
-    case HYPREACT_ACTION_RELOAD_CONFIG:
+    case TILESCRIPT_ACTION_RELOAD_CONFIG:
       HyprlandAPI::reloadConfig();
       break;
-    case HYPREACT_ACTION_SET_LAYOUT:
+    case TILESCRIPT_ACTION_SET_LAYOUT:
       result = callDispatcher("layoutmsg",
                               "layout " + std::string(action.string_value
                                                           ? action.string_value
                                                           : ""));
       break;
-    case HYPREACT_ACTION_CYCLE_LAYOUT:
+    case TILESCRIPT_ACTION_CYCLE_LAYOUT:
       result =
           callDispatcher("layoutmsg", action.has_cycle_direction &&
                                               action.cycle_direction ==
-                                                  HYPREACT_LAYOUT_CYCLE_PREVIOUS
+                                                  TILESCRIPT_LAYOUT_CYCLE_PREVIOUS
                                           ? "cycleprev"
                                           : "cyclenext");
       break;
-    case HYPREACT_ACTION_ACTIVATE_WORKSPACE:
+    case TILESCRIPT_ACTION_ACTIVATE_WORKSPACE:
       result = callDispatcher("workspace",
                               action.string_value ? action.string_value : "");
       break;
-    case HYPREACT_ACTION_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
+    case TILESCRIPT_ACTION_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
       result =
           callDispatcher("movetoworkspace", std::to_string(action.workspace));
       break;
-    case HYPREACT_ACTION_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
+    case TILESCRIPT_ACTION_TOGGLE_ASSIGN_FOCUSED_WINDOW_TO_WORKSPACE:
       result = callDispatcher("movetoworkspacesilent",
                               std::to_string(action.workspace));
       break;
-    case HYPREACT_ACTION_TOGGLE_FLOATING:
+    case TILESCRIPT_ACTION_TOGGLE_FLOATING:
       result = callDispatcher("togglefloating", "");
       break;
-    case HYPREACT_ACTION_TOGGLE_FULLSCREEN:
+    case TILESCRIPT_ACTION_TOGGLE_FULLSCREEN:
       result = callDispatcher("fullscreen", "1");
       break;
-    case HYPREACT_ACTION_FOCUS_WINDOW:
+    case TILESCRIPT_ACTION_FOCUS_WINDOW:
       result = callDispatcher("focuswindow",
                               "address:" + std::string(action.string_value
                                                            ? action.string_value
                                                            : ""));
       break;
-    case HYPREACT_ACTION_FOCUS_DIRECTION:
+    case TILESCRIPT_ACTION_FOCUS_DIRECTION:
       result = callDispatcher("movefocus", fromFfiDirection(action.direction));
       break;
-    case HYPREACT_ACTION_FOCUS_NEXT_WINDOW:
+    case TILESCRIPT_ACTION_FOCUS_NEXT_WINDOW:
       result = callDispatcher("cyclenext", "");
       break;
-    case HYPREACT_ACTION_FOCUS_PREVIOUS_WINDOW:
+    case TILESCRIPT_ACTION_FOCUS_PREVIOUS_WINDOW:
       result = callDispatcher("cyclenext", "prev");
       break;
-    case HYPREACT_ACTION_SWAP_DIRECTION:
+    case TILESCRIPT_ACTION_SWAP_DIRECTION:
       result = callDispatcher("swapwindow", fromFfiDirection(action.direction));
       break;
-    case HYPREACT_ACTION_MOVE_DIRECTION:
+    case TILESCRIPT_ACTION_MOVE_DIRECTION:
       result = callDispatcher("moveactive", fromFfiDirection(action.direction));
       break;
-    case HYPREACT_ACTION_RESIZE_DIRECTION:
+    case TILESCRIPT_ACTION_RESIZE_DIRECTION:
       result =
           callDispatcher("resizeactive", fromFfiDirection(action.direction));
       break;
-    case HYPREACT_ACTION_CLOSE_FOCUSED_WINDOW:
+    case TILESCRIPT_ACTION_CLOSE_FOCUSED_WINDOW:
       result = callDispatcher("killactive", "");
       break;
     }
@@ -207,7 +207,7 @@ SDispatchResult applyActions(const HypreactActionResult &response) {
 }
 
 std::string queryRuntime(eHyprCtlOutputFormat format, std::string arg) {
-  return hypreact_plugin::queryRuntime(format, std::move(arg), resyncAll);
+  return tilescript_plugin::queryRuntime(format, std::move(arg), resyncAll);
 }
 
 } // namespace
@@ -225,52 +225,52 @@ extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   PHANDLE = handle;
   setPluginHandle(handle);
 
-  HyprlandAPI::addConfigValue(PHANDLE, "plugin:hypreact:config_path",
+  HyprlandAPI::addConfigValue(PHANDLE, "plugin:tilescript-hypr:config_path",
                               Hyprlang::CConfigValue(""));
   setConfigPathValue(
-      HyprlandAPI::getConfigValue(PHANDLE, "plugin:hypreact:config_path"));
+      HyprlandAPI::getConfigValue(PHANDLE, "plugin:tilescript-hypr:config_path"));
 
   createRuntime();
   resyncAll();
   loadLayoutRuntimeConfig();
   if (layoutRuntimeLoaded()) {
-    registerHypreactAlgorithm();
+    registerTilescriptAlgorithm();
     refreshWorkspaceAlgorithms();
   }
-  registerHypreactDispatchers();
-  hypreact_plugin::registerHooks({
+  registerTilescriptDispatchers();
+  tilescript_plugin::registerHooks({
       .drainLayoutRuntimeSourceChanges = drainLayoutRuntimeSourceChangesCallback,
       .loadLayoutRuntimeConfig = loadLayoutRuntimeConfig,
       .layoutRuntimeLoaded = layoutRuntimeLoaded,
       .resyncAll = resyncAll,
-      .registerHypreactAlgorithm = registerHypreactAlgorithm,
+      .registerTilescriptAlgorithm = registerTilescriptAlgorithm,
       .refreshWorkspaceAlgorithms = refreshWorkspaceAlgorithms,
   });
 
   g_queryCommand =
       HyprlandAPI::registerHyprCtlCommand(PHANDLE, SHyprCtlCommand{
-                                                       .name = "hypreact",
+                                                       .name = "tilescript-hypr",
                                                        .exact = false,
                                                        .fn = queryRuntime,
                                                    });
 
   if (!g_queryCommand) {
-    std::cerr << "[hypreact] failed to register hyprctl command: hypreact"
+    std::cerr << "[tilescript-hypr] failed to register hyprctl command: tilescript-hypr"
               << std::endl;
   } else {
-    std::cout << "[hypreact] registered hyprctl command: hypreact" << std::endl;
+    std::cout << "[tilescript-hypr] registered hyprctl command: tilescript-hypr" << std::endl;
   }
 
   HyprlandAPI::addNotificationV2(PHANDLE,
                                  {
-                                     {"text", std::string{"hypreact loaded"}},
+                                      {"text", std::string{"tilescript-hypr loaded"}},
                                      {"time", static_cast<uint64_t>(3000)},
                                      {"icon", ICON_INFO},
                                  });
 
   return {
-      .name = "hypreact",
-      .description = "Hyprland plugin bridge for hypreact",
+      .name = "tilescript-hypr",
+      .description = "Hyprland plugin bridge for tilescript",
       .author = "AkisArou",
       .version = "0.1.0",
   };
@@ -280,10 +280,10 @@ extern "C" EXPORT void pluginExit() {
   if (PHANDLE != nullptr) {
     if (g_queryCommand) {
       if (!HyprlandAPI::unregisterHyprCtlCommand(PHANDLE, g_queryCommand)) {
-        std::cerr << "[hypreact] failed to unregister hyprctl command: hypreact"
+        std::cerr << "[tilescript-hypr] failed to unregister hyprctl command: tilescript-hypr"
                   << std::endl;
       } else {
-        std::cout << "[hypreact] unregistered hyprctl command: hypreact"
+        std::cout << "[tilescript-hypr] unregistered hyprctl command: tilescript-hypr"
                   << std::endl;
       }
       g_queryCommand.reset();
@@ -293,7 +293,7 @@ extern "C" EXPORT void pluginExit() {
   clearHooks();
   clearSyncState();
   clearConfigPathValue();
-  unregisterHypreactAlgorithm();
+  unregisterTilescriptAlgorithm();
   destroyRuntime();
   clearPluginHandle();
   PHANDLE = nullptr;

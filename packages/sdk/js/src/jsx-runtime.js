@@ -11,7 +11,7 @@ const flattenChildren = (input, out) => {
   }
 };
 
-export const Fragment = Symbol("hypreact.fragment");
+export const Fragment = Symbol("tilescript.fragment");
 
 function createNode(type, props, ...children) {
   const normalizedChildren = [];

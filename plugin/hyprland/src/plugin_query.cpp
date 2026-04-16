@@ -1,11 +1,11 @@
-#include "hypreact_plugin_query.hpp"
+#include "tilescript_hypr_plugin_query.hpp"
 
 #include <json/json.h>
 
-#include "hypreact_hypr_ffi.h"
-#include "hypreact_plugin_runtime.hpp"
+#include "tilescript_hypr_ffi.h"
+#include "tilescript_hypr_plugin_runtime.hpp"
 
-namespace hypreact_plugin {
+namespace tilescript_plugin {
 namespace {
 
 void appendWorkspaceNames(Json::Value &target, char **workspaceNames,
@@ -18,7 +18,7 @@ void appendWorkspaceNames(Json::Value &target, char **workspaceNames,
 }
 
 void appendPlacement(Json::Value &target,
-                     const HypreactPlacementResult &placement) {
+                     const TilescriptPlacementResult &placement) {
   for (size_t i = 0; i < placement.geometry_count; ++i) {
     Json::Value geometry;
     if (placement.geometries[i].window_id != nullptr) {
@@ -33,7 +33,7 @@ void appendPlacement(Json::Value &target,
 }
 
 void appendDiagnostics(Json::Value &target,
-                       const HypreactDiagnostic *diagnostics,
+                       const TilescriptDiagnostic *diagnostics,
                        size_t diagnosticCount) {
   for (size_t i = 0; i < diagnosticCount; ++i) {
     const auto &diagnostic = diagnostics[i];
@@ -66,7 +66,7 @@ void appendDiagnostics(Json::Value &target,
 }
 
 void appendLayoutStatus(Json::Value &target,
-                        const HypreactLayoutStatusResult &layout) {
+                        const TilescriptLayoutStatusResult &layout) {
   target["loaded"] = layout.loaded;
   if (layout.config_path != nullptr) {
     target["configPath"] = layout.config_path;
@@ -85,7 +85,7 @@ void appendLayoutStatus(Json::Value &target,
                        layout.workspace_name_count);
 }
 
-void appendRuntimeState(Json::Value &target, const HypreactStateResult &state) {
+void appendRuntimeState(Json::Value &target, const TilescriptStateResult &state) {
   if (state.current_workspace_id != nullptr) {
     target["currentWorkspaceId"] = state.current_workspace_id;
   }
@@ -108,10 +108,10 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
   }
 
   auto command = trim(arg);
-  if (command == "hypreact") {
+  if (command == "tilescript") {
     command.clear();
-  } else if (command.rfind("hypreact ", 0) == 0) {
-    command = trim(command.substr(std::string("hypreact ").size()));
+  } else if (command.rfind("tilescript ", 0) == 0) {
+    command = trim(command.substr(std::string("tilescript ").size()));
   }
 
   if (command == "resync") {
@@ -124,7 +124,7 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
     Json::Value response;
     response["ok"] = true;
     appendLayoutStatus(response["data"], layout);
-    hypreact_runtime_free_layout_status_result(layout);
+    tilescript_runtime_free_layout_status_result(layout);
     return stringify(response);
   }
 
@@ -136,8 +136,8 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
 
     const auto placement = runtime()->layoutPlacement();
     appendPlacement(response["data"]["placement"], placement);
-    hypreact_runtime_free_placement_result(placement);
-    hypreact_runtime_free_layout_status_result(layout);
+    tilescript_runtime_free_placement_result(placement);
+    tilescript_runtime_free_layout_status_result(layout);
     return stringify(response);
   }
 
@@ -151,7 +151,7 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
     const auto placement = runtime()->layoutPlacementForWorkspace(workspaceId);
     appendPlacement(response["data"]["placement"], placement);
 
-    hypreact_runtime_free_placement_result(placement);
+    tilescript_runtime_free_placement_result(placement);
     return stringify(response);
   }
 
@@ -164,7 +164,7 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
     if (result.error != nullptr) {
       response["error"] = result.error;
     }
-    hypreact_runtime_free_status_result(result);
+    tilescript_runtime_free_status_result(result);
     return stringify(response);
   }
 
@@ -173,13 +173,13 @@ std::string queryRuntime(eHyprCtlOutputFormat, std::string arg,
 
   const auto state = runtime()->stateResult();
   appendRuntimeState(response["data"]["runtime"], state);
-  hypreact_runtime_free_state_result(state);
+  tilescript_runtime_free_state_result(state);
 
   const auto layout = runtime()->layoutStatusResult();
   appendLayoutStatus(response["data"]["layouts"], layout);
-  hypreact_runtime_free_layout_status_result(layout);
+  tilescript_runtime_free_layout_status_result(layout);
 
   return stringify(response);
 }
 
-} // namespace hypreact_plugin
+} // namespace tilescript_plugin

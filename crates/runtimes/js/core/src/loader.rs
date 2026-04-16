@@ -1,14 +1,14 @@
-use hypreact_core::runtime::native_artifact::{
+use tilescript_core::runtime::native_artifact::{
     NativeDependencySnapshot, load_cached_stylesheet, load_text_dependency,
 };
-use hypreact_core::runtime::prepared_layout::{
+use tilescript_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets, SelectedLayout,
 };
-use hypreact_core::runtime::runtime_error::RuntimeError;
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::runtime::runtime_error::RuntimeError;
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
 use tracing::{debug, warn};
 
-use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
+use tilescript_config::model::{Config, LayoutConfigError, LayoutDefinition};
 
 use crate::module_graph::{JavaScriptModule, JavaScriptModuleGraph};
 use crate::payload::{decode_runtime_graph_payload, encode_runtime_graph_payload};
@@ -67,7 +67,7 @@ pub trait JsLayoutSourceLoader: std::fmt::Debug {
     fn load_runtime_source(
         &self,
         config: &Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError>;
 }
 
@@ -116,7 +116,7 @@ impl JsLayoutSourceLoader for InlineLayoutSourceLoader {
     fn load_runtime_source(
         &self,
         config: &Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         let Some(selected_layout) = config
             .resolve_selected_layout(workspace)
@@ -166,7 +166,7 @@ impl JsLayoutSourceLoader for FsLayoutSourceLoader {
     fn load_runtime_source(
         &self,
         config: &Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         let Some(layout) = config.selected_layout(workspace) else {
             return Ok(None);
@@ -182,7 +182,7 @@ impl JsLayoutSourceLoader for RuntimeProjectLayoutSourceLoader {
     fn load_runtime_source(
         &self,
         config: &Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         let Some(layout) = config.selected_layout(workspace) else {
             return Ok(None);

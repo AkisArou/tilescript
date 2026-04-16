@@ -1,5 +1,5 @@
-use hypreact_css::analysis::{CssSymbolKind, analyze_stylesheet};
-use hypreact_css::language::{
+use tilescript_css::analysis::{CssSymbolKind, analyze_stylesheet};
+use tilescript_css::language::{
     attribute_key_specs, property_spec, property_specs, pseudo_class_specs, pseudo_element_specs,
 };
 use lsp_types::{

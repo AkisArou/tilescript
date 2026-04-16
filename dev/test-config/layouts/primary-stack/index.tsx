@@ -1,6 +1,6 @@
-/** @jsxImportSource @hypreact/sdk */
+/** @jsxImportSource @tilescript/sdk */
 
-import type { LayoutContext } from "@hypreact/sdk/layout";
+import type { LayoutContext } from "@tilescript/sdk/layout";
 import "./index.css";
 
 export default function layout(ctx: LayoutContext) {

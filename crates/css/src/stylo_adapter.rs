@@ -23,7 +23,7 @@ use style::shared_lock::SharedRwLock;
 use style::stylesheets::{AllowImportRules, Origin, Stylesheet};
 
 use crate::language::is_supported_pseudo_class;
-use hypreact_core::{ResolvedLayoutNode, RuntimeContentKind, RuntimeLayoutNodeType};
+use tilescript_core::{ResolvedLayoutNode, RuntimeContentKind, RuntimeLayoutNodeType};
 
 #[derive(Debug, Clone)]
 pub struct LayoutDomTree {
@@ -246,7 +246,7 @@ impl LayoutDomTree {
     #[cfg(test)]
     pub fn find_window_element(
         &self,
-        window_id: &hypreact_core::WindowId,
+        window_id: &tilescript_core::WindowId,
     ) -> Option<LayoutElement<'_>> {
         self.nodes.iter().enumerate().find_map(|(index, node)| match &node.node {
             ResolvedLayoutNode::Window { window_id: Some(id), .. } if id == window_id => {
@@ -537,8 +537,8 @@ pub fn compute_stylo_for_layout_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hypreact_core::LayoutNodeMeta;
-    use hypreact_core::WindowId;
+    use tilescript_core::LayoutNodeMeta;
+    use tilescript_core::WindowId;
 
     fn tree() -> LayoutDomTree {
         LayoutDomTree::from_resolved_root(&ResolvedLayoutNode::Workspace {

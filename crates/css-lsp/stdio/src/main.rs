@@ -1,4 +1,4 @@
-use hypreact_css_lsp_core::{Session, protocol};
+use tilescript_css_lsp_core::{Session, protocol};
 use lsp_server::{Connection, Message};
 
 fn main() {

@@ -4,7 +4,7 @@ configure:
 	cmake -S . -B build
 
 ffi:
-	cargo build --release -p hypreact-hypr-ffi
+	cargo build --release -p tilescript-ffi
 
 plugin: configure
 	cmake --build build
@@ -12,18 +12,18 @@ plugin: configure
 build: plugin
 
 test:
-	cargo test -p hypreact-scene
-	cargo test -p hypreact-layout-runtime
-	cargo test -p hypreact-runtime-js-core
-	cargo test -p hypreact-runtime-js-native
-	cargo test -p hypreact-hypr-ffi
+	cargo test -p tilescript-scene
+	cargo test -p tilescript-layout-runtime
+	cargo test -p tilescript-runtime-js-core
+	cargo test -p tilescript-runtime-js-native
+	cargo test -p tilescript-ffi
 
 live: plugin
-	cp build/hypreact.so build/hypreact-live.so
-	@printf 'load with: hyprctl plugin load %s/build/hypreact-live.so\n' "$$(pwd)"
+	cp build/tilescript-hypr.so build/tilescript-hypr-live.so
+	@printf 'load with: hyprctl plugin load %s/build/tilescript-hypr-live.so\n' "$$(pwd)"
 
 playground:
-	trunk serve --config apps/hypreact-playground/Trunk.toml --open
+	trunk serve --config apps/tilescript-playground/Trunk.toml --open
 
 clean:
 	rm -rf build

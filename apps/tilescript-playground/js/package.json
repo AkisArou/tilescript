@@ -1,0 +1,20 @@
+{
+  "name": "tilescript-playground-monaco-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm build:css-lsp-web && vite build",
+    "build:css-lsp-web": "wasm-pack build ../../../crates/css-lsp/web --target web --out-dir generated/css-lsp-web --out-name index --no-opt --no-pack"
+  },
+  "dependencies": {
+    "monaco-editor": "^0.55.1",
+    "monaco-vim": "catalog:",
+    "wasmoon": "1.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "^8.0.1"
+  }
+}

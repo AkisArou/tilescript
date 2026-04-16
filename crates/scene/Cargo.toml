@@ -1,13 +1,13 @@
 [package]
-name = "hypreact-scene"
+name = "tilescript-scene"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hypreact-core = { path = "../core" }
-hypreact-css = { path = "../css" }
+tilescript-core = { path = "../core" }
+tilescript-css = { path = "../css" }
 cssparser = "0.36"
 precomputed-hash = "0.1"
 selectors = "0.36.1"

@@ -3,7 +3,7 @@ use crate::css::{CssParseError, CssValueError, StyledLayoutTree, parse_styleshee
 pub use crate::layout_calc::{LaidOutNode, LaidOutTree};
 use crate::scene::{SceneRequest, SceneResponse};
 use crate::style_tree::build_styled_layout_tree_from_sheet_with_resize_state;
-use hypreact_core::ResolvedLayoutNode;
+use tilescript_core::ResolvedLayoutNode;
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::debug;
@@ -109,10 +109,10 @@ impl SceneCache {
 struct SceneRequestKey<'a> {
     layout_name: Option<&'a str>,
     root: &'a ResolvedLayoutNode,
-    stylesheets: &'a hypreact_core::runtime::prepared_layout::PreparedStylesheets,
+    stylesheets: &'a tilescript_core::runtime::prepared_layout::PreparedStylesheets,
     width: f32,
     height: f32,
-    resize_state: &'a hypreact_core::resize::WorkspaceResizeState,
+    resize_state: &'a tilescript_core::resize::WorkspaceResizeState,
 }
 
 fn scene_request_key(request: &SceneRequest) -> Option<String> {
@@ -171,7 +171,7 @@ pub fn compute_layout_from_sheet(
     let styled = build_styled_layout_tree_from_sheet_with_resize_state(
         root,
         sheet,
-        &hypreact_core::resize::WorkspaceResizeState::default(),
+        &tilescript_core::resize::WorkspaceResizeState::default(),
     )
     .map_err(LayoutPipelineError::from)?;
     compute_layout_from_styled(&styled, width, height)
@@ -224,12 +224,12 @@ pub fn build_styled_layout_tree_from_sheet(
 
 #[cfg(test)]
 mod tests {
-    use hypreact_core::{OutputId, WindowId, WorkspaceId};
+    use tilescript_core::{OutputId, WindowId, WorkspaceId};
 
     use super::*;
     use crate::css::{Display, FlexDirectionValue, LengthPercentage, SizeValue};
     use crate::scene::{LayoutSnapshotNode, SceneNodeStyle, SceneResponse};
-    use hypreact_core::{LayoutNodeMeta, LayoutRect, LayoutSpace, ResolvedLayoutNode};
+    use tilescript_core::{LayoutNodeMeta, LayoutRect, LayoutSpace, ResolvedLayoutNode};
 
     fn sample_tree() -> ResolvedLayoutNode {
         ResolvedLayoutNode::Workspace {
@@ -403,9 +403,9 @@ mod tests {
             output_id: Some(OutputId::from("out-1")),
             layout_name: Some("master-stack".into()),
             root: sample_tree(),
-            stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+            stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets {
                 global: None,
-                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "layouts/master-stack/index.css".into(),
                     source:
                         "workspace { display: flex; width: 320px; height: 200px; } #main { width: 100px; }"
@@ -416,7 +416,7 @@ mod tests {
                 width: 320.0,
                 height: 200.0,
             },
-            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
+            resize_state: tilescript_core::resize::WorkspaceResizeState::default(),
         };
 
         let response = compute_layout_from_request(&request).unwrap();
@@ -506,15 +506,15 @@ mod tests {
             output_id: Some(OutputId::from("out-1")),
             layout_name: Some("master-stack".into()),
             root: sample_tree(),
-            stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+            stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets {
                 global: None,
-                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "layouts/master-stack/index.css".into(),
                     source: stylesheet.into(),
                 }),
             },
             space: LayoutSpace { width: 320.0, height: 200.0 },
-            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
+            resize_state: tilescript_core::resize::WorkspaceResizeState::default(),
         };
 
         let response_a = compute_layout_from_request(&request).unwrap();
@@ -532,9 +532,9 @@ mod tests {
             output_id: Some(OutputId::from("out-1")),
             layout_name: Some("master-stack".into()),
             root: sample_tree(),
-            stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+            stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets {
                 global: None,
-                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "layouts/master-stack/index.css".into(),
                     source:
                         "workspace { display: flex; width: 320px; height: 200px; } #main { width: 100px; }"
@@ -545,13 +545,13 @@ mod tests {
                 width: 320.0,
                 height: 200.0,
             },
-            resize_state: hypreact_core::resize::WorkspaceResizeState::default(),
+            resize_state: tilescript_core::resize::WorkspaceResizeState::default(),
         };
 
         let request_b = SceneRequest {
-            stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+            stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets {
                 global: None,
-                layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+                layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                     path: "layouts/master-stack/index.css".into(),
                     source:
                         "workspace { display: flex; width: 320px; height: 200px; } #main { width: 200px; }"

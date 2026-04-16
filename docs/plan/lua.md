@@ -36,7 +36,7 @@ The preferred Lua authoring API is a small declarative DSL that reads similarly 
 Example equivalent of `examples/js/layouts/master-stack/index.tsx`:
 
 ```lua
-local h = require("hypreact")
+local h = require("tilescript")
 
 return function(ctx)
   return h.workspace({ id = "frame" }) {
@@ -310,7 +310,7 @@ Suggested authored SDK layout:
 
 Lua SDK contents should be minimal:
 
-- the `hypreact` Lua module implementing `workspace`, `group`, `slot`, `window`, and `when`
+- the `tilescript` Lua module implementing `workspace`, `group`, `slot`, `window`, and `when`
 - authoring docs and examples
 - possibly Lua language-server metadata later if useful
 
@@ -326,29 +326,29 @@ Requirements:
 
 - use EmmyLua/LuaLS annotations understood by Sumneko Lua / LuaLS
 - annotate the layout context, node props, node shapes, and helper return types
-- make `require("hypreact")` resolve to annotated APIs in example projects
+- make `require("tilescript")` resolve to annotated APIs in example projects
 - keep annotations close to the shipped Lua helper module instead of maintaining a separate shadow type layer
 
 Suggested annotated types:
 
-- `Hypreact.LayoutContext`
-- `Hypreact.LayoutWindow`
-- `Hypreact.WorkspaceProps`
-- `Hypreact.GroupProps`
-- `Hypreact.SlotProps`
-- `Hypreact.WindowProps`
-- `Hypreact.LayoutNode`
-- `Hypreact.Child`
+- `Tilescript.LayoutContext`
+- `Tilescript.LayoutWindow`
+- `Tilescript.WorkspaceProps`
+- `Tilescript.GroupProps`
+- `Tilescript.SlotProps`
+- `Tilescript.WindowProps`
+- `Tilescript.LayoutNode`
+- `Tilescript.Child`
 
 Suggested helper annotation shape:
 
 ```lua
----@class Hypreact.Module
----@field workspace fun(props: Hypreact.WorkspaceProps): Hypreact.ContainerBuilder
----@field group fun(props: Hypreact.GroupProps): Hypreact.ContainerBuilder
----@field slot fun(props: Hypreact.SlotProps): Hypreact.LayoutNode
----@field window fun(props: Hypreact.WindowProps): Hypreact.LayoutNode
----@field when fun(condition: boolean): Hypreact.ConditionalBuilder
+---@class Tilescript.Module
+---@field workspace fun(props: Tilescript.WorkspaceProps): Tilescript.ContainerBuilder
+---@field group fun(props: Tilescript.GroupProps): Tilescript.ContainerBuilder
+---@field slot fun(props: Tilescript.SlotProps): Tilescript.LayoutNode
+---@field window fun(props: Tilescript.WindowProps): Tilescript.LayoutNode
+---@field when fun(condition: boolean): Tilescript.ConditionalBuilder
 ```
 
 The template Lua examples should use these annotations so editor support is present immediately.
@@ -383,7 +383,7 @@ The following areas should be refactored as part of Lua support:
 ### Runtime Construction
 
 - add a runtime-neutral factory in `crates/layout-runtime`
-- remove direct `hypreact_runtime_js_native` construction from `LayoutRuntimeService`
+- remove direct `tilescript_runtime_js_native` construction from `LayoutRuntimeService`
 - start with JS registered there
 - add Lua registration there once native Lua runtime exists
 
@@ -396,7 +396,7 @@ The following areas should be refactored as part of Lua support:
 ### Lua SDK
 
 - add `packages/sdk/lua`
-- ship `hypreact.lua` with the chosen DSL
+- ship `tilescript.lua` with the chosen DSL
 - ship LuaLS annotations in the SDK module files
 - add `.luarc.json` for examples and local fixtures if needed
 - add a Lua template example once runtime execution exists

@@ -256,17 +256,17 @@ fn compile_declarations_from_raw_block(
         declarations = parse_grid_fallback_declarations(raw_block)?;
     }
 
-    append_custom_hypreact_declarations(&fallback_declarations, &mut declarations)?;
+    append_custom_tilescript_declarations(&fallback_declarations, &mut declarations)?;
 
     Ok(declarations)
 }
 
-fn append_custom_hypreact_declarations(
+fn append_custom_tilescript_declarations(
     fallback_declarations: &[ParsedDeclaration],
     declarations: &mut Vec<crate::compile::CompiledDeclaration>,
 ) -> Result<(), CssParseError> {
     for declaration in fallback_declarations {
-        if !declaration.property.starts_with("-hypreact-") {
+        if !declaration.property.starts_with("-tilescript-") {
             continue;
         }
 
@@ -356,13 +356,13 @@ fn selector_matches_slot(selectors: &selectors::parser::SelectorList<LayoutSelec
     selector_matches(selectors, &synthetic_slot_node())
 }
 
-fn synthetic_slot_node() -> hypreact_core::ResolvedLayoutNode {
-    hypreact_core::ResolvedLayoutNode::Content {
-        meta: hypreact_core::LayoutNodeMeta {
+fn synthetic_slot_node() -> tilescript_core::ResolvedLayoutNode {
+    tilescript_core::ResolvedLayoutNode::Content {
+        meta: tilescript_core::LayoutNodeMeta {
             name: Some("slot".to_string()),
-            ..hypreact_core::LayoutNodeMeta::default()
+            ..tilescript_core::LayoutNodeMeta::default()
         },
-        kind: hypreact_core::RuntimeContentKind::Container,
+        kind: tilescript_core::RuntimeContentKind::Container,
         text: None,
         children: Vec::new(),
     }

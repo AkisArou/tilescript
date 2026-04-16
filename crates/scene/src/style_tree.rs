@@ -1,12 +1,12 @@
 use crate::css::{
     CssValueError, NodeComputedStyle, StyledLayoutTree, compute_style, map_computed_style_to_taffy,
 };
-use hypreact_core::ResolvedLayoutNode;
-use hypreact_core::resize::{
+use tilescript_core::ResolvedLayoutNode;
+use tilescript_core::resize::{
     PartitionAxis, PartitionId, WorkspaceResizeState, reconciled_branch_shares,
     scale_authored_share_units,
 };
-use hypreact_css::{Display, FlexDirectionValue, SizeValue};
+use tilescript_css::{Display, FlexDirectionValue, SizeValue};
 use taffy::style::Dimension as TaffyDimension;
 
 pub fn build_styled_layout_tree_from_sheet(
@@ -170,32 +170,32 @@ fn fallback_branch_id_for_styled_parent(parent: &NodeComputedStyle, index: usize
 
 fn flex_partition_axis(
     computed: &crate::css::ComputedStyle,
-) -> Option<hypreact_core::resize::PartitionAxis> {
+) -> Option<tilescript_core::resize::PartitionAxis> {
     if computed.display != Some(Display::Flex) {
         return None;
     }
 
     Some(match computed.flex_direction {
         Some(FlexDirectionValue::Column) | Some(FlexDirectionValue::ColumnReverse) => {
-            hypreact_core::resize::PartitionAxis::Vertical
+            tilescript_core::resize::PartitionAxis::Vertical
         }
-        _ => hypreact_core::resize::PartitionAxis::Horizontal,
+        _ => tilescript_core::resize::PartitionAxis::Horizontal,
     })
 }
 
 fn partition_axis(
     computed: &crate::css::ComputedStyle,
-) -> Option<hypreact_core::resize::PartitionAxis> {
+) -> Option<tilescript_core::resize::PartitionAxis> {
     flex_partition_axis(computed)
 }
 
 fn branch_is_fixed_on_axis(
     computed: &crate::css::ComputedStyle,
-    axis: hypreact_core::resize::PartitionAxis,
+    axis: tilescript_core::resize::PartitionAxis,
 ) -> bool {
     let explicit_main_size = match axis {
-        hypreact_core::resize::PartitionAxis::Horizontal => computed.width,
-        hypreact_core::resize::PartitionAxis::Vertical => computed.height,
+        tilescript_core::resize::PartitionAxis::Horizontal => computed.width,
+        tilescript_core::resize::PartitionAxis::Vertical => computed.height,
     };
 
     if matches!(explicit_main_size, Some(SizeValue::LengthPercentage(_))) {

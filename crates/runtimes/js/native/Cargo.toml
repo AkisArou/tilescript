@@ -1,5 +1,5 @@
 [package]
-name = "hypreact-runtime-js-native"
+name = "tilescript-runtime-js-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,10 +10,10 @@ oxc = { workspace = true, features = ["full"] }
 rquickjs = { workspace = true, features = ["loader"] }
 serde.workspace = true
 serde_json.workspace = true
-hypreact-config = { path = "../../../config" }
-hypreact-core = { path = "../../../core" }
-hypreact-runtime-js-core = { path = "../core" }
-hypreact-scene = { path = "../../../scene" }
+tilescript-config = { path = "../../../config" }
+tilescript-core = { path = "../../../core" }
+tilescript-runtime-js-core = { path = "../core" }
+tilescript-scene = { path = "../../../scene" }
 thiserror.workspace = true
 tracing.workspace = true
 

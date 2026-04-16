@@ -1,6 +1,6 @@
 # Performance Plan
 
-This document defines the final performance architecture for `hypreact` across native and browser runtimes.
+This document defines the final performance architecture for `tilescript` across native and browser runtimes.
 
 The goal is clean code, not compatibility.
 
@@ -127,17 +127,17 @@ The biggest UX problem is separate from raw CPU cost:
 - edits are not pushed to screen immediately
 - the current visible update usually waits for a later Hyprland-triggered placement query
 
-## Role Of `.hypreact-build`
+## Role Of `.tilescript-build`
 
-`.hypreact-build/` remains part of the final architecture, but with a clearer purpose.
+`.tilescript-build/` remains part of the final architecture, but with a clearer purpose.
 
 It is the native prepared artifact root.
 
 It should contain only runtime-owned prepared artifacts, not vague leftovers from intermediate reload steps.
 
-### Final Meaning Of `.hypreact-build/`
+### Final Meaning Of `.tilescript-build/`
 
-For native runtimes, `.hypreact-build/` is the local derived-artifact store for the current config root.
+For native runtimes, `.tilescript-build/` is the local derived-artifact store for the current config root.
 
 It holds:
 
@@ -153,7 +153,7 @@ It complements it.
 
 The in-memory runtime state is the active hot path.
 
-`.hypreact-build/` is the persistent local cache backing that state.
+`.tilescript-build/` is the persistent local cache backing that state.
 
 ## Runtime State Model
 
@@ -232,15 +232,15 @@ Examples:
 - QuickJS bytecode validity depends on:
   - prepared JS content hash
   - QuickJS version token
-  - hypreact bytecode schema token
+  - tilescript bytecode schema token
 - Fennel compiled-Lua validity depends on:
   - `.fnl` content hash
   - vendored Fennel compiler version token
-  - hypreact compile schema token
+  - tilescript compile schema token
 - Lua bytecode validity depends on:
   - compiled Lua source hash
   - Lua engine version token
-  - hypreact bytecode schema token
+  - tilescript bytecode schema token
 
 ## Invalidation Rules
 
@@ -337,7 +337,7 @@ So the final split is:
 For native JS:
 
 - authored source remains canonical
-- `.hypreact-build/` stores prepared JS runtime outputs
+- `.tilescript-build/` stores prepared JS runtime outputs
 - the in-memory runtime state owns executable prepared artifacts
 - native QuickJS bytecode is a derived acceleration cache on top of prepared JS artifacts
 
@@ -380,7 +380,7 @@ For native Lua:
 
 - authored Lua source remains canonical
 - the runtime keeps executable compiled chunk artifacts in memory
-- the runtime stores native Lua bytecode artifacts in `.hypreact-build/` when the embedded Lua path exposes clean dump/load support
+- the runtime stores native Lua bytecode artifacts in `.tilescript-build/` when the embedded Lua path exposes clean dump/load support
 
 ### Final Lua Artifact Chain
 
@@ -399,7 +399,7 @@ But the architecture does not depend on bytecode dump/load being present in one 
 The hard architectural rule is:
 
 - the native Lua runtime must have an executable compiled artifact cache
-- if the engine path exposes bytecode dump/load cleanly, persist that executable cache to `.hypreact-build/`
+- if the engine path exposes bytecode dump/load cleanly, persist that executable cache to `.tilescript-build/`
 - if not, the executable compiled artifact remains in memory and the architecture stays otherwise unchanged
 
 This is not a middle-ground design.
@@ -552,7 +552,7 @@ These are hard decisions, not options:
 - immediate visible workspace reapply
 - last-known-good behavior on failures
 
-### 5. Tighten JS prepared artifact ownership under `.hypreact-build`
+### 5. Tighten JS prepared artifact ownership under `.tilescript-build`
 
 - prepared JS outputs become first-class runtime artifacts
 - placement queries become cache-hit oriented

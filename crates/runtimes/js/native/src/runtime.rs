@@ -1,17 +1,17 @@
 use std::sync::{Arc, Mutex};
 
-use hypreact_config::model::Config;
-use hypreact_config::runtime::AuthoringConfigRuntime;
-use hypreact_core::SourceLayoutNode;
-use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
-use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
-use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
-use hypreact_core::runtime::runtime_error::RuntimeError;
-use hypreact_scene::ast::LayoutValidationError;
+use tilescript_config::model::Config;
+use tilescript_config::runtime::AuthoringConfigRuntime;
+use tilescript_core::SourceLayoutNode;
+use tilescript_core::runtime::layout_context::LayoutEvaluationContext;
+use tilescript_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
+use tilescript_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
+use tilescript_core::runtime::runtime_error::RuntimeError;
+use tilescript_scene::ast::LayoutValidationError;
 use tracing::{debug, warn};
 
-use hypreact_runtime_js_core::loader::{InlineLayoutSourceLoader, JsLayoutSourceLoader};
-use hypreact_runtime_js_core::{
+use tilescript_runtime_js_core::loader::{InlineLayoutSourceLoader, JsLayoutSourceLoader};
+use tilescript_runtime_js_core::{
     JavaScriptModule, JavaScriptModuleGraph, decode_js_layout_value, decode_runtime_graph_payload,
     encode_runtime_graph_payload,
 };
@@ -161,7 +161,7 @@ impl<L: JsLayoutSourceLoader> QuickJsPreparedLayoutRuntime<L> {
     pub fn prepare_layout(
         &self,
         config: &Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         debug!(workspace_id = %workspace.id, workspace_name = %workspace.name, "loading runtime source for layout preparation");
         let result = self.loader.load_runtime_source(config, workspace);
@@ -183,7 +183,7 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
     fn prepare_layout(
         &self,
         config: &Self::Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         Ok(config
             .resolve_selected_layout(workspace)
@@ -194,7 +194,7 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
                     &JavaScriptModuleGraph { entry: String::new(), modules: Vec::new() },
                     &[],
                 ),
-                stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets::default(
+                stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets::default(
                 ),
                 dependencies: vec![],
             }))
@@ -202,8 +202,8 @@ impl PreparedLayoutRuntime for StubPreparedLayoutRuntime {
 
     fn build_context(
         &self,
-        state: &hypreact_core::snapshot::StateSnapshot,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        state: &tilescript_core::snapshot::StateSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
         artifact: Option<&PreparedLayout>,
     ) -> LayoutEvaluationContext {
         state.layout_context(workspace, artifact.map(|artifact| artifact.selected.clone()))
@@ -228,15 +228,15 @@ impl<L: JsLayoutSourceLoader> PreparedLayoutRuntime for QuickJsPreparedLayoutRun
     fn prepare_layout(
         &self,
         config: &Self::Config,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
     ) -> Result<Option<PreparedLayout>, RuntimeError> {
         QuickJsPreparedLayoutRuntime::prepare_layout(self, config, workspace)
     }
 
     fn build_context(
         &self,
-        state: &hypreact_core::snapshot::StateSnapshot,
-        workspace: &hypreact_core::snapshot::WorkspaceSnapshot,
+        state: &tilescript_core::snapshot::StateSnapshot,
+        workspace: &tilescript_core::snapshot::WorkspaceSnapshot,
         artifact: Option<&PreparedLayout>,
     ) -> LayoutEvaluationContext {
         state.layout_context(workspace, artifact.map(|artifact| artifact.selected.clone()))
@@ -286,7 +286,7 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         &self,
         authored: &std::path::Path,
         runtime: &std::path::Path,
-    ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
+    ) -> Result<tilescript_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         debug!(authored = %authored.display(), runtime = %runtime.display(), "refreshing prepared config");
         let result = crate::authored::refresh_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
@@ -301,7 +301,7 @@ impl<L: JsLayoutSourceLoader> AuthoringConfigRuntime for QuickJsPreparedLayoutRu
         &self,
         authored: &std::path::Path,
         runtime: &std::path::Path,
-    ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
+    ) -> Result<tilescript_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         debug!(authored = %authored.display(), runtime = %runtime.display(), "rebuilding prepared config");
         let result = crate::authored::rebuild_prepared_config(authored, runtime)
             .map(runtime_refresh_summary)
@@ -326,7 +326,7 @@ impl AuthoringConfigRuntime for StubPreparedLayoutRuntime {
         &self,
         _authored: &std::path::Path,
         _runtime: &std::path::Path,
-    ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
+    ) -> Result<tilescript_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         Err(RuntimeError::NotImplemented("prepared config refresh".into()))
     }
 
@@ -334,15 +334,15 @@ impl AuthoringConfigRuntime for StubPreparedLayoutRuntime {
         &self,
         _authored: &std::path::Path,
         _runtime: &std::path::Path,
-    ) -> Result<hypreact_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
+    ) -> Result<tilescript_core::runtime::runtime_error::RuntimeRefreshSummary, RuntimeError> {
         Err(RuntimeError::NotImplemented("prepared config rebuild".into()))
     }
 }
 
 fn runtime_refresh_summary(
     update: crate::authored::JsRuntimeCacheUpdate,
-) -> hypreact_core::runtime::runtime_error::RuntimeRefreshSummary {
-    hypreact_core::runtime::runtime_error::RuntimeRefreshSummary {
+) -> tilescript_core::runtime::runtime_error::RuntimeRefreshSummary {
+    tilescript_core::runtime::runtime_error::RuntimeRefreshSummary {
         refreshed_files: update.rebuilt_files + update.copied_stylesheets,
         pruned_files: update.pruned_files,
     }

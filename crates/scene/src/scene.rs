@@ -1,7 +1,7 @@
 use crate::style::ComputedStyle;
-use hypreact_core::resize::WorkspaceResizeState;
-use hypreact_core::runtime::prepared_layout::PreparedStylesheets;
-use hypreact_core::{
+use tilescript_core::resize::WorkspaceResizeState;
+use tilescript_core::runtime::prepared_layout::PreparedStylesheets;
+use tilescript_core::{
     LayoutNodeMeta, LayoutRect, LayoutSpace, OutputId, ResolvedLayoutNode, WindowId, WorkspaceId,
 };
 

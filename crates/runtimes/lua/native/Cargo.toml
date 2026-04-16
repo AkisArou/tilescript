@@ -1,15 +1,15 @@
 [package]
-name = "hypreact-runtime-lua-native"
+name = "tilescript-runtime-lua-native"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hypreact-config = { path = "../../../config" }
-hypreact-core = { path = "../../../core" }
-hypreact-runtime-fennel-core = { path = "../../fennel/core" }
-hypreact-runtime-lua-core = { path = "../core" }
+tilescript-config = { path = "../../../config" }
+tilescript-core = { path = "../../../core" }
+tilescript-runtime-fennel-core = { path = "../../fennel/core" }
+tilescript-runtime-lua-core = { path = "../core" }
 mlua = { workspace = true, features = ["lua54", "vendored", "serialize"] }
 serde_json.workspace = true
 thiserror.workspace = true

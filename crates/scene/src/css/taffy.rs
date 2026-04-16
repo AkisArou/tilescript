@@ -18,7 +18,7 @@ use taffy::style::{
 };
 
 use crate::style::*;
-use hypreact_core::ResolvedLayoutNode;
+use tilescript_core::ResolvedLayoutNode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeComputedStyle {

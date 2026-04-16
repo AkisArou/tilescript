@@ -1,4 +1,4 @@
-import type { HypreactConfig } from "@hypreact/sdk/config";
+import type { TilescriptConfig } from "@tilescript/sdk/config";
 
 export default {
   defaultLayout: "master-stack",
@@ -19,4 +19,4 @@ export default {
     stepPx: 96,
     minBranchSizePx: 120,
   },
-} satisfies HypreactConfig;
+} satisfies TilescriptConfig;

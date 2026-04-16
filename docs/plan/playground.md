@@ -2,9 +2,9 @@
 
 ## Goal
 
-Port the useful parts of `spiders-wm-www` into `hypreact` as `hypreact-playground` without dragging over obsolete architecture or reintroducing dead abstractions.
+Port the useful parts of `spiders-wm-www` into `tilescript` as `tilescript-playground` without dragging over obsolete architecture or reintroducing dead abstractions.
 
-The target is not a full one-shot port. The target is a staged migration that gives `hypreact`:
+The target is not a full one-shot port. The target is a staged migration that gives `tilescript`:
 
 1. a reusable host/action boundary shared by multiple frontends
 2. a source-bundle playground runtime for browser-side preview and editing
@@ -53,18 +53,18 @@ Important characteristics:
 - preview session state for windows/workspaces/focus
 - Monaco and xterm hosts as browser integrations, not core runtime concerns
 
-## What `hypreact` has now
+## What `tilescript` has now
 
 ### Present today
 
-- `hypreact_core::command::WmCommand`
-- `hypreact_core::host::{HostAction, dispatch_wm_command(...)}`
-- `hypreact_core::query::state_snapshot_for_model(...)`
-- `hypreact_config::runtime::SourceBundleRuntimeBundle`
-- `hypreact_config::build_source_bundle_authoring_layout_service(...)`
-- `hypreact_layout_runtime` for authored/prepared layout evaluation
-- `hypreact_runtime_js` for JS authored/prepared runtime handling, currently collapsed into one crate
-- Hyprland plugin integration through `hypreact-hypr-ffi`
+- `tilescript_core::command::WmCommand`
+- `tilescript_core::host::{HostAction, dispatch_wm_command(...)}`
+- `tilescript_core::query::state_snapshot_for_model(...)`
+- `tilescript_config::runtime::SourceBundleRuntimeBundle`
+- `tilescript_config::build_source_bundle_authoring_layout_service(...)`
+- `tilescript_layout_runtime` for authored/prepared layout evaluation
+- `tilescript_runtime_js` for JS authored/prepared runtime handling, currently collapsed into one crate
+- Hyprland plugin integration through `tilescript-ffi`
 
 ### Missing today
 
@@ -79,9 +79,9 @@ We should keep the idea behind `WmHost`, but not restore the old trait or invent
 
 Why:
 
-- `hypreact` already moved the reusable host-action boundary into `hypreact-core`
+- `tilescript` already moved the reusable host-action boundary into `tilescript-core`
 - the old `WmHostEffect` shape was tied to the old runtime layering
-- the real missing seam is not host dispatch anymore, it is the runtime split that old `spiders-wm` had and `hypreact` currently does not
+- the real missing seam is not host dispatch anymore, it is the runtime split that old `spiders-wm` had and `tilescript` currently does not
 - the current repo already wants frontend-neutral logic in core/runtime crates, with frontend-specific execution in:
   - Hyprland plugin
   - future browser playground
@@ -98,19 +98,19 @@ Not necessarily:
 
 ## Proposed architecture
 
-### Stage 1. Shared host actions in `hypreact-core`
+### Stage 1. Shared host actions in `tilescript-core`
 
 This is already done.
 
 The shared boundary now lives in:
 
-- `hypreact_core::host`
+- `tilescript_core::host`
 
-and `crates/hypr-ffi/src/action.rs` is now just a thin adapter layer.
+and `crates/ffi/src/action.rs` is now just a thin adapter layer.
 
 This gives us the old benefit of `WmHost` without coupling it to a specific runtime or app.
 
-### Stage 2. Split `hypreact-runtime-js` into core/native/browser crates
+### Stage 2. Split `tilescript-runtime-js` into core/native/browser crates
 
 This should follow the old `spiders-wm` structure because the split maps cleanly to the code we already have.
 
@@ -155,7 +155,7 @@ Why do this before porting the app:
 
 ### Stage 3. Reuse existing source-bundle runtime boundaries, not a new layout abstraction
 
-Use what already exists in `hypreact_config::runtime`:
+Use what already exists in `tilescript_config::runtime`:
 
 - `SourceBundle`
 - `SourceBundleRuntimeBundle`
@@ -175,7 +175,7 @@ Only extract a shared crate later if both browser and another frontend need the 
 
 ### Stage 4. Add browser runtime/provider support
 
-`spiders-wm-www` used browser-specific JS runtime providers that do not currently exist in `hypreact`.
+`spiders-wm-www` used browser-specific JS runtime providers that do not currently exist in `tilescript`.
 
 That support should live in:
 
@@ -189,13 +189,13 @@ Responsibilities:
 
 It should not know about Monaco, xterm, file trees, session state, or UI widgets.
 
-### Stage 5. Add `hypreact-playground` app shell
+### Stage 5. Add `tilescript-playground` app shell
 
 Only after Stages 1 to 3.
 
 Suggested location:
 
-- `apps/hypreact-playground`
+- `apps/tilescript-playground`
 
 It should start small:
 
@@ -237,9 +237,9 @@ Keep these separate:
 
 ### Do not add `crates/playground-core` preemptively
 
-The current repo already has the important shared seam in `hypreact-core`, and the next missing seam is the JS runtime split.
+The current repo already has the important shared seam in `tilescript-core`, and the next missing seam is the JS runtime split.
 
-If preview session state only serves `apps/hypreact-playground`, keep it there until reuse pressure is real.
+If preview session state only serves `apps/tilescript-playground`, keep it there until reuse pressure is real.
 
 ### Do not start with full Monaco/xterm port
 
@@ -255,9 +255,9 @@ Then port UI pieces.
 
 ### Phase A. Shared host actions
 
-1. add `hypreact_core::host`
+1. add `tilescript_core::host`
 2. move `HostAction` and `dispatch_wm_command(...)` there
-3. update `hypreact-hypr-ffi` to consume the shared module
+3. update `tilescript-ffi` to consume the shared module
 
 Status: complete.
 
@@ -273,11 +273,11 @@ Status: complete.
 
 1. add `crates/runtimes/js/browser`
 2. make source-bundle evaluation work in browser/WASM context
-3. plug it into `hypreact_config::runtime::SourceBundleRuntimeBundle`
+3. plug it into `tilescript_config::runtime::SourceBundleRuntimeBundle`
 
 ### Phase D. App shell
 
-1. add `apps/hypreact-playground`
+1. add `apps/tilescript-playground`
 2. start with source bundle fixture + preview-only workflow
 3. keep session state local to the app initially
 4. add diagnostics and command entry
@@ -303,7 +303,7 @@ Why:
 Concrete first change:
 
 - add `crates/runtimes/js/core` and move the shared non-QuickJS modules there first
-- make `hypreact-runtime-js` become the native backend crate or rename/split it cleanly in one pass
+- make `tilescript-runtime-js` become the native backend crate or rename/split it cleanly in one pass
 - keep imports direct and simple instead of introducing temporary wrapper layers
 
 ## Success criteria
@@ -314,4 +314,4 @@ We should consider the groundwork successful when:
 2. browser playground preview can evaluate a source bundle using shared JS runtime core plus a browser runtime backend
 3. editor/terminal/browser-specific integrations remain outside core runtime crates
 4. no legacy `spiders-wm` runtime layering is copied over mechanically
-5. no duplicate host/runtime logic is reintroduced in `hypreact-playground`
+5. no duplicate host/runtime logic is reintroduced in `tilescript-playground`

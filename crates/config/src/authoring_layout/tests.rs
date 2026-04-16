@@ -4,14 +4,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hypreact_core::runtime::layout_context::LayoutEvaluationContext;
-use hypreact_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
-use hypreact_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
-use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
-use hypreact_core::types::LayoutRef;
-use hypreact_core::{OutputId, SourceLayoutNode, WorkspaceId};
+use tilescript_core::runtime::layout_context::LayoutEvaluationContext;
+use tilescript_core::runtime::prepared_layout::{PreparedLayout, SelectedLayout};
+use tilescript_core::runtime::runtime_contract::{LayoutModuleContract, PreparedLayoutRuntime};
+use tilescript_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{OutputSnapshot, StateSnapshot, WorkspaceSnapshot};
+use tilescript_core::types::LayoutRef;
+use tilescript_core::{OutputId, SourceLayoutNode, WorkspaceId};
 use tempfile::TempDir;
 
 use super::*;
@@ -386,7 +386,7 @@ fn state() -> StateSnapshot {
         windows: vec![],
         visible_window_ids: vec![],
         workspace_names: vec!["1".into()],
-        resize_state: hypreact_core::resize::ResizeState::default(),
+        resize_state: tilescript_core::resize::ResizeState::default(),
     }
 }
 
@@ -458,8 +458,8 @@ fn authoring_layout_service_loads_config_from_runtime_path() {
 fn authoring_layout_service_discovers_config_paths_from_options() {
     let temp_dir = TempDir::new().unwrap();
     let home_dir = temp_dir.path().join("home");
-    let config_dir = home_dir.join(".config/hypreact");
-    let data_dir = home_dir.join(".cache/hypreact");
+    let config_dir = home_dir.join(".config/tilescript");
+    let data_dir = home_dir.join(".cache/tilescript");
     let _ = fs::create_dir_all(&config_dir);
     let _ = fs::create_dir_all(&data_dir);
     fs::write(config_dir.join("config.ts"), "export default {};").unwrap();
@@ -473,8 +473,8 @@ fn authoring_layout_service_discovers_config_paths_from_options() {
         })
         .unwrap();
 
-    assert!(paths.authored_config.ends_with(".config/hypreact/config.ts"));
-    assert!(paths.prepared_config.ends_with(".cache/hypreact/config.js"));
+    assert!(paths.authored_config.ends_with(".config/tilescript/config.ts"));
+    assert!(paths.prepared_config.ends_with(".cache/tilescript/config.js"));
 }
 
 #[test]
@@ -653,9 +653,9 @@ fn source_bundle_authoring_layout_service_evaluates_prepared_layout() {
 #[test]
 fn source_bundle_authoring_layout_service_records_js_browser_artifact_edges() {
     let artifact = PreparedLayout {
-        stylesheets: hypreact_core::runtime::prepared_layout::PreparedStylesheets {
+        stylesheets: tilescript_core::runtime::prepared_layout::PreparedStylesheets {
             global: None,
-            layout: Some(hypreact_core::runtime::prepared_layout::PreparedStylesheet {
+            layout: Some(tilescript_core::runtime::prepared_layout::PreparedStylesheet {
                 path: "layouts/master-stack/index.css".into(),
                 source: "window { text-align: center; }".into(),
             }),
@@ -741,17 +741,17 @@ fn source_bundle_authoring_layout_service_records_js_browser_artifact_edges() {
 
     let layout_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
         .cloned()
         .collect::<Vec<_>>();
     assert!(layout_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
             && key.identity == "layouts/master-stack/index.css"
     }));
     let graph_key = layout_dependents
         .iter()
         .find(|key| {
-            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::JsModuleGraph
+            key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::JsModuleGraph
         })
         .cloned()
         .expect("js module graph dependent");
@@ -761,40 +761,40 @@ fn source_bundle_authoring_layout_service_records_js_browser_artifact_edges() {
         .cloned()
         .collect::<Vec<_>>();
     assert!(graph_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::JsExecutable
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::JsExecutable
     }));
 
     let authored_layout_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/layouts/master-stack/index.tsx",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(authored_layout_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::Layout
             && key.identity == "master-stack"
     }));
     let transitive_layout_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/layouts/master-stack/helpers.ts",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(transitive_layout_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::Layout
             && key.identity == "master-stack"
     }));
     let authored_stylesheet_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/layouts/master-stack/index.css",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(authored_stylesheet_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::StylesheetAnalysis
             && key.identity == "layouts/master-stack/index.css"
     }));
 }
@@ -876,7 +876,7 @@ fn source_bundle_authoring_layout_service_prunes_stale_layout_and_authored_file_
 
     assert!(service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/layouts/master-stack/index.tsx",
         ))
         .next()
@@ -894,7 +894,7 @@ fn source_bundle_authoring_layout_service_records_fennel_browser_artifact_edges(
             module: "layouts/master-stack/index.fnl".into(),
         },
         runtime_payload: serde_json::json!({
-            "source": "local h = require('hypreact') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end",
+            "source": "local h = require('tilescript') return function(ctx) return h.workspace({ id = 'frame' }) { h.slot({ id = 'master' }) } end",
             "sourceModule": "layouts/master-stack/index.fnl",
         }),
         stylesheets: Default::default(),
@@ -945,13 +945,13 @@ fn source_bundle_authoring_layout_service_records_fennel_browser_artifact_edges(
 
     let layout_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::layout("master-stack"))
         .cloned()
         .collect::<Vec<_>>();
     let compiled_key = layout_dependents
         .iter()
         .find(|key| {
-            key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::LuaCompiledSource
+            key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::LuaCompiledSource
         })
         .cloned()
         .expect("compiled fennel source dependent");
@@ -961,18 +961,18 @@ fn source_bundle_authoring_layout_service_records_fennel_browser_artifact_edges(
         .cloned()
         .collect::<Vec<_>>();
     assert!(compiled_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::LuaExecutable
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::LuaExecutable
     }));
 
     let authored_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/layouts/master-stack/index.fnl",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(authored_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::Layout
             && key.identity == "master-stack"
     }));
 }
@@ -1011,25 +1011,25 @@ fn source_bundle_authoring_layout_service_records_config_to_layout_edges() {
 
     let config_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::config(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::config(
             "source-bundle-config",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(config_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Layout
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::Layout
             && key.identity == "master-stack"
     }));
 
     let authored_config_dependents = service
         .dependency_graph()
-        .dependents_of(&hypreact_core::runtime::artifact_state::ArtifactKey::authored_file(
+        .dependents_of(&tilescript_core::runtime::artifact_state::ArtifactKey::authored_file(
             "/workspace/config.ts",
         ))
         .cloned()
         .collect::<Vec<_>>();
     assert!(authored_config_dependents.iter().any(|key| {
-        key.kind == hypreact_core::runtime::artifact_state::ArtifactKind::Config
+        key.kind == tilescript_core::runtime::artifact_state::ArtifactKind::Config
             && key.identity == "source-bundle-config"
     }));
 }

@@ -124,7 +124,7 @@ pub fn handle_request(session: &Session, request: Request) -> (Response, Vec<Ser
 
 pub fn handle_notification(session: &mut Session, notification: Notification) -> Vec<ServerEvent> {
     match notification.method.as_str() {
-        Initialized::METHOD => vec![log_message("hypreact-css-lsp initialized")],
+        Initialized::METHOD => vec![log_message("tilescript-css-lsp initialized")],
         DidOpenTextDocument::METHOD => {
             parse_notification::<DidOpenTextDocumentParams>(notification, |params| {
                 let document = params.text_document;

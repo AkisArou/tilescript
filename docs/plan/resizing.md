@@ -1,6 +1,6 @@
 # Resizing Plan
 
-This document describes the current resize model in `hypreact` and the constraints it should keep.
+This document describes the current resize model in `tilescript` and the constraints it should keep.
 
 ## Current Model
 

@@ -1,5 +1,5 @@
-use hypreact_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
-use hypreact_css::language::{
+use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
+use tilescript_css::language::{
     SelectorTarget, StyleTarget, SupportStatus, attribute_key_spec, property_spec,
     pseudo_class_spec, pseudo_element_spec,
 };
@@ -225,7 +225,7 @@ fn looks_like_animation_name_reference(source: &str, start: usize) -> bool {
 }
 
 fn range_matches(
-    range: hypreact_css::analysis::CssRange,
+    range: tilescript_css::analysis::CssRange,
     source: &str,
     start: usize,
     end: usize,

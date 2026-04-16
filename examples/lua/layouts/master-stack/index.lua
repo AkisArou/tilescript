@@ -1,6 +1,6 @@
-local h = require("hypreact")
+local h = require("tilescript")
 
----@param ctx Hypreact.LayoutContext
+---@param ctx Tilescript.LayoutContext
 return function(ctx)
   return h.workspace({ id = "frame" }) {
     h.slot({

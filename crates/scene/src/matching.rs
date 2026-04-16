@@ -1,6 +1,6 @@
-use hypreact_core::snapshot::WindowSnapshot;
-use hypreact_core::types::WindowShell;
-use hypreact_core::{MatchClause, MatchKey, WindowMatch};
+use tilescript_core::snapshot::WindowSnapshot;
+use tilescript_core::types::WindowShell;
+use tilescript_core::{MatchClause, MatchKey, WindowMatch};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -125,7 +125,7 @@ fn parse_key(input: &str) -> Result<MatchKey, MatchParseError> {
 
 #[cfg(test)]
 mod tests {
-    use hypreact_core::{OutputId, WindowId, WorkspaceId};
+    use tilescript_core::{OutputId, WindowId, WorkspaceId};
 
     use super::*;
 
@@ -140,7 +140,7 @@ mod tests {
             role: Some("browser".into()),
             window_type: Some("normal".into()),
             mapped: true,
-            mode: hypreact_core::types::WindowMode::Tiled,
+            mode: tilescript_core::types::WindowMode::Tiled,
             focused: false,
             urgent: false,
             closing: false,

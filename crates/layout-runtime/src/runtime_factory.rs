@@ -1,11 +1,11 @@
-use hypreact_config::model::{ConfigPaths, LayoutConfigError};
-use hypreact_config::runtime::RuntimeBundle;
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_config::model::{ConfigPaths, LayoutConfigError};
+use tilescript_config::runtime::RuntimeBundle;
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
 
 pub fn build_runtime_bundle(paths: &ConfigPaths) -> Result<RuntimeBundle, LayoutConfigError> {
     match runtime_kind_for_authored_config(paths) {
-        RuntimeKind::Js => hypreact_runtime_js_native::build_runtime_bundle(paths),
-        RuntimeKind::Lua => hypreact_runtime_lua_native::build_runtime_bundle(paths),
+        RuntimeKind::Js => tilescript_runtime_js_native::build_runtime_bundle(paths),
+        RuntimeKind::Lua => tilescript_runtime_lua_native::build_runtime_bundle(paths),
     }
 }
 

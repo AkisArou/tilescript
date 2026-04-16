@@ -4,16 +4,16 @@ mod taffy;
 #[cfg(test)]
 pub(crate) mod stylo_adapter {
     #[cfg(test)]
-    pub(crate) use hypreact_css::parse_selector_list;
+    pub(crate) use tilescript_css::parse_selector_list;
 }
 
 pub use crate::style::*;
 pub use crate::style_calc::compute_style;
-pub use hypreact_css::compile;
-pub use hypreact_css::compile::CompiledDeclaration;
-pub use hypreact_css::compile::CssValueError;
-pub use hypreact_css::compiled::*;
-pub use hypreact_css::parsing::{CssParseError, parse_stylesheet};
+pub use tilescript_css::compile;
+pub use tilescript_css::compile::CompiledDeclaration;
+pub use tilescript_css::compile::CssValueError;
+pub use tilescript_css::compiled::*;
+pub use tilescript_css::parsing::{CssParseError, parse_stylesheet};
 pub use taffy::{NodeComputedStyle, StyledLayoutTree, map_computed_style_to_taffy};
 
 #[cfg(test)]
@@ -22,9 +22,9 @@ mod tests {
     use super::*;
     use crate::css::compile::CompiledDeclaration;
     use crate::css_matching::{matching_rules, selector_matches};
-    use hypreact_core::WindowId;
-    use hypreact_core::{LayoutNodeMeta, ResolvedLayoutNode};
-    use hypreact_css::FontFamilyName;
+    use tilescript_core::WindowId;
+    use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode};
+    use tilescript_css::FontFamilyName;
 
     fn runtime_window_with_meta(meta: LayoutNodeMeta) -> ResolvedLayoutNode {
         ResolvedLayoutNode::Window {
@@ -236,12 +236,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_removed_hypreact_resize_properties() {
-        let error = parse_stylesheet("#frame { -hypreact-partition-axis: row; }").unwrap_err();
+    fn rejects_removed_tilescript_resize_properties() {
+        let error = parse_stylesheet("#frame { -tilescript-partition-axis: row; }").unwrap_err();
 
         assert_eq!(
             error,
-            CssParseError::UnsupportedProperty { property: "-hypreact-partition-axis".into() }
+            CssParseError::UnsupportedProperty { property: "-tilescript-partition-axis".into() }
         );
     }
 

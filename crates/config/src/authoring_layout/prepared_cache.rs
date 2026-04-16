@@ -1,4 +1,4 @@
-use hypreact_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
+use tilescript_core::runtime::runtime_error::{RuntimeError, RuntimeRefreshSummary};
 
 use crate::authoring_layout::AuthoringLayoutServiceError;
 use crate::model::{Config, ConfigPaths};

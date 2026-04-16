@@ -1,12 +1,12 @@
 {
-  "name": "hypreact-css-lsp-vscode",
-  "displayName": "Hypreact CSS",
-  "description": "VS Code client for the hypreact CSS language server.",
+  "name": "tilescript-css-lsp-vscode",
+  "displayName": "Tilescript CSS",
+  "description": "VS Code client for the tilescript CSS language server.",
   "version": "0.0.0",
-  "publisher": "hypreact",
+  "publisher": "tilescript",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AkisArou/hypreact.git"
+    "url": "https://github.com/AkisArou/tilescript.git"
   },
   "main": "./dist/extension.js",
   "types": "./dist/extension.d.ts",
@@ -21,34 +21,34 @@
     "workspaceContains:config.ts",
     "workspaceContains:config.jsx",
     "workspaceContains:config.js",
-    "onCommand:hypreactCss.restartServer"
+    "onCommand:tilescriptCss.restartServer"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "hypreactCss.restartServer",
-        "title": "Hypreact CSS: Restart Language Server"
+        "command": "tilescriptCss.restartServer",
+        "title": "Tilescript CSS: Restart Language Server"
       }
     ],
     "configuration": {
-      "title": "Hypreact CSS",
+      "title": "Tilescript CSS",
       "properties": {
-        "hypreactCss.enable": {
+        "tilescriptCss.enable": {
           "type": "boolean",
           "default": false,
           "scope": "window",
-          "markdownDescription": "Enable the hypreact CSS language server for this workspace. This extension stays disabled by default."
+          "markdownDescription": "Enable the tilescript CSS language server for this workspace. This extension stays disabled by default."
         },
-        "hypreactCss.server.path": {
+        "tilescriptCss.server.path": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `hypreact-css-lsp` binary. When empty, the extension first tries a bundled platform binary and then common workspace-relative development paths."
+          "markdownDescription": "Absolute path to the `tilescript-css-lsp` binary. When empty, the extension first tries a bundled platform binary and then common workspace-relative development paths."
         },
-        "hypreactCss.server.trace": {
+        "tilescriptCss.server.trace": {
           "type": "string",
           "enum": ["off", "messages", "verbose"],
           "default": "off",
-          "markdownDescription": "LSP trace level for the hypreact CSS language server."
+          "markdownDescription": "LSP trace level for the tilescript CSS language server."
         }
       }
     }

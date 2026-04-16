@@ -1,5 +1,5 @@
 [package]
-name = "hypreact-runtime-js-core"
+name = "tilescript-runtime-js-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,9 +10,9 @@ oxc = { workspace = true, features = ["full"] }
 oxc_resolver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-hypreact-config = { path = "../../../config" }
-hypreact-core = { path = "../../../core" }
-hypreact-scene = { path = "../../../scene" }
+tilescript-config = { path = "../../../config" }
+tilescript-core = { path = "../../../core" }
+tilescript-scene = { path = "../../../scene" }
 thiserror.workspace = true
 tracing.workspace = true
 

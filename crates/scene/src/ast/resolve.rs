@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
-use hypreact_core::snapshot::WindowSnapshot;
-use hypreact_core::types::WindowShell;
+use tilescript_core::snapshot::WindowSnapshot;
+use tilescript_core::types::WindowShell;
 use thiserror::Error;
 
 use crate::ast::validate::ValidatedLayoutTree;
 use crate::matching::matches_window;
-use hypreact_core::{LayoutNodeMeta, ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch};
+use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedLayoutTree {

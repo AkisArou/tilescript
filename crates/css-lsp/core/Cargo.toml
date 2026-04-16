@@ -1,13 +1,13 @@
 [package]
-name = "hypreact-css-lsp-core"
+name = "tilescript-css-lsp-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hypreact-css = { path = "../../css" }
-hypreact-runtime-js-core = { path = "../../runtimes/js/core" }
+tilescript-css = { path = "../../css" }
+tilescript-runtime-js-core = { path = "../../runtimes/js/core" }
 cssparser.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true

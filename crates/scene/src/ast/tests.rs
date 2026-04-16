@@ -1,11 +1,11 @@
-use hypreact_core::WindowId;
-use hypreact_core::snapshot::WindowSnapshot;
-use hypreact_core::types::{WindowMode, WindowShell};
-use hypreact_core::{LayoutNodeMeta, LayoutNodeType, MatchClause, MatchKey, RemainingTake};
+use tilescript_core::WindowId;
+use tilescript_core::snapshot::WindowSnapshot;
+use tilescript_core::types::{WindowMode, WindowShell};
+use tilescript_core::{LayoutNodeMeta, LayoutNodeType, MatchClause, MatchKey, RemainingTake};
 
 use super::*;
 use crate::matching::MatchParseError;
-use hypreact_core::{ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch};
+use tilescript_core::{ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch};
 
 fn window(id: &str, app_id: &str, title: &str) -> WindowSnapshot {
     WindowSnapshot {

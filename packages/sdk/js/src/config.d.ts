@@ -4,7 +4,7 @@ export type LayoutRule =
   | { layout: string; monitor: string; index?: never; name?: never }
   | { layout: string; index?: never; name?: never; monitor?: never };
 
-export interface HypreactConfig {
+export interface TilescriptConfig {
   defaultLayout?: string;
   layoutRules?: LayoutRule[];
   resize?: {

@@ -988,247 +988,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hypreact-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "hypreact-core",
- "hypreact-scene",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "hypreact-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "hypreact-css"
-version = "0.1.0"
-dependencies = [
- "cssparser",
- "hypreact-core",
- "precomputed-hash",
- "selectors",
- "serde",
- "stylo",
- "stylo_traits",
- "thiserror 2.0.18",
- "url",
-]
-
-[[package]]
-name = "hypreact-css-lsp"
-version = "0.1.0"
-dependencies = [
- "hypreact-css-lsp-core",
- "lsp-server",
- "serde_json",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "hypreact-css-lsp-core"
-version = "0.1.0"
-dependencies = [
- "cssparser",
- "hypreact-css",
- "hypreact-runtime-js-core",
- "lsp-server",
- "lsp-types",
- "oxc",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hypreact-css-lsp-web"
-version = "0.1.0"
-dependencies = [
- "hypreact-css-lsp-core",
- "js-sys",
- "lsp-server",
- "lsp-types",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "hypreact-hypr-ffi"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-layout-runtime",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "hypreact-layout-runtime"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-css",
- "hypreact-runtime-js-native",
- "hypreact-runtime-lua-native",
- "hypreact-scene",
- "inotify",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "hypreact-playground"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "hypreact-config",
- "hypreact-core",
- "hypreact-css",
- "hypreact-runtime-js-browser",
- "hypreact-runtime-lua-browser",
- "hypreact-scene",
- "js-sys",
- "leptos",
- "leptos_router",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "hypreact-runtime-fennel-core"
-version = "0.1.0"
-
-[[package]]
-name = "hypreact-runtime-js-browser"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-runtime-js-core",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "hypreact-runtime-js-core"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-scene",
- "oxc",
- "oxc_resolver",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "hypreact-runtime-js-native"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-runtime-js-core",
- "hypreact-scene",
- "oxc",
- "rquickjs",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "hypreact-runtime-lua-browser"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-runtime-fennel-core",
- "hypreact-runtime-lua-core",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "hypreact-runtime-lua-core"
-version = "0.1.0"
-dependencies = [
- "hypreact-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "hypreact-runtime-lua-native"
-version = "0.1.0"
-dependencies = [
- "hypreact-config",
- "hypreact-core",
- "hypreact-runtime-fennel-core",
- "hypreact-runtime-lua-core",
- "mlua",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "hypreact-scene"
-version = "0.1.0"
-dependencies = [
- "cssparser",
- "hypreact-core",
- "hypreact-css",
- "precomputed-hash",
- "selectors",
- "serde",
- "serde_json",
- "stylo",
- "stylo_traits",
- "taffy",
- "thiserror 2.0.18",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3656,6 +3415,247 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc0ed6038fcbc0795aca7c92963ddda636573b956679204e044492d2b13c8f64"
 dependencies = [
  "pin-project-lite",
+]
+
+[[package]]
+name = "tilescript-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tilescript-core",
+ "tilescript-scene",
+ "tracing",
+]
+
+[[package]]
+name = "tilescript-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tilescript-css"
+version = "0.1.0"
+dependencies = [
+ "cssparser",
+ "precomputed-hash",
+ "selectors",
+ "serde",
+ "stylo",
+ "stylo_traits",
+ "thiserror 2.0.18",
+ "tilescript-core",
+ "url",
+]
+
+[[package]]
+name = "tilescript-css-lsp"
+version = "0.1.0"
+dependencies = [
+ "lsp-server",
+ "serde_json",
+ "tilescript-css-lsp-core",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "tilescript-css-lsp-core"
+version = "0.1.0"
+dependencies = [
+ "cssparser",
+ "lsp-server",
+ "lsp-types",
+ "oxc",
+ "serde",
+ "serde_json",
+ "tilescript-css",
+ "tilescript-runtime-js-core",
+]
+
+[[package]]
+name = "tilescript-css-lsp-web"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "lsp-server",
+ "lsp-types",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tilescript-css-lsp-core",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "tilescript-ffi"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-layout-runtime",
+]
+
+[[package]]
+name = "tilescript-layout-runtime"
+version = "0.1.0"
+dependencies = [
+ "inotify",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-css",
+ "tilescript-runtime-js-native",
+ "tilescript-runtime-lua-native",
+ "tilescript-scene",
+ "tracing",
+]
+
+[[package]]
+name = "tilescript-playground"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "leptos",
+ "leptos_router",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-css",
+ "tilescript-runtime-js-browser",
+ "tilescript-runtime-lua-browser",
+ "tilescript-scene",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "tilescript-runtime-fennel-core"
+version = "0.1.0"
+
+[[package]]
+name = "tilescript-runtime-js-browser"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-runtime-js-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "tilescript-runtime-js-core"
+version = "0.1.0"
+dependencies = [
+ "oxc",
+ "oxc_resolver",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-scene",
+ "tracing",
+]
+
+[[package]]
+name = "tilescript-runtime-js-native"
+version = "0.1.0"
+dependencies = [
+ "oxc",
+ "rquickjs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-runtime-js-core",
+ "tilescript-scene",
+ "tracing",
+]
+
+[[package]]
+name = "tilescript-runtime-lua-browser"
+version = "0.1.0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-runtime-fennel-core",
+ "tilescript-runtime-lua-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "tilescript-runtime-lua-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tilescript-core",
+]
+
+[[package]]
+name = "tilescript-runtime-lua-native"
+version = "0.1.0"
+dependencies = [
+ "mlua",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tilescript-config",
+ "tilescript-core",
+ "tilescript-runtime-fennel-core",
+ "tilescript-runtime-lua-core",
+]
+
+[[package]]
+name = "tilescript-scene"
+version = "0.1.0"
+dependencies = [
+ "cssparser",
+ "precomputed-hash",
+ "selectors",
+ "serde",
+ "serde_json",
+ "stylo",
+ "stylo_traits",
+ "taffy",
+ "thiserror 2.0.18",
+ "tilescript-core",
+ "tilescript-css",
+ "tracing",
+ "url",
 ]
 
 [[package]]

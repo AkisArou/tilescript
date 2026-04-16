@@ -1,10 +1,10 @@
 # CSS LSP
 
-This document describes the architecture and project model for `hypreact-css-lsp`.
+This document describes the architecture and project model for `tilescript-css-lsp`.
 
 ## Purpose
 
-`hypreact-css-lsp` provides editor features for the `hypreact` CSS language and its project-aware integration with authored TSX layouts.
+`tilescript-css-lsp` provides editor features for the `tilescript` CSS language and its project-aware integration with authored TSX layouts.
 
 It is intentionally CSS-focused.
 
@@ -12,14 +12,14 @@ It is not a replacement for TypeScript or TSX language tooling.
 
 ## Ownership
 
-`hypreact-css` owns:
+`tilescript-css` owns:
 
 - CSS language metadata
 - parser and compilation logic
 - editor-agnostic analysis primitives
 - source-ranged diagnostics and symbols that are also useful outside the LSP
 
-`hypreact-css-lsp` owns:
+`tilescript-css-lsp` owns:
 
 - LSP transport and protocol shaping
 - document lifecycle
@@ -31,7 +31,7 @@ It is not a replacement for TypeScript or TSX language tooling.
 
 The LSP follows the same app graph model as the runtime JS pipeline.
 
-It reuses discovery and graph building from `hypreact-runtime-js-core`.
+It reuses discovery and graph building from `tilescript-runtime-js-core`.
 
 The relevant scopes are:
 
@@ -92,9 +92,9 @@ It indexes:
 
 ## Implemented Feature Surface
 
-`hypreact-css-lsp` currently provides:
+`tilescript-css-lsp` currently provides:
 
-- diagnostics from `hypreact-css` shared analysis
+- diagnostics from `tilescript-css` shared analysis
 - project-aware diagnostics for unknown selector ids and classes
 - context-aware completion for CSS language constructs
 - project-aware selector completion for known ids and classes
@@ -111,11 +111,11 @@ It indexes:
 
 The VS Code extension client is intentionally opt-in.
 
-Create `.vscode/settings.json` in your `hypreact` config workspace with:
+Create `.vscode/settings.json` in your `tilescript` config workspace with:
 
 ```json
 {
-  "hypreactCss.enable": true,
+  "tilescriptCss.enable": true,
   "css.validate": false
 }
 ```
@@ -125,12 +125,12 @@ Create `.vscode/settings.json` in your `hypreact` config workspace with:
 Build the server with:
 
 ```sh
-cargo build -p hypreact-css-lsp --release
+cargo build -p tilescript-css-lsp --release
 ```
 
 Then point your LSP client at:
 
-- `target/release/hypreact-css-lsp`
+- `target/release/tilescript-css-lsp`
 
 Use root markers like:
 

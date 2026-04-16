@@ -1,1 +1,1 @@
-pub use hypreact_css::style::*;
+pub use tilescript_css::style::*;

@@ -3,23 +3,23 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
-use hypreact_config::runtime::{
+use tilescript_config::model::{Config, LayoutConfigError, LayoutDefinition};
+use tilescript_config::runtime::{
     EvaluatedSourceLayout, SourceBundle, SourceBundleConfigRuntime,
     SourceBundlePreparedLayoutRuntime, SourceBundleRuntimeBundle,
 };
-use hypreact_config::selection::validate_layout_selection;
-use hypreact_config::{config_decode::decode_config_value, layout_decode::decode_layout_value};
-use hypreact_core::runtime::layout_context::{
+use tilescript_config::selection::validate_layout_selection;
+use tilescript_config::{config_decode::decode_config_value, layout_decode::decode_layout_value};
+use tilescript_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
-use hypreact_core::runtime::prepared_layout::{
+use tilescript_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets,
 };
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
-use hypreact_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
-use hypreact_runtime_lua_core::LUA_SDK_SOURCE;
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_runtime_fennel_core::FENNEL_COMPILER_SOURCE;
+use tilescript_runtime_lua_core::LUA_SDK_SOURCE;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;

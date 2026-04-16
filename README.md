@@ -1,6 +1,6 @@
-# hypreact
+# tilescript
 
-`hypreact` is an authored layout runtime for Wayland compositors.
+`tilescript` is an authored layout runtime for Wayland compositors.
 
 It lets you define workspace layouts in JSX/TSX and CSS, then evaluates those layouts in Rust and hands the resulting placement decisions to a compositor adapter.
 
@@ -21,7 +21,7 @@ The current concrete adapter target is Hyprland.
 `layouts/master-stack/index.tsx`
 
 ```tsx
-import type { LayoutContext } from "@hypreact/sdk/layout";
+import type { LayoutContext } from "@tilescript/sdk/layout";
 
 import "./index.css";
 
@@ -80,7 +80,7 @@ export default function layout(ctx: LayoutContext) {
 1. Create a `config.ts`.
 2. Add one or more layouts under `layouts/<name>/index.tsx`.
 3. Add sibling layout CSS in `layouts/<name>/index.css`.
-4. Load the plugin from `/home/akisarou/projects/hypreact/build/hypreact.so`.
+4. Load the plugin from your local `build/tilescript-hypr.so` output.
 5. Point the Hyprland plugin at your config directory.
 6. Reload layouts or reload the plugin after changes.
 
@@ -89,11 +89,11 @@ When the plugin resolves your config root, it bootstraps missing files from `exa
 Example Hyprland config:
 
 ```ini
-plugin = /home/akisarou/projects/hypreact/build/hypreact.so
+plugin = /absolute/path/to/tilescript/build/tilescript-hypr.so
 
 plugin {
-  hypreact {
-    config_path = /home/akisarou/projects/hypreact/dev/test-config
+  tilescript {
+    config_path = /absolute/path/to/your/config
   }
 }
 ```
@@ -107,7 +107,7 @@ Planning notes:
 - `docs/plan/lua.md`
 - `docs/plan/fennel.md`
 
-If `config_path` is omitted, the plugin uses `~/.config/hypreact`.
+If `config_path` is omitted, the plugin uses `~/.config/tilescript`.
 
 If that config root does not exist yet, the plugin bootstraps it from `examples/js/`.
 
@@ -117,7 +117,7 @@ For starter projects, see `examples/js/` and `examples/lua/`.
 
 ## Runtime Status
 
-Use `hyprctl hypreact` to inspect plugin/runtime state.
+Use `hyprctl tilescript-hypr` to inspect plugin/runtime state.
 
 It includes:
 
@@ -130,9 +130,9 @@ It includes:
 Useful commands:
 
 ```sh
-hyprctl hypreact
-hyprctl hypreact reload-layouts
-hyprctl hypreact debug-layout-workspace 1
+hyprctl tilescript-hypr
+hyprctl tilescript-hypr reload-layouts
+hyprctl tilescript-hypr debug-layout-workspace 1
 ```
 
 ## Docs

@@ -1,5 +1,5 @@
 [package]
-name = "hypreact-config"
+name = "tilescript-config"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,8 +9,8 @@ publish.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-hypreact-scene = { path = "../scene" }
-hypreact-core = { path = "../core" }
+tilescript-scene = { path = "../scene" }
+tilescript-core = { path = "../core" }
 thiserror.workspace = true
 tracing.workspace = true
 

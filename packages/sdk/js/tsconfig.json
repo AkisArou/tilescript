@@ -27,9 +27,9 @@
     "noUncheckedSideEffectImports": true,
     "allowUnusedLabels": false,
     "jsx": "react-jsx",
-    "jsxImportSource": "@hypreact/sdk",
+    "jsxImportSource": "@tilescript/sdk",
     "paths": {
-      "@hypreact/sdk/*": [
+      "@tilescript/sdk/*": [
         "./src/*"
       ]
     }

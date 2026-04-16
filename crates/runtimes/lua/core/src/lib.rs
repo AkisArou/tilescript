@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub const LUA_SDK_SOURCE: &str = include_str!("../../../../../packages/sdk/lua/hypreact.lua");
+pub const LUA_SDK_SOURCE: &str = include_str!("../../../../../packages/sdk/lua/tilescript.lua");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

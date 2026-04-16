@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use hypreact_css::language::{
+use tilescript_css::language::{
     INVALID_SELECTOR_TARGET_NAMES, attribute_key_specs, property_specs, pseudo_class_specs,
     pseudo_element_specs,
 };

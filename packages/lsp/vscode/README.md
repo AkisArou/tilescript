@@ -1,10 +1,10 @@
-# Hypreact CSS
+# Tilescript CSS
 
-VS Code client for `hypreact-css-lsp`.
+VS Code client for `tilescript-css-lsp`.
 
 ## Activation
 
-The extension only activates in workspaces that contain a Hypreact config entry:
+The extension only activates in workspaces that contain a Tilescript config entry:
 
 - `config.tsx`
 - `config.ts`
@@ -15,26 +15,26 @@ Even in those workspaces, the language server is disabled by default.
 
 ## Enabling It Manually
 
-Open your Hypreact config workspace, for example:
+Open your Tilescript config workspace, for example:
 
-- `~/.config/hypreact/`
+- `~/.config/tilescript/`
 
 Then create `.vscode/settings.json` in that workspace and opt in:
 
 ```json
 {
-  "hypreactCss.enable": true,
+  "tilescriptCss.enable": true,
   "css.validate": false
 }
 ```
 
 This file should live at:
 
-- `~/.config/hypreact/.vscode/settings.json`
+- `~/.config/tilescript/.vscode/settings.json`
 
 Recommended notes:
 
-- `hypreactCss.enable` turns this extension on for the workspace
+- `tilescriptCss.enable` turns this extension on for the workspace
 - `css.validate: false` reduces duplicate diagnostics from VS Code's built-in CSS support
 
 If you want to disable VS Code's built-in CSS language features more aggressively, there is not a reliable workspace settings key for fully turning that built-in extension off.
@@ -53,13 +53,13 @@ The extension currently ships a bundled Linux x64 server binary and otherwise fa
 
 Resolution order:
 
-- `server/linux-x64/hypreact-css-lsp`
-- `target/debug/hypreact-css-lsp`
-- `target/release/hypreact-css-lsp`
+- `server/linux-x64/tilescript-css-lsp`
+- `target/debug/tilescript-css-lsp`
+- `target/release/tilescript-css-lsp`
 
 You can also set an explicit path with:
 
-- `hypreactCss.server.path`
+- `tilescriptCss.server.path`
 
 The extension prefers a bundled platform binary when one is present.
 
@@ -68,18 +68,18 @@ The extension prefers a bundled platform binary when one is present.
 Build a `.vsix` with:
 
 ```sh
-pnpm --filter hypreact-css-lsp-vscode prepare:linux-x64
-pnpm --filter hypreact-css-lsp-vscode package
+pnpm --filter tilescript-css-lsp-vscode prepare:linux-x64
+pnpm --filter tilescript-css-lsp-vscode package
 ```
 
-If `assets/hypreact-mark.svg` exists, the icon can be regenerated with `rsvg-convert`.
+If `assets/tilescript-mark.svg` exists, the icon can be regenerated with `rsvg-convert`.
 Otherwise the checked-in `media/icon.png` is reused as-is.
 
 ## Other Editors
 
 Neovim and other editors do not need a separate client package in this repo right now.
 
-Build `hypreact-css-lsp` and point your editor's LSP configuration directly at the binary.
+Build `tilescript-css-lsp` and point your editor's LSP configuration directly at the binary.
 
 For the current recommended manual Neovim setup, see:
 

@@ -1,4 +1,4 @@
-(local h (require "hypreact"))
+(local h (require "tilescript"))
 
 (fn [ctx]
   ((h.workspace {:id "frame"})

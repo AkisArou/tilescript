@@ -1,7 +1,7 @@
-/** @jsxImportSource @hypreact/sdk */
+/** @jsxImportSource @tilescript/sdk */
 
 import "./StackGroup.css";
-import type { GroupProps, LayoutContext } from "@hypreact/sdk/layout";
+import type { GroupProps, LayoutContext } from "@tilescript/sdk/layout";
 
 import { StackSlot } from "./common/StackSlot";
 

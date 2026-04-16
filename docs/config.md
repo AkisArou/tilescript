@@ -1,17 +1,17 @@
 # Config
 
-`hypreact` is configured from a config root directory that contains a `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` file.
+`tilescript` is configured from a config root directory that contains a `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` file.
 
 In the Hyprland plugin, `config_path` should point to the config directory. The plugin looks for `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` inside it.
 
-If `config_path` is omitted, the plugin falls back to `~/.config/hypreact` and probes those same entry names there.
+If `config_path` is omitted, the plugin falls back to `~/.config/tilescript` and probes those same entry names there.
 
 If that config root does not exist yet, the plugin bootstraps it from the repo `examples/js/`.
 
 The current recommended shape is:
 
 ```ts
-import type { HypreactConfig } from "@hypreact/sdk/config";
+import type { TilescriptConfig } from "@tilescript/sdk/config";
 
 export default {
   defaultLayout: "master-stack",
@@ -25,7 +25,7 @@ export default {
     stepPx: 96,
     minBranchSizePx: 120,
   },
-} satisfies HypreactConfig;
+} satisfies TilescriptConfig;
 ```
 
 ## Fields
@@ -88,7 +88,7 @@ Top-level runtime policy knobs for resize behavior.
 
 ## Layout Discovery
 
-`hypreact` discovers layouts from layout entry files such as:
+`tilescript` discovers layouts from layout entry files such as:
 
 - `layouts/master-stack/index.tsx`
 - `layouts/primary-stack/index.tsx`
@@ -116,7 +116,7 @@ layouts/
 
 ## SDK Support
 
-The runtime JS modules for `@hypreact/sdk/*` are virtual at runtime, but the plugin also syncs editor-facing SDK files into the config root for authoring support.
+The runtime JS modules for `@tilescript/sdk/*` are virtual at runtime, but the plugin also syncs editor-facing SDK files into the config root for authoring support.
 
 Managed paths under the config root:
 

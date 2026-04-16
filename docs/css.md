@@ -1,30 +1,30 @@
 # CSS
 
-`hypreact` uses a `hypreact`-specific CSS subset for layout selection, window styling,
+`tilescript` uses a `tilescript`-specific CSS subset for layout selection, window styling,
 and compositor-managed presentation.
 
-The language source of truth lives in `crates/css` (`hypreact-css`).
+The language source of truth lives in `crates/css` (`tilescript-css`).
 
 Unsupported selectors and properties fail clearly. They are not silently ignored.
 
 ## Ownership
 
-`hypreact-css` owns:
+`tilescript-css` owns:
 
 - supported selector metadata
 - supported property metadata
 - parsing and compilation
 - structured analysis and diagnostics
 
-`hypreact-scene` consumes compiled stylesheet data for layout matching and geometry.
+`tilescript-scene` consumes compiled stylesheet data for layout matching and geometry.
 
-`hypreact` compositor adapters consume the resulting layout and compositor-relevant style data.
+`tilescript` compositor adapters consume the resulting layout and compositor-relevant style data.
 
 ## Pipeline
 
 1. A selected config or layout app provides authored CSS.
-2. `hypreact-css` parses and compiles the stylesheet.
-3. `hypreact-scene` and related runtime code match selectors against the resolved layout tree.
+2. `tilescript-css` parses and compiles the stylesheet.
+3. `tilescript-scene` and related runtime code match selectors against the resolved layout tree.
 4. Layout properties determine geometry.
 5. The compositor adapter consumes compositor-backed presentation details such as borders and motion.
 
@@ -222,7 +222,7 @@ Runtime notes:
 
 ## Analysis And Diagnostics
 
-`hypreact-css` exposes structured analysis for authored CSS.
+`tilescript-css` exposes structured analysis for authored CSS.
 
 That includes:
 

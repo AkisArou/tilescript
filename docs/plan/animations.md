@@ -8,5 +8,5 @@ The main constraints are:
 
 - CSS is the authored motion surface
 - the compositor executes animation timing and rendering
-- `hypreact` should not own long-lived animation timeline state for the Hyprland-backed path
+- `tilescript` should not own long-lived animation timeline state for the Hyprland-backed path
 - Hyprland-backed support must stay honest about the subset it can actually execute

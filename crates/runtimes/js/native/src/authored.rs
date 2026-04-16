@@ -7,14 +7,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::debug;
 
-use hypreact_config::model::{Config, LayoutConfigError, LayoutDefinition};
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_runtime_js_core::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
-use hypreact_runtime_js_core::encode_runtime_graph_payload;
-use hypreact_runtime_js_core::graph::{
+use tilescript_config::model::{Config, LayoutConfigError, LayoutDefinition};
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_runtime_js_core::compile::{AppBuildPlan, compile_app, compiled_app_to_module_graph};
+use tilescript_runtime_js_core::encode_runtime_graph_payload;
+use tilescript_runtime_js_core::graph::{
     DiscoveredApp, ModuleGraph, ModuleGraphBuilder, discover_project_apps,
 };
-use hypreact_runtime_js_core::{decode_config_value, validate_layout_selection};
+use tilescript_runtime_js_core::{decode_config_value, validate_layout_selection};
 
 use crate::evaluate_entry_export_to_json;
 use crate::module_graph_runtime::module_graph_execution_key;
@@ -191,7 +191,7 @@ fn write_runtime_cache(
 
 fn evaluate_compiled_config(
     path: &Path,
-    graph: &hypreact_runtime_js_core::JavaScriptModuleGraph,
+    graph: &tilescript_runtime_js_core::JavaScriptModuleGraph,
 ) -> Result<Value, LayoutConfigError> {
     evaluate_entry_export_to_json(graph, &graph.entry, "default")
         .map_err(|error| LayoutConfigError::EvaluateAuthoredConfig {
@@ -220,18 +220,18 @@ fn write_compiled_app(
         .modules
         .values()
         .filter_map(|record| match &record.id {
-            hypreact_runtime_js_core::graph::ModuleId::File(path) => match record.kind {
-                hypreact_runtime_js_core::graph::ModuleKind::Script => {
+            tilescript_runtime_js_core::graph::ModuleId::File(path) => match record.kind {
+                tilescript_runtime_js_core::graph::ModuleKind::Script => {
                     Some(runtime_root.join(runtime_relative_path(
                         path,
                         &graph.app.root_dir,
                         runtime_entry_path.file_name().and_then(|name| name.to_str()),
                     )))
                 }
-                hypreact_runtime_js_core::graph::ModuleKind::Stylesheet => {
+                tilescript_runtime_js_core::graph::ModuleKind::Stylesheet => {
                     Some(runtime_root.join(runtime_static_relative_path(path, &graph.app.root_dir)))
                 }
-                hypreact_runtime_js_core::graph::ModuleKind::Virtual => None,
+                tilescript_runtime_js_core::graph::ModuleKind::Virtual => None,
             },
             _ => None,
         })
@@ -434,7 +434,7 @@ fn external_runtime_relative_path(source_path: &Path, extension: &str) -> PathBu
 }
 
 fn rewrite_module_for_runtime(
-    module: &hypreact_runtime_js_core::JavaScriptModule,
+    module: &tilescript_runtime_js_core::JavaScriptModule,
     destination: &Path,
     runtime_root: &Path,
     runtime_entry_path: &Path,
@@ -536,7 +536,7 @@ fn rewrite_module_for_runtime(
 }
 
 fn is_virtual_sdk_specifier(specifier: &str) -> bool {
-    specifier.starts_with("@hypreact/sdk/")
+    specifier.starts_with("@tilescript/sdk/")
 }
 
 fn authored_graph_dependencies(graph: &ModuleGraph) -> Vec<String> {
@@ -544,11 +544,11 @@ fn authored_graph_dependencies(graph: &ModuleGraph) -> Vec<String> {
         .modules
         .values()
         .filter_map(|record| match &record.id {
-            hypreact_runtime_js_core::graph::ModuleId::File(path)
+            tilescript_runtime_js_core::graph::ModuleId::File(path)
                 if matches!(
                     record.kind,
-                    hypreact_runtime_js_core::graph::ModuleKind::Script
-                        | hypreact_runtime_js_core::graph::ModuleKind::Stylesheet
+                    tilescript_runtime_js_core::graph::ModuleKind::Script
+                        | tilescript_runtime_js_core::graph::ModuleKind::Stylesheet
                 ) => Some(path.to_string_lossy().into_owned()),
             _ => None,
         })
@@ -557,7 +557,7 @@ fn authored_graph_dependencies(graph: &ModuleGraph) -> Vec<String> {
 
 fn runtime_app_metadata_path(entry_path: &Path) -> PathBuf {
     let file_name = entry_path.file_name().and_then(|name| name.to_str()).unwrap_or("entry.js");
-    entry_path.with_file_name(format!("{file_name}.hypreact-meta.json"))
+    entry_path.with_file_name(format!("{file_name}.tilescript-meta.json"))
 }
 
 fn write_runtime_app_metadata(
@@ -712,12 +712,12 @@ mod tests {
 
     #[test]
     fn rebuild_prepared_config_rewrites_layout_js_after_tsx_change() {
-        let source_root = PathBuf::from("/home/akisarou/projects/hypreact/dev/test-config");
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../dev/test-config");
         let temp_root = tempfile::TempDir::new().expect("temp js authored root");
         copy_dir_recursively(&source_root, temp_root.path()).expect("copy test config");
 
         let authored_config = temp_root.path().join("config.ts");
-        let prepared_config = temp_root.path().join(".hypreact-build/config.js");
+        let prepared_config = temp_root.path().join(".tilescript-build/config.js");
         rebuild_prepared_config(&authored_config, &prepared_config).expect("initial rebuild");
 
         let layout_path = temp_root.path().join("layouts/master-stack/index.tsx");
@@ -729,7 +729,7 @@ mod tests {
         rebuild_prepared_config(&authored_config, &prepared_config).expect("rebuild after tsx change");
 
         let prepared_layout =
-            std::fs::read_to_string(temp_root.path().join(".hypreact-build/layouts/master-stack/index.js"))
+            std::fs::read_to_string(temp_root.path().join(".tilescript-build/layouts/master-stack/index.js"))
                 .expect("read prepared layout js");
         assert!(prepared_layout.contains("take: 2"), "prepared JS should be rewritten after TSX change");
     }

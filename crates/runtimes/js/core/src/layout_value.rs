@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use hypreact_core::{SlotTake, SourceLayoutNode};
-use hypreact_scene::ast::{AuthoredLayoutNode, AuthoredNodeMeta, ValidatedLayoutTree};
+use tilescript_core::{SlotTake, SourceLayoutNode};
+use tilescript_scene::ast::{AuthoredLayoutNode, AuthoredNodeMeta, ValidatedLayoutTree};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

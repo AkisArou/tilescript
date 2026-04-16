@@ -1,7 +1,7 @@
 use cssparser::{Parser, ParserInput, Token};
 use lsp_types::{Position, Range};
 
-use hypreact_css::analysis::{CssAnalysis, CssRange, CssReferenceKind, CssSymbolKind};
+use tilescript_css::analysis::{CssAnalysis, CssRange, CssReferenceKind, CssSymbolKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorContext {

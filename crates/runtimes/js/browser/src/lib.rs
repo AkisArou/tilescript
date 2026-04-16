@@ -3,20 +3,20 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use hypreact_config::model::{Config, LayoutConfigError};
-use hypreact_config::runtime::{
+use tilescript_config::model::{Config, LayoutConfigError};
+use tilescript_config::runtime::{
     EvaluatedSourceLayout, SourceBundle, SourceBundleConfigRuntime,
     SourceBundlePreparedLayoutRuntime, SourceBundleRuntimeBundle,
 };
-use hypreact_core::runtime::layout_context::{
+use tilescript_core::runtime::layout_context::{
     LayoutEvaluationContext, LayoutEvaluationDependencies,
 };
-use hypreact_core::runtime::prepared_layout::{
+use tilescript_core::runtime::prepared_layout::{
     PreparedLayout, PreparedStylesheet, PreparedStylesheets,
 };
-use hypreact_core::runtime::runtime_kind::RuntimeKind;
-use hypreact_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
-use hypreact_runtime_js_core::{
+use tilescript_core::runtime::runtime_kind::RuntimeKind;
+use tilescript_core::snapshot::{StateSnapshot, WorkspaceSnapshot};
+use tilescript_runtime_js_core::{
     JavaScriptModule, JavaScriptModuleGraph, compile_source_bundle_to_module_graph,
     decode_config_value, decode_js_layout_value, decode_runtime_graph_payload,
     encode_runtime_graph_payload, validate_layout_selection,
@@ -497,7 +497,7 @@ fn create_module_url(source: &str) -> Result<String, String> {
 fn discover_layout_definitions(
     root_dir: &Path,
     sources: &BTreeMap<PathBuf, String>,
-) -> Result<Vec<hypreact_config::model::LayoutDefinition>, String> {
+) -> Result<Vec<tilescript_config::model::LayoutDefinition>, String> {
     let mut layout_entries = sources
         .keys()
         .filter_map(|path| discover_layout_entry(root_dir, sources, path))
@@ -510,7 +510,7 @@ fn discover_layout_definitions(
         .map(|layout| {
             let runtime_graph =
                 compile_source_bundle_to_module_graph(root_dir, &layout.entry_path, sources)?;
-            Ok(hypreact_config::model::LayoutDefinition {
+            Ok(tilescript_config::model::LayoutDefinition {
                 name: layout.name,
                 runtime: RuntimeKind::Js,
                 directory: layout

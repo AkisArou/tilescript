@@ -117,7 +117,7 @@ fn collect_watch_directories(root: &Path, watched: &mut BTreeSet<PathBuf>) {
         if file_type.is_dir() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name == ".hypreact-build" || name == ".sdk" {
+            if name == ".tilescript-build" || name == ".sdk" {
                 continue;
             }
             collect_watch_directories(&path, watched);

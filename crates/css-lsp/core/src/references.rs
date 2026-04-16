@@ -1,4 +1,4 @@
-use hypreact_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
+use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
 use lsp_types::{Location, Position, Url};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};

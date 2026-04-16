@@ -13,14 +13,14 @@ let client: LanguageClient | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
-    vscode.commands.registerCommand("hypreactCss.restartServer", async () => {
+    vscode.commands.registerCommand("tilescriptCss.restartServer", async () => {
       await restartClient(context);
     }),
   );
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(async (event) => {
-      if (!event.affectsConfiguration("hypreactCss.enable")) {
+      if (!event.affectsConfiguration("tilescriptCss.enable")) {
         return;
       }
 
@@ -64,7 +64,7 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
   const command = await resolveServerCommand(context);
   if (!command) {
     void vscode.window.showWarningMessage(
-      "Could not find `hypreact-css-lsp`. Set `hypreactCss.server.path`, use the bundled binary, or build the Rust server first.",
+      "Could not find `tilescript-css-lsp`. Set `tilescriptCss.server.path`, use the bundled binary, or build the Rust server first.",
     );
     return;
   }
@@ -80,20 +80,20 @@ async function startClient(context: vscode.ExtensionContext): Promise<void> {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ language: "css", scheme: "file" }],
     synchronize: {
-      configurationSection: "hypreactCss",
+      configurationSection: "tilescriptCss",
     },
-    outputChannelName: "Hypreact CSS Language Server",
+    outputChannelName: "Tilescript CSS Language Server",
     revealOutputChannelOn: RevealOutputChannelOn.Never,
   };
 
   client = new LanguageClient(
-    "hypreact-css-lsp",
-    "Hypreact CSS Language Server",
+    "tilescript-css-lsp",
+    "Tilescript CSS Language Server",
     serverOptions,
     clientOptions,
   );
 
-  client.setTrace(toTrace(vscode.workspace.getConfiguration("hypreactCss").get("server.trace")));
+  client.setTrace(toTrace(vscode.workspace.getConfiguration("tilescriptCss").get("server.trace")));
   await client.start();
 }
 
@@ -101,7 +101,7 @@ async function resolveServerCommand(
   context: vscode.ExtensionContext,
 ): Promise<string | undefined> {
   const configuredPath = vscode.workspace
-    .getConfiguration("hypreactCss")
+    .getConfiguration("tilescriptCss")
     .get<string>("server.path")
     ?.trim();
 
@@ -120,8 +120,8 @@ async function resolveServerCommand(
   }
 
   const candidates = [
-    path.join(workspaceRoot, "target", "debug", "hypreact-css-lsp"),
-    path.join(workspaceRoot, "target", "release", "hypreact-css-lsp"),
+    path.join(workspaceRoot, "target", "debug", "tilescript-css-lsp"),
+    path.join(workspaceRoot, "target", "release", "tilescript-css-lsp"),
   ];
 
   for (const candidate of candidates) {
@@ -143,7 +143,7 @@ async function resolveBundledServerCommand(
     return undefined;
   }
 
-  const bundledPath = path.join(context.extensionPath, "server", "linux-x64", "hypreact-css-lsp");
+  const bundledPath = path.join(context.extensionPath, "server", "linux-x64", "tilescript-css-lsp");
 
   try {
     await access(bundledPath);
@@ -165,5 +165,5 @@ function toTrace(value: string | undefined): Trace {
 }
 
 function isExtensionEnabled(): boolean {
-  return vscode.workspace.getConfiguration("hypreactCss").get<boolean>("enable", false);
+  return vscode.workspace.getConfiguration("tilescriptCss").get<boolean>("enable", false);
 }

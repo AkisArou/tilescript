@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "apps/hypreact-playground",
+  "apps/tilescript-playground",
   "crates/core",
   "crates/css",
   "crates/css-lsp/core",
@@ -17,7 +17,7 @@ members = [
   "crates/runtimes/lua/native",
   "crates/runtimes/lua/browser",
   "crates/layout-runtime",
-  "crates/hypr-ffi",
+  "crates/ffi",
 ]
 
 [workspace.package]

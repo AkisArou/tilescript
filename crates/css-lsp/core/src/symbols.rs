@@ -1,4 +1,4 @@
-use hypreact_css::analysis::{CssRange, CssSymbolKind, analyze_stylesheet};
+use tilescript_css::analysis::{CssRange, CssSymbolKind, analyze_stylesheet};
 use lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
 
 pub fn document_symbols_for(source: &str) -> Vec<DocumentSymbol> {
@@ -6,7 +6,7 @@ pub fn document_symbols_for(source: &str) -> Vec<DocumentSymbol> {
     analysis.symbols.iter().map(to_document_symbol).collect()
 }
 
-fn to_document_symbol(symbol: &hypreact_css::analysis::CssSymbol) -> DocumentSymbol {
+fn to_document_symbol(symbol: &tilescript_css::analysis::CssSymbol) -> DocumentSymbol {
     #[allow(deprecated)]
     DocumentSymbol {
         name: symbol.name.clone(),

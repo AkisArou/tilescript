@@ -1,4 +1,4 @@
-import type { LayoutContext } from "@hypreact/sdk/layout";
+import type { LayoutContext } from "@tilescript/sdk/layout";
 
 import "./index.css";
 

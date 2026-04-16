@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use hypreact_runtime_js_core::compile::AppBuildPlan;
-use hypreact_runtime_js_core::graph::{
+use tilescript_runtime_js_core::compile::AppBuildPlan;
+use tilescript_runtime_js_core::graph::{
     AppKind, DiscoveredApp, ModuleGraphBuilder, discover_project_apps,
 };
 use lsp_types::Url;
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn discovers_nearest_config_entry() {
         let root =
-            std::env::temp_dir().join(format!("hypreact-css-lsp-workspace-{}", std::process::id()));
+            std::env::temp_dir().join(format!("tilescript-css-lsp-workspace-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("layouts/master-stack/components")).unwrap();
         std::fs::write(root.join("config.ts"), "export default {};").unwrap();

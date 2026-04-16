@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(dirname "$0")/../../../.."
-SRC="$ROOT_DIR/assets/hypreact-mark.svg"
+SRC="$ROOT_DIR/assets/tilescript-mark.svg"
 DST="$ROOT_DIR/packages/lsp/vscode/media/icon.png"
 
 if [[ ! -f "$SRC" ]]; then

@@ -2,14 +2,14 @@
   "extends": "../packages/tsconfig/tsconfig.react.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "jsxImportSource": "@hypreact/sdk",
+    "jsxImportSource": "@tilescript/sdk",
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
     "emitDeclarationOnly": false,
     "composite": false,
     "paths": {
-      "@hypreact/sdk/*": [
+      "@tilescript/sdk/*": [
         "../packages/sdk/js/src/*"
       ]
     },

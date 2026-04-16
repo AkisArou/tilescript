@@ -114,8 +114,8 @@ pub fn compile_source_bundle_to_module_graph(
         if matches!(module_id, SourceModuleId::File(path) if matches!(path.extension().and_then(|extension| extension.to_str()), Some("tsx" | "jsx")))
         {
             resolved_imports.insert(
-                "@hypreact/sdk/jsx-runtime".to_string(),
-                "@hypreact/sdk/jsx-runtime".to_string(),
+                "@tilescript/sdk/jsx-runtime".to_string(),
+                "@tilescript/sdk/jsx-runtime".to_string(),
             );
         }
 
@@ -126,10 +126,10 @@ pub fn compile_source_bundle_to_module_graph(
         });
     }
 
-    if !modules.iter().any(|module| module.specifier == "@hypreact/sdk/jsx-runtime") {
+    if !modules.iter().any(|module| module.specifier == "@tilescript/sdk/jsx-runtime") {
         modules.push(JavaScriptModule {
-            specifier: "@hypreact/sdk/jsx-runtime".to_string(),
-            source: read_virtual_module_source("@hypreact/sdk/jsx-runtime")?,
+            specifier: "@tilescript/sdk/jsx-runtime".to_string(),
+            source: read_virtual_module_source("@tilescript/sdk/jsx-runtime")?,
             resolved_imports: BTreeMap::new(),
         });
     }
@@ -341,7 +341,7 @@ fn compile_script(path: &Path, source: &str) -> Result<String, String> {
     let injected_source =
         if matches!(path.extension().and_then(|extension| extension.to_str()), Some("tsx" | "jsx"))
         {
-            format!("import {{ sp, Fragment }} from \"@hypreact/sdk/jsx-runtime\";\n{source}")
+            format!("import {{ sp, Fragment }} from \"@tilescript/sdk/jsx-runtime\";\n{source}")
         } else {
             source.to_string()
         };
@@ -438,5 +438,5 @@ fn module_key(root_dir: &Path, module_id: &SourceModuleId) -> String {
 }
 
 fn is_virtual_sdk_specifier(specifier: &str) -> bool {
-    specifier.starts_with("@hypreact/sdk/")
+    specifier.starts_with("@tilescript/sdk/")
 }

@@ -1,5 +1,5 @@
 {
-  "name": "@hypreact/sdk",
+  "name": "@tilescript/sdk",
   "private": true,
   "version": "0.0.0",
   "exports": {

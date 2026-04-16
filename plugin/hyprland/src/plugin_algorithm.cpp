@@ -1,10 +1,10 @@
-#include "hypreact_plugin_algorithm.hpp"
+#include "tilescript_hypr_plugin_algorithm.hpp"
 
 #include <optional>
 #include <iostream>
 #include <typeinfo>
 
-#include "hypreact_plugin_runtime.hpp"
+#include "tilescript_hypr_plugin_runtime.hpp"
 
 #include "src/layout/space/Space.hpp"
 #include "src/layout/supplementary/WorkspaceAlgoMatcher.hpp"
@@ -12,13 +12,13 @@
 #include "src/layout/algorithm/tiled/master/MasterAlgorithm.hpp"
 #include "src/plugins/PluginAPI.hpp"
 
-namespace hypreact_plugin {
+namespace tilescript_plugin {
 namespace {
 
 std::optional<AlgorithmCallbacks> g_algorithmCallbacks;
-bool g_registeredHypreactAlgo = false;
+bool g_registeredTilescriptAlgo = false;
 
-class CHypreactAlgorithm final : public Layout::ITiledAlgorithm {
+class CTilescriptAlgorithm final : public Layout::ITiledAlgorithm {
 public:
   void newTarget(SP<Layout::ITarget> target) override { recalculate(); }
 
@@ -51,7 +51,7 @@ public:
     const auto placement = runtime()->layoutPlacementForWorkspace(
         g_algorithmCallbacks->workspaceName(workspace));
     const auto byWindowId = geometryMapFromPlacement(placement);
-    hypreact_runtime_free_placement_result(placement);
+    tilescript_runtime_free_placement_result(placement);
 
     for (const auto &weakTarget : space->targets()) {
       const auto target = weakTarget.lock();
@@ -170,7 +170,7 @@ public:
 } // namespace
 
 std::unordered_map<std::string, CBox>
-geometryMapFromPlacement(const HypreactPlacementResult &placement) {
+geometryMapFromPlacement(const TilescriptPlacementResult &placement) {
   std::unordered_map<std::string, CBox> byWindowId;
   byWindowId.reserve(placement.geometry_count);
   for (size_t i = 0; i < placement.geometry_count; ++i) {
@@ -205,48 +205,48 @@ CBox offsetPlacementToWorkspace(const CBox &box,
 }
 
 void refreshWorkspaceAlgorithms() {
-  if (!g_registeredHypreactAlgo || !layoutRuntimeLoaded()) {
+  if (!g_registeredTilescriptAlgo || !layoutRuntimeLoaded()) {
     return;
   }
 
   Layout::Supplementary::algoMatcher()->updateWorkspaceLayouts();
 }
 
-void registerHypreactAlgorithm(HANDLE pluginHandle,
+void registerTilescriptAlgorithm(HANDLE pluginHandle,
                                const AlgorithmCallbacks &callbacks) {
-  if (g_registeredHypreactAlgo) {
+  if (g_registeredTilescriptAlgo) {
     return;
   }
 
   g_algorithmCallbacks = callbacks;
-  g_registeredHypreactAlgo = HyprlandAPI::addTiledAlgo(
-      pluginHandle, "hypreact", &typeid(CHypreactAlgorithm),
+  g_registeredTilescriptAlgo = HyprlandAPI::addTiledAlgo(
+      pluginHandle, "tilescript", &typeid(CTilescriptAlgorithm),
       []() -> UP<Layout::ITiledAlgorithm> {
-        return makeUnique<CHypreactAlgorithm>();
+        return makeUnique<CTilescriptAlgorithm>();
       });
 
-  if (g_registeredHypreactAlgo) {
-    std::cout << "[hypreact] registered tiled algorithm: hypreact" << std::endl;
+  if (g_registeredTilescriptAlgo) {
+    std::cout << "[tilescript] registered tiled algorithm: tilescript" << std::endl;
   } else {
-    std::cerr << "[hypreact] failed to register tiled algorithm: hypreact"
+    std::cerr << "[tilescript] failed to register tiled algorithm: tilescript"
               << std::endl;
   }
 }
 
-void unregisterHypreactAlgorithm(HANDLE pluginHandle) {
-  if (!g_registeredHypreactAlgo) {
+void unregisterTilescriptAlgorithm(HANDLE pluginHandle) {
+  if (!g_registeredTilescriptAlgo) {
     return;
   }
 
-  if (!HyprlandAPI::removeAlgo(pluginHandle, "hypreact")) {
-    std::cerr << "[hypreact] failed to unregister tiled algorithm: hypreact"
+  if (!HyprlandAPI::removeAlgo(pluginHandle, "tilescript")) {
+    std::cerr << "[tilescript] failed to unregister tiled algorithm: tilescript"
               << std::endl;
     return;
   }
 
-  std::cout << "[hypreact] unregistered tiled algorithm: hypreact" << std::endl;
-  g_registeredHypreactAlgo = false;
+  std::cout << "[tilescript] unregistered tiled algorithm: tilescript" << std::endl;
+  g_registeredTilescriptAlgo = false;
   g_algorithmCallbacks.reset();
 }
 
-} // namespace hypreact_plugin
+} // namespace tilescript_plugin

@@ -2,7 +2,7 @@ use crate::compiled::CompiledStyleSheet;
 use crate::language::{StyleTarget, is_supported_attribute_key, property_spec};
 use crate::parse_stylesheet;
 use crate::query::selector_matches;
-use hypreact_core::{LayoutNodeMeta, ResolvedLayoutNode};
+use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CssRange {
