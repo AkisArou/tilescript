@@ -21,7 +21,6 @@ export default {
     { index: 5, layout: "primary-stack" },
     { monitor: "eDP-1", layout: "master-stack" },
   ],
-  attachAfterFocused: true,
   resize: {
     stepPx: 96,
     minBranchSizePx: 120,
@@ -57,6 +56,7 @@ Notes:
 ### `attachAfterFocused`
 
 - default: `true`
+- optional in JS, Lua, and Fennel configs
 - when `true`, a newly spawned tiled window is inserted immediately after the currently focused tiled window
 - when `false`, new windows keep the existing append behavior
 
