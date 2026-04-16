@@ -123,8 +123,7 @@ impl StateSnapshot {
     }
 
     fn windows_for_workspace(&self, workspace: &WorkspaceSnapshot) -> Vec<WindowSnapshot> {
-        let mut windows = self
-            .windows
+        self.windows
             .iter()
             .filter(|window| {
                 let matches_workspace = window.workspace_id.as_ref() == Some(&workspace.id);
@@ -142,16 +141,7 @@ impl StateSnapshot {
                 matches_workspace && matches_output && is_visible && is_layout_eligible
             })
             .cloned()
-            .collect::<Vec<_>>();
-
-        windows.sort_by_key(|window| {
-            self.windows
-                .iter()
-                .position(|candidate| candidate.id == window.id)
-                .unwrap_or(self.windows.len())
-        });
-
-        windows
+            .collect()
     }
 
     fn layout_space_for_workspace(&self, workspace: &WorkspaceSnapshot) -> LayoutSpace {
@@ -676,5 +666,108 @@ mod tests {
         assert_eq!(context.workspace.window_count, 1);
         assert_eq!(context.windows.len(), 1);
         assert_eq!(context.windows[0].id, WindowId::from("tiled"));
+    }
+
+    #[test]
+    fn layout_context_preserves_snapshot_window_order_for_workspace() {
+        let state = StateSnapshot {
+            focused_window_id: Some(WindowId::from("win-editor")),
+            current_output_id: Some(OutputId::from("out-1")),
+            current_workspace_id: Some(WorkspaceId::from("ws-1")),
+            outputs: vec![OutputSnapshot {
+                id: OutputId::from("out-1"),
+                name: "HDMI-A-1".into(),
+                logical_width: 1920,
+                logical_height: 1080,
+                scale: 1,
+                enabled: true,
+                current_workspace_id: Some(WorkspaceId::from("ws-1")),
+            }],
+            workspaces: vec![WorkspaceSnapshot {
+                id: WorkspaceId::from("ws-1"),
+                name: "1".into(),
+                output_id: Some(OutputId::from("out-1")),
+                layout_space: None,
+                active_workspaces: vec!["1".into()],
+                focused: true,
+                visible: true,
+                effective_layout: Some(LayoutRef { name: "master-stack".into() }),
+            }],
+            windows: vec![
+                WindowSnapshot {
+                    id: WindowId::from("win-terminal"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("foot".into()),
+                    title: Some("Terminal".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Tiled,
+                    focused: false,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+                WindowSnapshot {
+                    id: WindowId::from("win-editor"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("nvim".into()),
+                    title: Some("Editor".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Tiled,
+                    focused: true,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+                WindowSnapshot {
+                    id: WindowId::from("win-preview-editor"),
+                    shell: WindowShell::Wayland,
+                    app_id: Some("playground-editor".into()),
+                    title: Some("Playground Editor".into()),
+                    class: None,
+                    instance: None,
+                    role: None,
+                    window_type: None,
+                    mapped: true,
+                    mode: WindowMode::Tiled,
+                    focused: false,
+                    urgent: false,
+                    closing: false,
+                    output_id: Some(OutputId::from("out-1")),
+                    workspace_id: Some(WorkspaceId::from("ws-1")),
+                    workspaces: vec!["1".into()],
+                },
+            ],
+            visible_window_ids: vec![
+                WindowId::from("win-terminal"),
+                WindowId::from("win-editor"),
+                WindowId::from("win-preview-editor"),
+            ],
+            workspace_names: vec!["1".into()],
+            resize_state: crate::resize::ResizeState::default(),
+        };
+
+        let workspace = state.current_workspace().unwrap();
+        let context = state.layout_context(workspace, None);
+
+        assert_eq!(
+            context.windows.iter().map(|window| window.id.clone()).collect::<Vec<_>>(),
+            vec![
+                WindowId::from("win-terminal"),
+                WindowId::from("win-editor"),
+                WindowId::from("win-preview-editor"),
+            ]
+        );
     }
 }

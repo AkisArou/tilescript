@@ -9,10 +9,7 @@ use hypreact_core::command::{FocusDirection, LayoutCycleDirection, WmCommand};
 use hypreact_core::snapshot::WindowSnapshot;
 
 use crate::app_state::AppState;
-use crate::session::{
-    PreviewDiagnostic, PreviewSessionState, focus_preview_window_by_direction,
-    move_preview_window_by_direction, resize_preview_window_by_direction,
-};
+use crate::session::{PreviewDiagnostic, PreviewSessionState};
 use crate::views::editor::EditorView;
 
 use super::scene::{body_style, frame_style, pane_style};
@@ -147,6 +144,50 @@ fn claimed_visible_windows(session: &PreviewSessionState) -> Vec<WindowSnapshot>
         .collect()
 }
 
+#[derive(Clone)]
+struct PreviewWindowRenderState {
+    window: WindowSnapshot,
+    rect: hypreact_core::LayoutRect,
+    layout_style: Option<hypreact_scene::ComputedStyle>,
+    accent: String,
+}
+
+fn preview_window_render_states(session: &PreviewSessionState) -> Vec<PreviewWindowRenderState> {
+    let Some(scene) = session.scene.as_ref() else {
+        return Vec::new();
+    };
+
+    claimed_visible_windows(session)
+        .into_iter()
+        .filter_map(|window| {
+            let node = scene.root.find_by_window_id(&window.id)?;
+            Some(PreviewWindowRenderState {
+                accent: window_accent(&window),
+                rect: node.rect(),
+                layout_style: node.styles().map(|styles| styles.layout.clone()),
+                window,
+            })
+        })
+        .collect()
+}
+
+fn preview_window_render_state_for_id(
+    session: &PreviewSessionState,
+    window_id: &hypreact_core::WindowId,
+) -> Option<PreviewWindowRenderState> {
+    let scene = session.scene.as_ref()?;
+    let window =
+        claimed_visible_windows(session).into_iter().find(|window| window.id == *window_id)?;
+    let node = scene.root.find_by_window_id(window_id)?;
+
+    Some(PreviewWindowRenderState {
+        accent: window_accent(&window),
+        rect: node.rect(),
+        layout_style: node.styles().map(|styles| styles.layout.clone()),
+        window,
+    })
+}
+
 fn has_error_diagnostics(session: &PreviewSessionState) -> bool {
     session.diagnostics.iter().any(|diagnostic| diagnostic.severity == "error")
 }
@@ -196,21 +237,6 @@ pub fn PreviewView() -> impl IntoView {
                                 state.apply_command(command, config.as_ref());
                             });
                         }
-                        PreviewKeyAction::FocusDirection(direction) => {
-                            app_state.session.update(|state| {
-                                focus_preview_window_by_direction(state, direction);
-                            });
-                        }
-                        PreviewKeyAction::MoveDirection(direction) => {
-                            app_state.session.update(|state| {
-                                move_preview_window_by_direction(state, direction);
-                            });
-                        }
-                        PreviewKeyAction::ResizeDirection(direction) => {
-                            app_state.session.update(|state| {
-                                resize_preview_window_by_direction(state, direction);
-                            });
-                        }
                     }
                     app_state.request_preview_reevaluation();
                 }
@@ -230,330 +256,15 @@ pub fn PreviewView() -> impl IntoView {
                     <div
                         class="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-terminal-topbar pr-2 text-xs text-terminal-dim"
                     >
-                        <div class="flex min-w-0 items-center gap-0 overflow-x-auto">
-                            {move || {
-                                app_state
-                                    .session
-                                    .get()
-                                    .workspace_names()
-                                    .into_iter()
-                                    .map(|workspace_name| {
-                                        let target = workspace_name.clone();
-                                        let current = workspace_name.clone();
-
-                                        view! {
-                                            <button
-                                                class=move || {
-                                                    if app_state.session.get().active_workspace_name() == current {
-                                                        format!(
-                                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-[#2b2b2b] text-terminal-fg"
-                                                        )
-                                                    } else {
-                                                        format!(
-                                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-transparent text-terminal-faint hover:text-terminal-dim"
-                                                        )
-                                                    }
-                                                }
-                                                on:click=move |_| {
-                                                    app_state.session.update(|state| state.select_workspace(&target));
-                                                    app_state.request_preview_reevaluation();
-                                                }
-                                            >
-                                                {workspace_name}
-                                            </button>
-                                        }
-                                    })
-                                    .collect_view()
-                            }}
-                            <Show when=move || surface_mode.get() == PreviewSurfaceMode::Preview>
-                                <span class="ml-2 min-w-0 truncate text-[12px] text-[#6f7277]">
-                                    {move || focused_window_chip_label(app_state)}
-                                </span>
-                            </Show>
-                        </div>
+                        <PreviewWorkspaceTabs surface_mode=surface_mode />
 
                         <div class="min-w-0 truncate px-2 text-center text-terminal-fg-strong"></div>
 
-                        <div class="flex items-center gap-2 justify-self-end">
-                            <div class="ui-select-wrap mr-1">
-                                <select
-                                    class="ui-select"
-                                    name="layout"
-                                    prop:value=move || app_state.session.get().active_layout_name()
-                                    on:change=move |event| {
-                                        let next = event_target_value(&event);
-                                        app_state.session.update(|state| state.set_layout(next));
-                                        app_state.request_preview_reevaluation();
-                                    }
-                                >
-                                    {move || {
-                                        app_state
-                                            .loaded_config
-                                            .get()
-                                            .map(|config| {
-                                                config
-                                                    .layouts
-                                                    .into_iter()
-                                                    .map(|layout| {
-                                                        let label = layout.name;
-                                                        let value = label.clone();
-                                                        view! { <option value=value>{label.clone()}</option> }
-                                                            .into_any()
-                                                    })
-                                                    .collect::<Vec<_>>()
-                                            })
-                                            .unwrap_or_else(|| {
-                                                vec![view! { <option value="none">"none"</option> }.into_any()]
-                                            })
-                                            .into_iter()
-                                            .collect_view()
-                                    }}
-                                </select>
-                            </div>
-
-                            <button
-                                class=move || {
-                                    if surface_mode.get() == PreviewSurfaceMode::Preview {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                                        )
-                                    } else {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                                        )
-                                    }
-                                }
-                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Preview)
-                            >
-                                {move || {
-                                    if app_state.session.get().scene.is_some() {
-                                        "Preview"
-                                    } else {
-                                        ""
-                                    }
-                                }}
-                            </button>
-
-                            <button
-                                class=move || {
-                                    if surface_mode.get() == PreviewSurfaceMode::Editor {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                                        )
-                                    } else {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                                        )
-                                    }
-                                }
-                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Editor)
-                            >
-                                "Editor"
-                            </button>
-
-                            <button
-                                class=move || {
-                                    let session = app_state.session.get();
-                                    let has_errors = has_error_diagnostics(&session);
-                                    if surface_mode.get() == PreviewSurfaceMode::Diagnostics {
-                                        if has_errors {
-                                            format!(
-                                                "{TOGGLE_BUTTON_BASE} border-terminal-error bg-terminal-error/12 text-terminal-error"
-                                            )
-                                        } else {
-                                            format!(
-                                                "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                                            )
-                                        }
-                                    } else {
-                                        if has_errors {
-                                            format!(
-                                                "{TOGGLE_BUTTON_BASE} border-terminal-error/50 bg-terminal-error/6 text-terminal-error hover:text-terminal-error"
-                                            )
-                                        } else {
-                                            format!(
-                                                "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                                            )
-                                        }
-                                    }
-                                }
-                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Diagnostics)
-                            >
-                                "Diagnostics"
-                            </button>
-
-                            <button
-                                class=move || {
-                                    if surface_mode.get() == PreviewSurfaceMode::Binds {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
-                                        )
-                                    } else {
-                                        format!(
-                                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
-                                        )
-                                    }
-                                }
-                                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Binds)
-                            >
-                                "Binds"
-                            </button>
-                        </div>
+                        <PreviewToolbar surface_mode=surface_mode />
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-hidden">
-                        {move || match surface_mode.get() {
-                            PreviewSurfaceMode::Preview => {
-                                view! {
-                                    <Show
-                                        when=move || {
-                                            let session = app_state.session.get();
-                                            session.scene.is_some()
-                                                || session.error.is_some()
-                                                || !session.diagnostics.is_empty()
-                                        }
-                                        fallback=move || {
-                                            view! {
-                                                <div class="text-terminal-faint flex h-full min-h-72 items-center justify-center p-3 text-sm">
-                                                    "loading wasm preview..."
-                                                </div>
-                                            }
-                                        }
-                                    >
-                                        {move || {
-                                            let session = app_state.session.get();
-                                            if session.scene.is_none() {
-                                                view! {
-                                                    <div class="border-terminal-border bg-terminal-bg-subtle text-terminal-muted min-h-72 h-full w-full overflow-auto border p-3 text-sm">
-                                                        <Show when=move || app_state.session.get().error.is_some()>
-                                                            <div class="border-terminal-error/40 bg-terminal-error/10 text-terminal-error mb-3 border px-3 py-2">
-                                                                {move || app_state.session.get().error.unwrap_or_default()}
-                                                            </div>
-                                                        </Show>
-                                                        <DiagnosticsList diagnostics=Signal::derive(move || {
-                                                            app_state.session.get().diagnostics.clone()
-                                                        }) />
-                                                    </div>
-                                                }
-                                                    .into_any()
-                                            } else {
-                                                view! {
-                                                    <div
-                                                        class="bg-terminal-bg relative h-full min-h-72 w-full overflow-hidden"
-                                                        style="background-image: linear-gradient(rgba(10, 10, 10, 0.55), rgba(10, 10, 10, 0.72)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
-                                                    >
-                                                        {claimed_visible_windows(&app_state.session.get())
-                                                            .into_iter()
-                                                            .filter_map(|window| {
-                                                                let session = app_state.session.get();
-                                                                let scene = session.scene.clone()?;
-                                                                let node = scene.root.find_by_window_id(&window.id)?;
-                                                                let rect = node.rect();
-                                                                let layout_style =
-                                                                    node.styles().map(|styles| styles.layout.clone());
-                                                                let layout_style_frame = layout_style.clone();
-                                                                let layout_style_body = layout_style.clone();
-                                                                let pane_focus_target = window.id.clone();
-                                                                let focused_id = window.id.clone();
-                                                                let focused_attr_id = focused_id.clone();
-                                                                let focused_style_id = focused_id.clone();
-                                                                let accent = window_accent(&window);
-                                                                let app_id = window.app_id.as_deref();
-                                                                let is_foot = app_id == Some("foot");
-                                                                let is_htop = app_id == Some("htop");
-                                                                let is_nvim = app_id == Some("nvim");
-                                                                let foot_focus_window_id = window.id.clone();
-
-                                                                Some(view! {
-                                                                    <div
-                                                                        class="preview-window text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
-                                                                        attr:data-focused=move || {
-                                                                            if app_state.session.get().focused_window_id().as_ref()
-                                                                                == Some(&focused_attr_id)
-                                                                            {
-                                                                                "true"
-                                                                            } else {
-                                                                                "false"
-                                                                            }
-                                                                        }
-                                                                        style=move || {
-                                                                            let session = app_state.session.get();
-                                                                            format!(
-                                                                                "{} {}",
-                                                                                pane_style(
-                                                                                    rect,
-                                                                                    &accent,
-                                                                                    1240,
-                                                                                    760,
-                                                                                ),
-                                                                                frame_style(
-                                                                                    layout_style_frame.as_ref(),
-                                                                                    session.focused_window_id().as_ref()
-                                                                                        == Some(&focused_style_id),
-                                                                                )
-                                                                            )
-                                                                        }
-                                                                        on:click=move |_| {
-                                                                            app_state.session.update(|state| state.set_focus(pane_focus_target.clone()));
-                                                                            app_state.request_preview_reevaluation();
-                                                                        }
-                                                                    >
-                                                                        <div style=move || {
-                                                                            format!(
-                                                                                "height: 100%; width: 100%; box-sizing: border-box; {}",
-                                                                                body_style(layout_style_body.as_ref()),
-                                                                            )
-                                                                        }>
-                                                                            {if is_foot {
-                                                                                view! {
-                                                                                    <FootTerminal focused=Signal::derive(move || {
-                                                                                        app_state.session.get().focused_window_id().as_ref()
-                                                                                            == Some(&foot_focus_window_id)
-                                                                                    }) />
-                                                                                }
-                                                                                    .into_any()
-                                                                            } else if is_htop {
-                                                                                view! { <HtopWindow /> }.into_any()
-                                                                            } else if is_nvim {
-                                                                                view! { <NvimStartupWindow /> }.into_any()
-                                                                            } else {
-                                                                                view! { <WindowSurface window=window.clone() /> }.into_any()
-                                                                            }}
-                                                                        </div>
-                                                                    </div>
-                                                                })
-                                                            })
-                                                            .collect_view()}
-                                                    </div>
-                                                }
-                                                    .into_any()
-                                            }
-                                        }}
-                                    </Show>
-                                }
-                                    .into_any()
-                            }
-                            PreviewSurfaceMode::Editor => view! {
-                                <OverlaySurface>
-                                    <EditorView />
-                                </OverlaySurface>
-                            }
-                                .into_any(),
-                            PreviewSurfaceMode::Diagnostics => view! {
-                                <OverlaySurface>
-                                    <DiagnosticsWindow diagnostics=Signal::derive(move || {
-                                        app_state.session.get().diagnostics.clone()
-                                    }) />
-                                </OverlaySurface>
-                            }
-                                .into_any(),
-                            PreviewSurfaceMode::Binds => view! {
-                                <OverlaySurface>
-                                    <BindsWindow />
-                                </OverlaySurface>
-                            }
-                                .into_any(),
-                        }}
+                        <PreviewSurfaceRouter surface_mode=surface_mode />
                     </div>
                 </div>
             </div>
@@ -572,6 +283,245 @@ fn OverlaySurface(children: Children) -> impl IntoView {
             <div class="preview-layer absolute inset-[2.25rem] border border-terminal-border-strong bg-terminal-bg shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
                 <div class="h-full overflow-hidden">{children()}</div>
             </div>
+        </div>
+    }
+}
+
+#[component]
+fn PreviewWorkspaceTabs(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        <div class="flex min-w-0 items-center gap-0 overflow-x-auto">
+            {move || {
+                app_state
+                    .session
+                    .get()
+                    .workspace_names()
+                    .into_iter()
+                    .map(|workspace_name| {
+                        let target = workspace_name.clone();
+                        let current = workspace_name.clone();
+
+                        view! {
+                            <button
+                                class=move || {
+                                    if app_state.session.get().active_workspace_name() == current {
+                                        format!(
+                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-[#2b2b2b] text-terminal-fg"
+                                        )
+                                    } else {
+                                        format!(
+                                            "{TOGGLE_BUTTON_BASE} border-transparent bg-transparent text-terminal-faint hover:text-terminal-dim"
+                                        )
+                                    }
+                                }
+                                on:click=move |_| {
+                                    app_state.session.update(|state| state.select_workspace(&target));
+                                    app_state.request_preview_reevaluation();
+                                }
+                            >
+                                {workspace_name}
+                            </button>
+                        }
+                    })
+                    .collect_view()
+            }}
+            <Show when=move || surface_mode.get() == PreviewSurfaceMode::Preview>
+                <span class="ml-2 min-w-0 truncate text-[12px] text-[#6f7277]">
+                    {move || focused_window_chip_label(app_state)}
+                </span>
+            </Show>
+        </div>
+    }
+}
+
+#[component]
+fn PreviewToolbar(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        <div class="flex items-center gap-2 justify-self-end">
+            <div class="ui-select-wrap mr-1">
+                <select
+                    class="ui-select"
+                    name="layout"
+                    prop:value=move || app_state.session.get().active_layout_name()
+                    on:change=move |event| {
+                        let next = event_target_value(&event);
+                        app_state.session.update(|state| state.set_layout(next));
+                        app_state.request_preview_reevaluation();
+                    }
+                >
+                    {move || {
+                        app_state
+                            .loaded_config
+                            .get()
+                            .map(|config| {
+                                config
+                                    .layouts
+                                    .into_iter()
+                                    .map(|layout| {
+                                        let label = layout.name;
+                                        let value = label.clone();
+                                        view! { <option value=value>{label.clone()}</option> }
+                                            .into_any()
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_else(|| {
+                                vec![view! { <option value="none">"none"</option> }.into_any()]
+                            })
+                            .into_iter()
+                            .collect_view()
+                    }}
+                </select>
+            </div>
+
+            <PreviewSurfaceModeButton
+                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Preview)
+                label=Signal::derive(move || {
+                    if app_state.session.get().scene.is_some() { "Preview" } else { "" }
+                })
+                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Preview))
+            />
+
+            <PreviewSurfaceModeButton
+                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Editor)
+                label=Signal::derive(move || "Editor")
+                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Editor))
+            />
+
+            <button
+                class=move || {
+                    let session = app_state.session.get();
+                    let has_errors = has_error_diagnostics(&session);
+                    if surface_mode.get() == PreviewSurfaceMode::Diagnostics {
+                        if has_errors {
+                            format!(
+                                "{TOGGLE_BUTTON_BASE} border-terminal-error bg-terminal-error/12 text-terminal-error"
+                            )
+                        } else {
+                            format!(
+                                "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
+                            )
+                        }
+                    } else if has_errors {
+                        format!(
+                            "{TOGGLE_BUTTON_BASE} border-terminal-error/50 bg-terminal-error/6 text-terminal-error hover:text-terminal-error"
+                        )
+                    } else {
+                        format!(
+                            "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
+                        )
+                    }
+                }
+                on:click=move |_| surface_mode.set(PreviewSurfaceMode::Diagnostics)
+            >
+                "Diagnostics"
+            </button>
+
+            <PreviewSurfaceModeButton
+                active=Signal::derive(move || surface_mode.get() == PreviewSurfaceMode::Binds)
+                label=Signal::derive(move || "Binds")
+                on_click=Callback::new(move |_| surface_mode.set(PreviewSurfaceMode::Binds))
+            />
+        </div>
+    }
+}
+
+#[component]
+fn PreviewSurfaceModeButton(
+    #[prop(into)] active: Signal<bool>,
+    #[prop(into)] label: Signal<&'static str>,
+    on_click: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <button
+            class=move || {
+                if active.get() {
+                    format!(
+                        "{TOGGLE_BUTTON_BASE} border-terminal-info bg-terminal-info/10 text-terminal-info"
+                    )
+                } else {
+                    format!(
+                        "{TOGGLE_BUTTON_BASE} border-terminal-border bg-terminal-bg-subtle text-terminal-dim hover:text-terminal-fg"
+                    )
+                }
+            }
+            on:click=move |_| on_click.run(())
+        >
+            {move || label.get()}
+        </button>
+    }
+}
+
+#[component]
+fn PreviewSurfaceRouter(surface_mode: RwSignal<PreviewSurfaceMode>) -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        {move || match surface_mode.get() {
+            PreviewSurfaceMode::Preview => view! { <PreviewSurfaceGate /> }.into_any(),
+            PreviewSurfaceMode::Editor => view! {
+                <OverlaySurface>
+                    <EditorView />
+                </OverlaySurface>
+            }
+                .into_any(),
+            PreviewSurfaceMode::Diagnostics => view! {
+                <OverlaySurface>
+                    <DiagnosticsWindow diagnostics=Signal::derive(move || {
+                        app_state.session.get().diagnostics.clone()
+                    }) />
+                </OverlaySurface>
+            }
+                .into_any(),
+            PreviewSurfaceMode::Binds => view! {
+                <OverlaySurface>
+                    <BindsWindow />
+                </OverlaySurface>
+            }
+                .into_any(),
+        }}
+    }
+}
+
+#[component]
+fn PreviewSurfaceGate() -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        <div class="relative h-full min-h-72 w-full overflow-hidden">
+            <PreviewSceneSurface />
+            <Show when=move || app_state.session.get().scene.is_none()>
+                <div class="absolute inset-0 z-30">
+                    <Show
+                        when=move || {
+                            let session = app_state.session.get();
+                            session.error.is_some() || !session.diagnostics.is_empty()
+                        }
+                        fallback=move || {
+                            view! {
+                                <div class="text-terminal-faint flex h-full min-h-72 items-center justify-center bg-terminal-bg/86 p-3 text-sm backdrop-blur-[1px]">
+                                    "loading wasm preview..."
+                                </div>
+                            }
+                        }
+                    >
+                        <div class="border-terminal-border bg-terminal-bg-subtle/96 text-terminal-muted h-full w-full overflow-auto border p-3 text-sm backdrop-blur-[1px]">
+                            <Show when=move || app_state.session.get().error.is_some()>
+                                <div class="border-terminal-error/40 bg-terminal-error/10 text-terminal-error mb-3 border px-3 py-2">
+                                    {move || app_state.session.get().error.unwrap_or_default()}
+                                </div>
+                            </Show>
+                            <DiagnosticsList diagnostics=Signal::derive(move || {
+                                app_state.session.get().diagnostics.clone()
+                            }) />
+                        </div>
+                    </Show>
+                </div>
+            </Show>
         </div>
     }
 }
@@ -830,6 +780,118 @@ fn WindowSurface(window: WindowSnapshot) -> impl IntoView {
                     {window.title.unwrap_or_else(|| "unbound node".to_string())}
                 </div>
             </div>
+        </div>
+    }
+}
+
+#[component]
+fn PreviewSceneSurface() -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+
+    view! {
+        <div
+            class="bg-terminal-bg relative h-full min-h-72 w-full overflow-hidden"
+            style="background-image: linear-gradient(rgba(10, 10, 10, 0.55), rgba(10, 10, 10, 0.72)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
+        >
+            <For
+                each=move || preview_window_render_states(&app_state.session.get())
+                key=|state| state.window.id.clone()
+                children=move |state| {
+                    view! { <PreviewWindowFrame state=state /> }
+                }
+            />
+        </div>
+    }
+}
+
+#[component]
+fn PreviewWindowFrame(state: PreviewWindowRenderState) -> impl IntoView {
+    let app_state = expect_context::<AppState>();
+    let window_id = state.window.id.clone();
+    let pane_focus_target = state.window.id.clone();
+    let is_foot = state.window.app_id.as_deref() == Some("foot");
+    let is_htop = state.window.app_id.as_deref() == Some("htop");
+    let is_nvim = state.window.app_id.as_deref() == Some("nvim");
+    let is_playground_editor = state.window.app_id.as_deref() == Some("playground-editor");
+    let is_binds = state.window.app_id.as_deref() == Some("binds");
+    let foot_focus_window_id = state.window.id.clone();
+    let focused_attr_id = state.window.id.clone();
+    let focused_style_id = state.window.id.clone();
+
+    view! {
+        <div
+            class="preview-window text-terminal-fg absolute z-20 cursor-pointer overflow-hidden text-left text-xs"
+            attr:data-focused=move || {
+                if app_state.session.get().focused_window_id().as_ref() == Some(&focused_attr_id) {
+                    "true"
+                } else {
+                    "false"
+                }
+            }
+            style=move || {
+                let focused = app_state.session.get().focused_window_id().as_ref() == Some(&focused_style_id);
+                let Some(render_state) = app_state
+                    .session
+                    .with(|session| preview_window_render_state_for_id(session, &focused_style_id))
+                else {
+                    return String::new();
+                };
+                format!(
+                    "{} {}",
+                    pane_style(render_state.rect, &render_state.accent, 1240, 760),
+                    frame_style(render_state.layout_style.as_ref(), focused),
+                )
+            }
+            on:click=move |_| {
+                app_state.session.update(|session| session.set_focus(pane_focus_target.clone()));
+                app_state.request_preview_reevaluation();
+            }
+        >
+            <div style=move || {
+                let layout_style = app_state
+                    .session
+                    .with(|session| {
+                        preview_window_render_state_for_id(session, &window_id)
+                            .and_then(|state| state.layout_style)
+                    });
+                format!(
+                    "height: 100%; width: 100%; box-sizing: border-box; {}",
+                    body_style(layout_style.as_ref()),
+                )
+            }>
+                {if is_foot {
+                    view! {
+                        <FootTerminal focused=Signal::derive(move || {
+                            app_state.session.get().focused_window_id().as_ref()
+                                == Some(&foot_focus_window_id)
+                        }) />
+                    }
+                        .into_any()
+                } else if is_htop {
+                    view! { <HtopWindow /> }.into_any()
+                } else if is_nvim {
+                    view! { <NvimStartupWindow /> }.into_any()
+                } else if is_playground_editor {
+                    view! { <PreviewEmbeddedEditorWindow /> }.into_any()
+                } else if is_binds {
+                    view! { <BindsWindow /> }.into_any()
+                } else {
+                    view! { <WindowSurface window=state.window.clone() /> }.into_any()
+                }}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+fn PreviewEmbeddedEditorWindow() -> impl IntoView {
+    view! {
+        <div
+            class="h-full w-full overflow-hidden bg-terminal-bg"
+            on:click=|event| event.stop_propagation()
+            on:mousedown=|event| event.stop_propagation()
+        >
+            <EditorView />
         </div>
     }
 }
@@ -1185,9 +1247,6 @@ fn NvimStartupWindow() -> impl IntoView {
 
 enum PreviewKeyAction {
     Command(WmCommand),
-    FocusDirection(FocusDirection),
-    MoveDirection(FocusDirection),
-    ResizeDirection(FocusDirection),
 }
 
 fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
@@ -1197,29 +1256,53 @@ fn preview_command_from_key(event: &KeyboardEvent) -> Option<PreviewKeyAction> {
     if event.alt_key() {
         if event.shift_key() {
             return match key_lower.as_str() {
-                "h" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Left)),
-                "j" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Down)),
-                "k" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Up)),
-                "l" => Some(PreviewKeyAction::MoveDirection(FocusDirection::Right)),
+                "h" => Some(PreviewKeyAction::Command(WmCommand::MoveDirection {
+                    direction: FocusDirection::Left,
+                })),
+                "j" => Some(PreviewKeyAction::Command(WmCommand::MoveDirection {
+                    direction: FocusDirection::Down,
+                })),
+                "k" => Some(PreviewKeyAction::Command(WmCommand::MoveDirection {
+                    direction: FocusDirection::Up,
+                })),
+                "l" => Some(PreviewKeyAction::Command(WmCommand::MoveDirection {
+                    direction: FocusDirection::Right,
+                })),
                 _ => None,
             };
         }
 
         if event.ctrl_key() {
             return match key_lower.as_str() {
-                "h" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Left)),
-                "j" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Down)),
-                "k" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Up)),
-                "l" => Some(PreviewKeyAction::ResizeDirection(FocusDirection::Right)),
+                "h" => Some(PreviewKeyAction::Command(WmCommand::ResizeDirection {
+                    direction: FocusDirection::Left,
+                })),
+                "j" => Some(PreviewKeyAction::Command(WmCommand::ResizeDirection {
+                    direction: FocusDirection::Down,
+                })),
+                "k" => Some(PreviewKeyAction::Command(WmCommand::ResizeDirection {
+                    direction: FocusDirection::Up,
+                })),
+                "l" => Some(PreviewKeyAction::Command(WmCommand::ResizeDirection {
+                    direction: FocusDirection::Right,
+                })),
                 _ => None,
             };
         }
 
         return match key_lower.as_str() {
-            "h" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Left)),
-            "j" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Down)),
-            "k" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Up)),
-            "l" => Some(PreviewKeyAction::FocusDirection(FocusDirection::Right)),
+            "h" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
+                direction: FocusDirection::Left,
+            })),
+            "j" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
+                direction: FocusDirection::Down,
+            })),
+            "k" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
+                direction: FocusDirection::Up,
+            })),
+            "l" => Some(PreviewKeyAction::Command(WmCommand::FocusDirection {
+                direction: FocusDirection::Right,
+            })),
             "q" => Some(PreviewKeyAction::Command(WmCommand::CloseFocusedWindow)),
             "enter" => Some(PreviewKeyAction::Command(WmCommand::Spawn {
                 command: "$openRandom".to_string(),

@@ -522,7 +522,10 @@ fn discover_layout_definitions(
                 stylesheet_path: layout
                     .stylesheet_path
                     .map(|path| path.to_string_lossy().into_owned()),
-                runtime_cache_payload: Some(encode_runtime_graph_payload(&runtime_graph)),
+                runtime_cache_payload: Some(encode_runtime_graph_payload(
+                    &runtime_graph,
+                    std::slice::from_ref(&runtime_graph.entry),
+                )),
             })
         })
         .collect()
@@ -633,7 +636,10 @@ impl SourceBundlePreparedLayoutRuntime for JavaScriptBrowserPreparedLayoutRuntim
                 selected: config
                     .resolve_selected_layout(workspace)?
                     .expect("selected layout exists"),
-                runtime_payload: encode_runtime_graph_payload(&runtime_graph),
+                runtime_payload: encode_runtime_graph_payload(
+                    &runtime_graph,
+                    std::slice::from_ref(&runtime_graph.entry),
+                ),
                 stylesheets: PreparedStylesheets {
                     global: load_stylesheet_asset(
                         config.global_stylesheet_path.as_deref(),
@@ -646,6 +652,7 @@ impl SourceBundlePreparedLayoutRuntime for JavaScriptBrowserPreparedLayoutRuntim
                         sources,
                     ),
                 },
+                dependencies: vec![],
             }))
         })
     }

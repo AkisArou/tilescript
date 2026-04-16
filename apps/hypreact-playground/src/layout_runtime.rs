@@ -39,7 +39,6 @@ const FALLBACK_LAYOUT_STYLESHEET: &str =
 
 #[derive(Debug, Clone)]
 pub struct EvaluatedPreview {
-    pub config: Config,
     pub scene: Option<SceneResponse>,
     pub focus_tree: Option<FocusTree>,
     pub partition_tree: Option<PartitionTree>,
@@ -72,7 +71,7 @@ pub async fn load_config_from_buffers(
     let entry_path = PathBuf::from(entry_runtime_path(language));
     let sources = source_bundle_sources(language, buffers, dynamic_layouts);
     let maybe_service = LAYOUT_SERVICES.with_borrow_mut(|slot| slot.remove(&language));
-    let service = match maybe_service {
+    let mut service = match maybe_service {
         Some(service) => service,
         None => build_layout_service(language, &entry_path).map_err(|error| error.to_string())?,
     };
@@ -93,6 +92,7 @@ pub async fn evaluate_preview_from_buffers(
     language: AuthoringLanguage,
     buffers: &BTreeMap<EditorFileKey, String>,
     dynamic_layouts: &[DynamicLayoutFileSet],
+    config: &Config,
     model: &WmModel,
     manual_layouts: &BTreeMap<hypreact_core::WorkspaceId, hypreact_core::types::LayoutRef>,
 ) -> Result<EvaluatedPreview, String> {
@@ -106,13 +106,8 @@ pub async fn evaluate_preview_from_buffers(
     };
 
     let result = async {
-        let config = service
-            .load_config(&root_dir, &entry_path, &sources)
-            .await
-            .map_err(|error| error.to_string())?;
-
         let mut preview_model = model.clone();
-        apply_layout_selection(&mut preview_model, &config);
+        apply_layout_selection(&mut preview_model, config);
         for (workspace_id, layout) in manual_layouts {
             preview_model
                 .set_workspace_effective_layout(workspace_id.clone(), Some(layout.clone()));
@@ -130,7 +125,7 @@ pub async fn evaluate_preview_from_buffers(
             .evaluate_prepared_for_workspace(
                 &root_dir,
                 &sources,
-                &config,
+                config,
                 &state_snapshot,
                 &workspace,
             )
@@ -142,7 +137,7 @@ pub async fn evaluate_preview_from_buffers(
             Ok(Some(evaluation)) => {
                 let workspace_windows = workspace_windows(&state_snapshot, &workspace);
                 let scene = match build_scene(
-                    &config,
+                    config,
                     &state_snapshot,
                     &workspace,
                     &workspace_windows,
@@ -156,7 +151,7 @@ pub async fn evaluate_preview_from_buffers(
                         ));
                         build_fallback_scene(
                             language,
-                            &config,
+                            config,
                             &state_snapshot,
                             &workspace,
                             Some(&evaluation.artifact.selected),
@@ -165,14 +160,13 @@ pub async fn evaluate_preview_from_buffers(
                     }
                 };
                 Ok(preview_from_scene(
-                    config,
+                    config.clone(),
                     scene,
                     diagnostics,
                     Some(evaluation.artifact.selected.name.clone()),
                 ))
             }
             Ok(None) => Ok(EvaluatedPreview {
-                config,
                 scene: None,
                 focus_tree: None,
                 partition_tree: None,
@@ -190,14 +184,14 @@ pub async fn evaluate_preview_from_buffers(
                 let selected_layout = selected_layout_for_workspace(language, &workspace, None);
                 let scene = build_fallback_scene(
                     language,
-                    &config,
+                    config,
                     &state_snapshot,
                     &workspace,
                     Some(&selected_layout),
                     &workspace_windows,
                 )?;
 
-                Ok(preview_from_scene(config, scene, diagnostics, selected_layout_name))
+                Ok(preview_from_scene(config.clone(), scene, diagnostics, selected_layout_name))
             }
         }
     }
@@ -341,6 +335,7 @@ fn build_fallback_scene(
                 source: FALLBACK_LAYOUT_STYLESHEET.to_string(),
             }),
         },
+        dependencies: vec![],
     };
 
     let resolved = ValidatedLayoutTree::new(fallback_source_layout())
@@ -432,7 +427,7 @@ fn preview_from_scene(
     selected_layout_name: Option<String>,
 ) -> EvaluatedPreview {
     let window_geometries = collect_window_geometries(&scene.root);
-    let focus_tree = focus_tree_from_geometries(&window_geometries);
+    let focus_tree = FocusTree::from_window_geometries(&window_geometries);
     let partition_tree =
         partition_tree_from_scene(&scene.root, ResizeBehaviorConfig::from_config(&config));
     let error = diagnostics
@@ -441,7 +436,6 @@ fn preview_from_scene(
         .map(|diagnostic| diagnostic.message.clone());
 
     EvaluatedPreview {
-        config,
         scene: Some(scene),
         focus_tree: Some(focus_tree),
         partition_tree: Some(partition_tree),
@@ -567,28 +561,23 @@ pub fn resize_step_units_for_partition(
     ((step_px * total_share_units as f32) / partition_main_size).round().max(1.0) as u32
 }
 
-fn collect_window_geometries(
-    root: &LayoutSnapshotNode,
-) -> std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry> {
-    let mut geometries = std::collections::BTreeMap::new();
+fn collect_window_geometries(root: &LayoutSnapshotNode) -> Vec<FocusTreeWindowGeometry> {
+    let mut geometries = Vec::new();
     collect_window_geometries_inner(root, &mut geometries);
     geometries
 }
 
-fn collect_window_geometries_inner(
-    node: &LayoutSnapshotNode,
-    out: &mut std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
-) {
+fn collect_window_geometries_inner(node: &LayoutSnapshotNode, out: &mut Vec<FocusTreeWindowGeometry>) {
     if let LayoutSnapshotNode::Window { window_id: Some(window_id), rect, .. } = node {
-        out.insert(
-            window_id.clone(),
-            WindowGeometry {
+        out.push(FocusTreeWindowGeometry {
+            window_id: window_id.clone(),
+            geometry: WindowGeometry {
                 x: rect.x.round() as i32,
                 y: rect.y.round() as i32,
                 width: rect.width.round() as i32,
                 height: rect.height.round() as i32,
             },
-        );
+        });
     }
 
     for child in node.children() {
@@ -596,31 +585,17 @@ fn collect_window_geometries_inner(
     }
 }
 
-fn focus_tree_from_geometries(
-    window_geometries: &std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
-) -> FocusTree {
-    FocusTree::from_window_geometries(
-        &window_geometries
-            .iter()
-            .map(|(window_id, geometry)| FocusTreeWindowGeometry {
-                window_id: window_id.clone(),
-                geometry: *geometry,
-            })
-            .collect::<Vec<_>>(),
-    )
-}
-
 #[allow(dead_code)]
 fn geometry_candidates_from_focus_tree(
-    window_geometries: &std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
+    window_geometries: &[FocusTreeWindowGeometry],
     focus_tree: &FocusTree,
 ) -> Vec<WindowGeometryCandidate> {
     window_geometries
         .iter()
-        .map(|(window_id, geometry)| WindowGeometryCandidate {
-            window_id: window_id.clone(),
-            geometry: *geometry,
-            scope_path: focus_tree.scope_path(window_id).unwrap_or(&[]).to_vec(),
+        .map(|entry| WindowGeometryCandidate {
+            window_id: entry.window_id.clone(),
+            geometry: entry.geometry,
+            scope_path: focus_tree.scope_path(&entry.window_id).unwrap_or(&[]).to_vec(),
         })
         .collect()
 }

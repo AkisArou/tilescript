@@ -126,7 +126,10 @@ impl SourceBundlePreparedLayoutRuntime for LuaBrowserPreparedLayoutRuntime {
                 selected: config
                     .resolve_selected_layout(workspace)?
                     .expect("selected layout exists"),
-                runtime_payload: serde_json::json!({ "source": source }),
+                runtime_payload: serde_json::json!({
+                    "source": source,
+                    "sourceModule": layout.module,
+                }),
                 stylesheets: PreparedStylesheets {
                     global: load_stylesheet_asset(
                         config.global_stylesheet_path.as_deref(),
@@ -139,6 +142,7 @@ impl SourceBundlePreparedLayoutRuntime for LuaBrowserPreparedLayoutRuntime {
                         sources,
                     ),
                 },
+                dependencies: vec![],
             }))
         })
     }

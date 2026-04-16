@@ -942,7 +942,10 @@ fn layout_workspace_scene(
     LayoutWorkspaceScene {
         evaluation,
         scene,
-        window_geometries,
+        window_geometries: window_geometries
+            .iter()
+            .map(|entry| (entry.window_id.clone(), entry.geometry))
+            .collect(),
         focus_tree,
         partition_tree,
         geometry_candidates,
@@ -1669,28 +1672,26 @@ pub fn resize_direction_debug(
     })
 }
 
-fn collect_window_geometries(
-    root: &LayoutSnapshotNode,
-) -> std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry> {
-    let mut geometries = std::collections::BTreeMap::new();
+fn collect_window_geometries(root: &LayoutSnapshotNode) -> Vec<FocusTreeWindowGeometry> {
+    let mut geometries = Vec::new();
     collect_window_geometries_inner(root, &mut geometries);
     geometries
 }
 
 fn collect_window_geometries_inner(
     node: &LayoutSnapshotNode,
-    out: &mut std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
+    out: &mut Vec<FocusTreeWindowGeometry>,
 ) {
     if let LayoutSnapshotNode::Window { window_id: Some(window_id), rect, .. } = node {
-        out.insert(
-            window_id.clone(),
-            WindowGeometry {
+        out.push(FocusTreeWindowGeometry {
+            window_id: window_id.clone(),
+            geometry: WindowGeometry {
                 x: rect.x.round() as i32,
                 y: rect.y.round() as i32,
                 width: rect.width.round() as i32,
                 height: rect.height.round() as i32,
             },
-        );
+        });
     }
 
     for child in node.children() {
@@ -1698,40 +1699,22 @@ fn collect_window_geometries_inner(
     }
 }
 
-fn focus_tree_from_geometries(
-    geometries: &std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
-) -> FocusTree {
-    let entries = geometries
-        .iter()
-        .map(|(window_id, geometry)| FocusTreeWindowGeometry {
-            window_id: window_id.clone(),
-            geometry: *geometry,
-        })
-        .collect::<Vec<_>>();
-
-    FocusTree::from_window_geometries(&entries)
+fn focus_tree_from_geometries(geometries: &[FocusTreeWindowGeometry]) -> FocusTree {
+    FocusTree::from_window_geometries(geometries)
 }
 
 fn geometry_candidates_from_focus_tree(
-    geometries: &std::collections::BTreeMap<hypreact_core::WindowId, WindowGeometry>,
+    geometries: &[FocusTreeWindowGeometry],
     focus_tree: &FocusTree,
 ) -> Vec<WindowGeometryCandidate> {
-    let entries = geometries
+    geometries
         .iter()
-        .map(|(window_id, geometry)| FocusTreeWindowGeometry {
-            window_id: window_id.clone(),
-            geometry: *geometry,
-        })
-        .collect::<Vec<_>>();
-
-    entries
-        .into_iter()
         .map(|entry| WindowGeometryCandidate {
             scope_path: focus_tree
                 .scope_path(&entry.window_id)
                 .map(|scope_path| scope_path.to_vec())
                 .unwrap_or_else(|| vec![FocusTree::workspace_scope()]),
-            window_id: entry.window_id,
+            window_id: entry.window_id.clone(),
             geometry: entry.geometry,
         })
         .collect::<Vec<_>>()
@@ -2442,12 +2425,24 @@ mod tests {
 
     #[test]
     fn geometry_candidates_preserve_branch_memory_for_master_stack_focus() {
-        let geometries = BTreeMap::from([
-            (WindowId::from("master"), WindowGeometry { x: 0, y: 0, width: 600, height: 900 }),
-            (WindowId::from("stack-1"), WindowGeometry { x: 600, y: 0, width: 300, height: 300 }),
-            (WindowId::from("stack-2"), WindowGeometry { x: 600, y: 300, width: 300, height: 300 }),
-            (WindowId::from("stack-3"), WindowGeometry { x: 600, y: 600, width: 300, height: 300 }),
-        ]);
+        let geometries = vec![
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("master"),
+                geometry: WindowGeometry { x: 0, y: 0, width: 600, height: 900 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("stack-1"),
+                geometry: WindowGeometry { x: 600, y: 0, width: 300, height: 300 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("stack-2"),
+                geometry: WindowGeometry { x: 600, y: 300, width: 300, height: 300 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("stack-3"),
+                geometry: WindowGeometry { x: 600, y: 600, width: 300, height: 300 },
+            },
+        ];
 
         let focus_tree = focus_tree_from_geometries(&geometries);
         let candidates = geometry_candidates_from_focus_tree(&geometries, &focus_tree);
@@ -2581,6 +2576,59 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
 
         assert!(moved[&WindowId::from("master")].x > moved[&WindowId::from("stack")].x);
+    }
+
+    #[test]
+    fn removing_first_stack_window_collapses_remaining_stack_upward() {
+        let config_path = isolated_test_config_path();
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+
+        let mut model = WmModel::default();
+        model.upsert_output(
+            OutputId::from("eDP-1"),
+            "eDP-1".to_string(),
+            1600,
+            1000,
+            Some(WorkspaceId::from("1")),
+        );
+        model.upsert_workspace(WorkspaceId::from("1"), "1".to_string());
+        model.attach_workspace_to_output(WorkspaceId::from("1"), OutputId::from("eDP-1"));
+        model.set_workspace_layout_space(
+            WorkspaceId::from("1"),
+            Some(hypreact_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+        );
+        model.set_current_output(OutputId::from("eDP-1"));
+        model.set_current_workspace(WorkspaceId::from("1"));
+
+        for id in ["win-terminal", "win-monitor", "win-editor", "win-preview-editor"] {
+            let window_id = WindowId::from(id.to_string());
+            model.insert_window(
+                window_id.clone(),
+                Some(WorkspaceId::from("1")),
+                Some(OutputId::from("eDP-1")),
+            );
+            model.set_window_mapped(window_id, true);
+        }
+
+        let before = placement_for_workspace(&mut service, &model, "1")
+            .expect("initial placement")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let top_stack_y = before[&WindowId::from("win-monitor")].y;
+
+        model.remove_window(WindowId::from("win-monitor"));
+
+        let after = placement_for_workspace(&mut service, &model, "1")
+            .expect("placement after close")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(after[&WindowId::from("win-editor")].y, top_stack_y);
+        assert!(
+            after[&WindowId::from("win-preview-editor")].y > after[&WindowId::from("win-editor")].y
+        );
     }
 
     #[test]

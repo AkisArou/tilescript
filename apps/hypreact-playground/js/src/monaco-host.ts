@@ -33,7 +33,7 @@ interface MonacoHostHandle {
   host: HTMLElement;
   monaco: typeof monaco;
   editor: monaco.editor.IStandaloneCodeEditor;
-  modelPaths: string[];
+  modelPaths: Set<string>;
   activePath: string | null;
   sourceLibs: Map<string, { content: string; dispose: monaco.IDisposable }>;
   changeDisposable?: monaco.IDisposable;
@@ -64,6 +64,7 @@ let configured = false;
 let cssLspRegistered = false;
 let luaConfigured = false;
 let fennelConfigured = false;
+const sharedModelRefCounts = new Map<string, number>();
 
 function ensureMonacoStyles() {
   const styleId = "hypreact-monaco-host-css";
@@ -304,7 +305,7 @@ function toMonacoLocations(result: unknown) {
 }
 
 async function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
-  handle.modelPaths = models.map((model) => model.path);
+  const nextModelPaths = new Set(models.map((model) => model.path));
   const nextTypeScriptPaths = new Set<string>();
 
   if (models.some((model) => model.language === "lua")) {
@@ -333,15 +334,15 @@ async function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
 
     const uri = monaco.Uri.parse(model.path);
     const existingModel = monaco.editor.getModel(uri);
-    const fileModel =
-      existingModel ??
-      monaco.editor.createModel(model.value, model.language, uri);
+    const fileModel = existingModel ?? createSharedModel(model);
 
     if (fileModel.getLanguageId() !== model.language) {
+      console.log("[playground] monaco setModelLanguage", model.path, model.language);
       monaco.editor.setModelLanguage(fileModel, model.language);
     }
 
     if (fileModel.getValue() !== model.value) {
+      console.log("[playground] monaco setValue", model.path);
       fileModel.setValue(model.value);
       if (model.language === "css") {
         void updateCssDocument(fileModel);
@@ -358,6 +359,18 @@ async function syncModels(handle: MonacoHostHandle, models: MonacoModel[]) {
       handle.sourceLibs.delete(path);
     }
   }
+
+  for (const path of handle.modelPaths) {
+    if (!nextModelPaths.has(path)) {
+      releaseSharedModel(path);
+    }
+  }
+  for (const path of nextModelPaths) {
+    if (!handle.modelPaths.has(path)) {
+      retainSharedModel(path);
+    }
+  }
+  handle.modelPaths = nextModelPaths;
 }
 
 function setActiveModel(handle: MonacoHostHandle, activePath: string | null) {
@@ -455,11 +468,12 @@ export async function createMonacoEditor(
     host,
     monaco,
     editor,
-    modelPaths: [],
+    modelPaths: new Set(),
     activePath: activePath || null,
     sourceLibs: new Map(),
   };
 
+  console.log("[playground] monaco create", activePath);
   await syncModels(handle, models);
   setActiveModel(handle, activePath || null);
 
@@ -493,13 +507,9 @@ export function updateMonacoEditor(
   models: MonacoModel[],
 ) {
   handle.activePath = activePath || null;
+  console.log("[playground] monaco update", activePath, models.length);
   void syncModels(handle, models).then(() => {
     setActiveModel(handle, activePath || null);
-    handle.editor.updateOptions({
-      fontSize: FONT_SIZE,
-      lineHeight: LINE_HEIGHT,
-    });
-    handle.editor.layout();
   });
 }
 
@@ -521,6 +531,7 @@ export function monacoMarkerCount(handle: MonacoHostHandle) {
 }
 
 export function disposeMonacoEditor(handle: MonacoHostHandle) {
+  console.log("[playground] monaco dispose", handle.activePath);
   for (const path of handle.modelPaths) {
     const model = monaco.editor.getModel(monaco.Uri.parse(path));
     if (model?.getLanguageId() === "css") {
@@ -531,9 +542,33 @@ export function disposeMonacoEditor(handle: MonacoHostHandle) {
   handle.openerDisposable?.dispose();
   handle.editor.dispose();
   for (const path of handle.modelPaths) {
-    monaco.editor.getModel(monaco.Uri.parse(path))?.dispose();
+    releaseSharedModel(path);
   }
   for (const sourceLib of handle.sourceLibs.values()) {
     sourceLib.dispose.dispose();
   }
+}
+
+function createSharedModel(model: MonacoModel) {
+  const uri = monaco.Uri.parse(model.path);
+  const created = monaco.editor.createModel(model.value, model.language, uri);
+  sharedModelRefCounts.set(model.path, sharedModelRefCounts.get(model.path) ?? 0);
+  return created;
+}
+
+function retainSharedModel(path: string) {
+  sharedModelRefCounts.set(path, (sharedModelRefCounts.get(path) ?? 0) + 1);
+}
+
+function releaseSharedModel(path: string) {
+  const current = sharedModelRefCounts.get(path);
+  if (current == null) {
+    return;
+  }
+  if (current <= 1) {
+    sharedModelRefCounts.delete(path);
+    monaco.editor.getModel(monaco.Uri.parse(path))?.dispose();
+    return;
+  }
+  sharedModelRefCounts.set(path, current - 1);
 }

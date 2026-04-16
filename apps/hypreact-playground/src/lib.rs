@@ -42,15 +42,9 @@ fn AppShell() -> impl IntoView {
 
 fn install_config_loader(app_state: AppState) {
     Effect::new(move |_| {
+        let request_id = app_state.latest_config_request_id.get();
         let buffers = app_state.editor_buffers.get();
         let dynamic_layouts = app_state.dynamic_layouts.get();
-        let request_key = format!("{buffers:?}");
-
-        if app_state.latest_config_request_key.get_untracked() == request_key {
-            return;
-        }
-
-        app_state.latest_config_request_key.set(request_key.clone());
 
         wasm_bindgen_futures::spawn_local(async move {
             match layout_runtime::load_config_from_buffers(
@@ -61,13 +55,13 @@ fn install_config_loader(app_state: AppState) {
             .await
             {
                 Ok(config) => {
-                    if app_state.latest_config_request_key.get_untracked() != request_key {
+                    if app_state.latest_config_request_id.get_untracked() != request_id {
                         return;
                     }
                     app_state.apply_loaded_config(config);
                 }
                 Err(error) => {
-                    if app_state.latest_config_request_key.get_untracked() != request_key {
+                    if app_state.latest_config_request_id.get_untracked() != request_id {
                         return;
                     }
                     app_state.apply_config_error(error);
@@ -80,6 +74,9 @@ fn install_config_loader(app_state: AppState) {
 fn install_preview_renderer(app_state: AppState) {
     Effect::new(move |_| {
         let request_id = app_state.preview_eval_request.get();
+        let Some(config) = app_state.loaded_config.get() else {
+            return;
+        };
         let buffers = app_state.editor_buffers.get();
         let dynamic_layouts = app_state.dynamic_layouts.get();
         let session = app_state.session.get_untracked();
@@ -91,6 +88,7 @@ fn install_preview_renderer(app_state: AppState) {
                 app_state.authoring_language.get_untracked(),
                 &buffers,
                 &dynamic_layouts,
+                &config,
                 &model,
                 &manual_layouts,
             )

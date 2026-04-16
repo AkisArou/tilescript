@@ -1299,6 +1299,57 @@ mod tests {
     }
 
     #[test]
+    fn directional_focus_left_prefers_master_column_over_stack_memory() {
+        use crate::focus::{FocusTree, FocusTreeWindowGeometry};
+
+        let entries = vec![
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("win-terminal"),
+                geometry: WindowGeometry { x: 8, y: 29, width: 926, height: 838 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("win-monitor"),
+                geometry: WindowGeometry { x: 942, y: 29, width: 618, height: 275 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("win-editor"),
+                geometry: WindowGeometry { x: 942, y: 310, width: 618, height: 276 },
+            },
+            FocusTreeWindowGeometry {
+                window_id: WindowId::from("win-preview-editor"),
+                geometry: WindowGeometry { x: 942, y: 592, width: 618, height: 275 },
+            },
+        ];
+        let focus_tree = FocusTree::from_window_geometries(&entries);
+        let candidates = entries
+            .iter()
+            .map(|entry| WindowGeometryCandidate {
+                window_id: entry.window_id.clone(),
+                geometry: entry.geometry,
+                scope_path: focus_tree.scope_path(&entry.window_id).unwrap_or(&[]).to_vec(),
+            })
+            .collect::<Vec<_>>();
+        let mut remembered = BTreeMap::new();
+        for scope_key in focus_tree.scope_path(&WindowId::from("win-preview-editor")).unwrap_or(&[]) {
+            remembered.insert(scope_key.clone(), WindowId::from("win-preview-editor"));
+        }
+        for scope_key in focus_tree.scope_path(&WindowId::from("win-monitor")).unwrap_or(&[]) {
+            remembered.insert(scope_key.clone(), WindowId::from("win-monitor"));
+        }
+
+        assert_eq!(
+            select_directional_focus_candidate(
+                &candidates,
+                Some(WindowId::from("win-monitor")),
+                NavigationDirection::Left,
+                &remembered,
+                Some(&focus_tree),
+            ),
+            Some(WindowId::from("win-terminal"))
+        );
+    }
+
+    #[test]
     fn managed_window_swap_positions_resolves_both_indices() {
         let window_order = vec![window_id(10), window_id(20), window_id(30)];
 

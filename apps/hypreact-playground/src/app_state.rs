@@ -33,7 +33,7 @@ pub struct AppState {
     pub open_file_ids: RwSignal<Vec<EditorFileKey>>,
     pub directory_open_state: RwSignal<BTreeMap<String, bool>>,
     pub dynamic_layouts: RwSignal<Vec<DynamicLayoutFileSet>>,
-    pub latest_config_request_key: RwSignal<String>,
+    pub latest_config_request_id: RwSignal<u64>,
     pub preview_eval_request: RwSignal<u64>,
     pub loaded_config: RwSignal<Option<hypreact_config::model::Config>>,
 }
@@ -79,7 +79,7 @@ impl AppState {
             open_file_ids: RwSignal::new(open_file_ids),
             directory_open_state: RwSignal::new(directory_open_state),
             dynamic_layouts: RwSignal::new(dynamic_layouts),
-            latest_config_request_key: RwSignal::new(String::new()),
+            latest_config_request_id: RwSignal::new(1),
             preview_eval_request: RwSignal::new(1),
             loaded_config: RwSignal::new(None),
         }
@@ -90,7 +90,7 @@ impl AppState {
             buffers.insert(file_id, next_value);
         });
         self.persist_ui_state();
-        self.request_preview_reevaluation();
+        self.request_config_reload();
     }
 
     pub fn set_authoring_language(&self, next_language: AuthoringLanguage) {
@@ -102,7 +102,7 @@ impl AppState {
         self.open_file_ids.set(initial_open_editor_files(next_language));
         self.active_file_id.set(initial_open_editor_files(next_language).first().cloned());
         self.persist_ui_state();
-        self.request_preview_reevaluation();
+        self.request_config_reload();
     }
 
     pub fn apply_loaded_config(&self, config: hypreact_config::model::Config) {
@@ -118,7 +118,6 @@ impl AppState {
     }
 
     pub fn apply_loaded_preview(&self, preview: EvaluatedPreview) {
-        self.loaded_config.set(Some(preview.config.clone()));
         self.session.update(|state| state.apply_loaded_preview(preview));
         self.persist_ui_state();
     }
@@ -129,6 +128,10 @@ impl AppState {
 
     pub fn request_preview_reevaluation(&self) {
         self.preview_eval_request.update(|value| *value += 1);
+    }
+
+    pub fn request_config_reload(&self) {
+        self.latest_config_request_id.update(|value| *value += 1);
     }
 
     pub fn select_editor_file(&self, file_id: EditorFileKey) {
@@ -197,7 +200,7 @@ impl AppState {
             self.select_editor_file(first_file.key.clone());
         } else {
             self.persist_ui_state();
-            self.request_preview_reevaluation();
+            self.request_config_reload();
         }
     }
 

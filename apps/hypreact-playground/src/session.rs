@@ -24,10 +24,25 @@ use crate::layout_runtime::{
     EvaluatedPreview, apply_layout_selection, resize_step_units_for_partition,
 };
 
-const RANDOM_WINDOW_APPS: [(&str, &str, &str); 3] = [
-    ("random-foot", "Terminal", "foot"),
-    ("random-htop", "Process Monitor", "htop"),
-    ("random-nvim", "Editor", "nvim"),
+struct PreviewWindowSeed {
+    id_prefix: &'static str,
+    title: &'static str,
+    app_id: &'static str,
+}
+
+const PRIORITY_WINDOW_APPS: [PreviewWindowSeed; 2] = [
+    PreviewWindowSeed {
+        id_prefix: "win-preview-editor",
+        title: "Playground Editor",
+        app_id: "playground-editor",
+    },
+    PreviewWindowSeed { id_prefix: "win-binds", title: "Keybinds", app_id: "binds" },
+];
+
+const RANDOM_WINDOW_APPS: [PreviewWindowSeed; 3] = [
+    PreviewWindowSeed { id_prefix: "random-nvim", title: "Editor", app_id: "nvim" },
+    PreviewWindowSeed { id_prefix: "random-htop", title: "Process Monitor", app_id: "htop" },
+    PreviewWindowSeed { id_prefix: "random-foot", title: "Terminal", app_id: "foot" },
 ];
 
 const DEFAULT_PREVIEW_WORKSPACE: &str = "1";
@@ -215,16 +230,15 @@ fn build_demo_model() -> WmModel {
         Some(DrawableSpace { width: 1240, height: 760 }),
     );
 
-    insert_demo_window(&mut model, "win-terminal", &workspace_one, &output_id, "Terminal", "foot");
     insert_demo_window(
         &mut model,
-        "win-monitor",
+        "win-preview-editor",
         &workspace_one,
         &output_id,
-        "Process Monitor",
-        "htop",
+        "Playground Editor",
+        "playground-editor",
     );
-    insert_demo_window(&mut model, "win-editor", &workspace_one, &output_id, "Editor", "nvim");
+    insert_demo_window(&mut model, "win-binds", &workspace_one, &output_id, "Keybinds", "binds");
     insert_demo_window(
         &mut model,
         "win-secondary-foot",
@@ -242,7 +256,7 @@ fn build_demo_model() -> WmModel {
         "htop",
     );
 
-    model.set_window_focused(Some(window_id("win-editor")));
+    model.set_window_focused(Some(window_id("win-preview-editor")));
     model
 }
 
@@ -367,7 +381,19 @@ fn apply_host_action_with_session(
         }
     }
 
-    apply_host_action(&mut state.model, action, config);
+    match action {
+        HostAction::FocusDirection { direction } => {
+            focus_preview_window_by_direction(state, direction);
+        }
+        HostAction::MoveDirection { direction } => {
+            move_preview_window_by_direction(state, direction);
+        }
+        HostAction::ResizeDirection { direction } => {
+            let _ = config;
+            resize_preview_window_by_direction(state, direction);
+        }
+        other => apply_host_action(&mut state.model, other, config),
+    }
 }
 
 fn activate_workspace(model: &mut WmModel, workspace_id: &str) {
@@ -578,26 +604,60 @@ fn resize_direction(direction: FocusDirection) -> ResizeDirection {
 }
 
 fn spawn_random_window(model: &mut WmModel) {
-    let current_count = model.windows.len();
-    let selection = &RANDOM_WINDOW_APPS[current_count % RANDOM_WINDOW_APPS.len()];
-    let next_index = next_random_window_index(model, selection.0);
-    let window_id = window_id(format!("{}-{next_index}", selection.0));
     let workspace_id = model.current_workspace_id().cloned();
     let output_id = model.current_output_id().cloned();
+    let Some(selection) = select_next_spawn_window(model, workspace_id.as_ref()) else {
+        return;
+    };
+
+    let window_id =
+        if PRIORITY_WINDOW_APPS.iter().any(|candidate| candidate.app_id == selection.app_id) {
+            window_id(selection.id_prefix)
+        } else {
+            let next_index = next_random_window_index(model, selection.id_prefix);
+            window_id(format!("{}-{next_index}", selection.id_prefix))
+        };
 
     model.insert_window(window_id.clone(), workspace_id, output_id.clone());
     model.set_window_mapped(window_id.clone(), true);
     model.set_window_identity(
         window_id.clone(),
-        Some(selection.1.to_string()),
-        Some(selection.2.to_string()),
-        Some(selection.2.to_string()),
-        Some(selection.2.to_string()),
+        Some(selection.title.to_string()),
+        Some(selection.app_id.to_string()),
+        Some(selection.app_id.to_string()),
+        Some(selection.app_id.to_string()),
         None,
         None,
         false,
     );
     model.set_window_focused(Some(window_id));
+}
+
+fn select_next_spawn_window<'a>(
+    model: &WmModel,
+    workspace_id: Option<&WorkspaceId>,
+) -> Option<&'a PreviewWindowSeed>
+where
+    'static: 'a,
+{
+    for candidate in &PRIORITY_WINDOW_APPS {
+        if !workspace_has_app(model, workspace_id, candidate.app_id) {
+            return Some(candidate);
+        }
+    }
+
+    let current_count = workspace_window_count(model, workspace_id);
+    RANDOM_WINDOW_APPS.get(current_count % RANDOM_WINDOW_APPS.len())
+}
+
+fn workspace_has_app(model: &WmModel, workspace_id: Option<&WorkspaceId>, app_id: &str) -> bool {
+    model.windows.values().any(|window| {
+        window.workspace_id.as_ref() == workspace_id && window.app_id.as_deref() == Some(app_id)
+    })
+}
+
+fn workspace_window_count(model: &WmModel, workspace_id: Option<&WorkspaceId>) -> usize {
+    model.windows.values().filter(|window| window.workspace_id.as_ref() == workspace_id).count()
 }
 
 fn ensure_preview_workspace(model: &mut WmModel, workspace_name: &str) -> WorkspaceId {
