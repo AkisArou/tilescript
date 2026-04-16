@@ -29,7 +29,7 @@ fn to_lsp_diagnostic(diagnostic: &CssDiagnostic) -> Diagnostic {
         },
         severity: Some(to_lsp_severity(diagnostic.severity)),
         code: Some(NumberOrString::String(diagnostic_code(diagnostic.code).to_string())),
-        source: Some("spiders-css".to_string()),
+        source: Some("tilescript-css".to_string()),
         message: diagnostic.message.clone(),
         ..Diagnostic::default()
     }

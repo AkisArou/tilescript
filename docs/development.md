@@ -9,7 +9,7 @@
 - `crates/runtimes/js/native` - native QuickJS authored config and layout runtime
 - `crates/layout-runtime` - end-to-end workspace evaluation and placement logic
 - `crates/ffi` - Rust bridge exposed to the Hyprland plugin
-- `apps/tilescript-playground` - browser playground modeled on `spiders-wm-www` preview/editor/system flow
+- `apps/tilescript-playground` - browser playground modeled
 - `plugin/hyprland/src/plugin.cpp` - Hyprland-side plugin adapter
 - `packages/sdk/js` - authored config/layout SDK surface
 - `packages/lsp/vscode` - VS Code client for `tilescript-css-lsp`
@@ -65,13 +65,11 @@ Playground:
 make playground
 ```
 
-`apps/tilescript-playground` intentionally follows the `spiders-wm-www` shape for the applicable browser features:
+`apps/tilescript-playground`
 
 - preview route
 - editor route with workspace file tree and live buffers
 - system route with state/diagnostics
-
-It does not carry over old `spiders-wm-www` pieces that do not apply in `tilescript` yet, such as the CLI route and the Monaco/browser IPC stack.
 
 ## Hyprland Development Loop
 

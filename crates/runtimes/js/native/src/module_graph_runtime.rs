@@ -651,11 +651,11 @@ fn js_value_to_json<'js>(
     value: Value<'js>,
 ) -> Result<Option<serde_json::Value>, String> {
     let globals = ctx.globals();
-    globals.set("__spiders_tmp", value).map_err(|error| format_js_error(ctx.clone(), error))?;
+    globals.set("__tilescript_tmp", value).map_err(|error| format_js_error(ctx.clone(), error))?;
 
     let json_result = (|| {
         let json_text: Value = ctx
-            .eval("globalThis.__spiders_tmp === undefined ? undefined : JSON.stringify(globalThis.__spiders_tmp)")
+            .eval("globalThis.__tilescript_tmp === undefined ? undefined : JSON.stringify(globalThis.__tilescript_tmp)")
             .map_err(|error| format_js_error(ctx.clone(), error))?;
 
         if json_text.is_undefined() {
@@ -670,7 +670,7 @@ fn js_value_to_json<'js>(
         Ok(Some(json))
     })();
 
-    let _ = globals.remove("__spiders_tmp");
+    let _ = globals.remove("__tilescript_tmp");
     json_result
 }
 
@@ -678,14 +678,14 @@ pub fn format_js_error(ctx: Ctx<'_>, error: rquickjs::Error) -> String {
     if error.is_exception() {
         let globals = ctx.globals();
         let caught = ctx.catch();
-        if globals.set("__spiders_error", caught).is_ok() {
+        if globals.set("__tilescript_error", caught).is_ok() {
             let rendered = ctx
                 .eval::<JsString, _>(
-                    "(() => { const error = globalThis.__spiders_error; return error && error.stack ? String(error.stack) : String(error); })()",
+                    "(() => { const error = globalThis.__tilescript_error; return error && error.stack ? String(error.stack) : String(error); })()",
                 )
                 .and_then(|text| text.to_string())
                 .ok();
-            let _ = globals.remove("__spiders_error");
+            let _ = globals.remove("__tilescript_error");
             if let Some(rendered) = rendered {
                 return rendered;
             }

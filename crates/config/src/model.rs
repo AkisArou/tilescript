@@ -854,8 +854,8 @@ mod tests {
     #[test]
     fn config_paths_new_supports_direct_file_overrides() {
         let temp_dir = std::env::temp_dir();
-        let authored = temp_dir.join("spiders-direct-authored.js");
-        let runtime = temp_dir.join("spiders-direct-runtime.js");
+        let authored = temp_dir.join("tilescript-direct-authored.js");
+        let runtime = temp_dir.join("tilescript-direct-runtime.js");
 
         let paths = ConfigPaths::new(authored.clone(), runtime.clone());
 
