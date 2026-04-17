@@ -11,9 +11,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(TILESCRIPT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH "tilescript repository root")
 set(TILESCRIPT_FFI_TARGET_DIR "${TILESCRIPT_ROOT}/target/release" CACHE PATH "Rust build output directory")
 set(TILESCRIPT_FFI_STATICLIB "${TILESCRIPT_FFI_TARGET_DIR}/libtilescript_ffi.a")
+set(TILESCRIPT_HYPR_OUTPUT_NAME "tilescript-hypr" CACHE STRING "Output name for the Hyprland plugin shared object")
 set(HYPRLAND_SOURCE_DIR "/usr/include/hyprland" CACHE PATH "Path to installed Hyprland headers or a Hyprland checkout root")
+set(HYPRLAND_PKG_CONFIG_DIR "" CACHE PATH "Optional pkg-config directory containing hyprland.pc for the Hyprland build under test")
 
 find_package(PkgConfig REQUIRED)
+if(HYPRLAND_PKG_CONFIG_DIR)
+  set(ENV{PKG_CONFIG_PATH} "${HYPRLAND_PKG_CONFIG_DIR}:$ENV{PKG_CONFIG_PATH}")
+endif()
 pkg_check_modules(HYPRLAND REQUIRED hyprland)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 pkg_check_modules(PIXMAN REQUIRED pixman-1)
@@ -38,6 +43,8 @@ target_include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugin/hyprland/include"
     "${HYPRLAND_SOURCE_DIR}"
+    "${HYPRLAND_SOURCE_DIR}/protocols"
+    "${HYPRLAND_SOURCE_DIR}/src"
     ${HYPRLAND_INCLUDE_DIRS}
     ${JSONCPP_INCLUDE_DIRS}
     ${PIXMAN_INCLUDE_DIRS}
@@ -51,5 +58,5 @@ set_target_properties(
   tilescript-hypr
   PROPERTIES
     PREFIX ""
-    OUTPUT_NAME "tilescript-hypr"
+    OUTPUT_NAME "${TILESCRIPT_HYPR_OUTPUT_NAME}"
 )

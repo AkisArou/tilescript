@@ -1,5 +1,6 @@
 target/
 build/
+build-hypr-dev/
 .cache/
 
 CMakeFiles/
@@ -38,9 +39,6 @@ packages/lsp/vscode/server/
 !.vscode/extensions.json
 .idea/
 
-dev/test-config/.tilescript/
-dev/test-config/.tilescript-build/
-examples/js/.tilescript/
-examples/js/.tilescript-build/
-examples/lua/.tilescript/
-examples/lua/.tilescript-build/
+.tilescript-build/
+.tilescript/
+third_party/Hyprland/build/

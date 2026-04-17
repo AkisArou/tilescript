@@ -84,6 +84,44 @@ export default function layout(ctx: LayoutContext) {
 5. Point the Hyprland plugin at your config directory.
 6. Reload layouts or reload the plugin after changes.
 
+## Hyprland Development
+
+For local plugin development, Hyprland is tracked as a git submodule at `third_party/Hyprland/`.
+
+Bootstrap the submodule and build Hyprland in debug mode:
+
+```sh
+make hypr-bootstrap
+```
+
+Build the nested-dev plugin against that Hyprland tree:
+
+```sh
+make hypr-plugin-dev
+```
+
+Launch nested Hyprland with the repo dev config:
+
+```sh
+make hypr-run-dev
+```
+
+This updates/builds the Hyprland submodule, builds the dev plugin, and launches `dev/hypr/hyprland.conf` with the Hyprland binary from `third_party/Hyprland/build`.
+
+`dev/hypr/hyprland.conf` uses repo-relative paths:
+
+- `plugin = ../../build-hypr-dev/tilescript-hypr-dev.so`
+- `config_path = ../../dev/test`
+
+For your normal daily-driver Hyprland session:
+
+```sh
+make hypr-plugin
+make hypr-plugin-snippet
+```
+
+`make hypr-plugin-snippet` prints the `plugin` block to paste into your normal Hyprland config. It does not modify files or load the plugin for you.
+
 When the plugin resolves your config root, it bootstraps missing files from `examples/js/` and syncs editor support files into `.sdk/` under that root.
 
 Example Hyprland config:

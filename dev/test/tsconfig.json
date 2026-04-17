@@ -1,7 +1,6 @@
 {
-  "extends": "../packages/tsconfig/tsconfig.react.json",
+  "extends": "../../packages/tsconfig/tsconfig.react.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "jsxImportSource": "@tilescript/sdk",
     "noEmit": true,
     "declaration": false,
@@ -10,7 +9,7 @@
     "composite": false,
     "paths": {
       "@tilescript/sdk/*": [
-        "../packages/sdk/js/src/*"
+        "../../packages/sdk/js/src/*"
       ]
     },
     "tsBuildInfoFile": "./node_modules/.tsbuild/test-config.tsbuildinfo"

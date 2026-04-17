@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 
@@ -224,6 +225,14 @@ extern "C" EXPORT std::string pluginAPIVersion() {
 extern "C" EXPORT PLUGIN_DESCRIPTION_INFO pluginInit(HANDLE handle) {
   PHANDLE = handle;
   setPluginHandle(handle);
+
+  const auto hyprlandVersion = HyprlandAPI::getHyprlandVersion(PHANDLE);
+  if (!hyprlandVersion.hash.empty() && hyprlandVersion.hash != GIT_COMMIT_HASH) {
+    std::cerr << "[tilescript-hypr] Hyprland hash mismatch: plugin built for "
+              << GIT_COMMIT_HASH << " but compositor is running " << hyprlandVersion.hash
+              << std::endl;
+    throw std::runtime_error("tilescript-hypr built against a different Hyprland revision");
+  }
 
   HyprlandAPI::addConfigValue(PHANDLE, "plugin:tilescript-hypr:config_path",
                               Hyprlang::CConfigValue(""));

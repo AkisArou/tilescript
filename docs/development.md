@@ -25,7 +25,7 @@
 Recommended entrypoints:
 
 ```sh
-make plugin
+make hypr-plugin
 make playground
 make test
 make live
@@ -73,15 +73,73 @@ make playground
 
 ## Hyprland Development Loop
 
-Typical plugin loop:
+There are now two Hyprland plugin workflows:
+
+- daily-driver plugin build in `build/tilescript-hypr.so`
+- nested debug plugin build in `build-hypr-dev/tilescript-hypr-dev.so`
+
+Hyprland is tracked as a git submodule at `third_party/Hyprland/`.
+
+One-time prerequisites:
 
 ```sh
-make plugin
-cp build/tilescript-hypr.so build/tilescript-hypr-live.so
-hyprctl plugin load /absolute/path/to/build/tilescript-hypr-live.so
+git submodule update --init --recursive
+make -C third_party/Hyprland debug
 ```
 
-Use a fresh `.so` filename when testing repeatedly to avoid stale deleted plugin mappings.
+Build the nested-debug plugin against that exact Hyprland tree:
+
+```sh
+make hypr-plugin-dev
+```
+
+Launch a nested debug Hyprland session with the repo config:
+
+```sh
+make hypr-run-dev
+```
+
+That target:
+
+- updates the Hyprland submodule and runs `make -C third_party/Hyprland debug`
+- configures `tilescript` directly against `third_party/Hyprland/src` and `third_party/Hyprland/build`
+- launches `third_party/Hyprland/build/Hyprland --config dev/hypr/hyprland.conf` when available, otherwise falls back to `third_party/Hyprland/build/start/start-hyprland`
+
+If the plugin was built against a different Hyprland revision than the running compositor, plugin init now fails with a clear hash-mismatch error instead of relying on undefined ABI behavior.
+
+`dev/hypr/hyprland.conf` now uses relative paths on purpose:
+
+- `plugin = ../../build-hypr-dev/tilescript-hypr-dev.so`
+- `config_path = ../../dev/test`
+
+Those are resolved relative to `dev/hypr/hyprland.conf`, so they stay portable across machines as long as the repo layout stays the same.
+
+For your daily-driver Hyprland session, build the normal plugin and generate a portable include snippet:
+
+```sh
+make hypr-plugin
+make hypr-plugin-snippet
+```
+
+`make hypr-plugin-snippet` prints the exact `plugin` block to paste into your normal Hyprland config. It does not write a config file or load the plugin automatically.
+
+That keeps daily-driver loading on `build/tilescript-hypr.so` separate from the nested debug session using `build-hypr-dev/tilescript-hypr-dev.so`.
+
+Reload loop from inside the nested session:
+
+```sh
+make hypr-reload
+```
+
+That rebuilds the nested plugin, copies it to `build-hypr-dev/tilescript-hypr-dev-live.so`, and prints the unload/load command.
+
+Reload loop for your daily-driver Hyprland session:
+
+```sh
+make hypr-user-reload
+```
+
+That rebuilds the normal plugin, copies it to `build/tilescript-hypr-live.so`, and prints the unload/load command for the daily-driver instance.
 
 Useful runtime inspection commands:
 
