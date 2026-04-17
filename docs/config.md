@@ -8,7 +8,7 @@ If `config_path` is omitted, the plugin falls back to `~/.config/tilescript` and
 
 If that config root does not exist yet, the plugin bootstraps it from the repo `examples/js/`.
 
-The current recommended shape is:
+Example config shape:
 
 ```ts
 import type { TilescriptConfig } from "@tilescript/sdk/config";
@@ -126,6 +126,6 @@ Managed paths under the config root:
 - `.sdk/src/*.d.ts`
 - `.sdk/src/*.js`
 
-The recommended `tsconfig.json` in the config root should extend `./.sdk/tsconfig.json`.
+`tsconfig.json` in the config root should extend `./.sdk/tsconfig.json`.
 
-That keeps external config directories self-contained for TypeScript and editor tooling without depending on this repo checkout.
+This makes external config directories self-contained for TypeScript and editor tooling without depending on this repo checkout.

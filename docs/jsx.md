@@ -29,12 +29,12 @@ Supported JSX elements:
 ### `window`
 
 - claims at most one matching unclaimed window
-- useful for explicit placements
+- suited to explicit placements
 
 ### `slot`
 
 - claims zero or more matching unclaimed windows
-- useful for stacks, sidebars, and catch-all regions
+- suited to stacks, sidebars, and catch-all regions
 
 ## Props
 
@@ -150,4 +150,4 @@ export default function Layout() {
 - claim order is document order; later nodes only see windows not claimed by earlier nodes
 - floating windows are compositor-rendered and can override tiled placement rules
 - layout functions are called on every state change; return consistent results to avoid flickering
-- slot `take` is useful for limiting window captures to specific regions
+- slot `take` limits window captures to specific regions

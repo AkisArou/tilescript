@@ -88,10 +88,16 @@ export default function layout(ctx: LayoutContext) {
 
 For local plugin development, Hyprland is tracked as a git submodule at `third_party/Hyprland/`.
 
-Bootstrap the submodule and build Hyprland in debug mode:
+Bootstrap the submodule:
 
 ```sh
 make hypr-bootstrap
+```
+
+Build Hyprland in debug mode when needed:
+
+```sh
+make hypr-build
 ```
 
 Build the nested-dev plugin against that Hyprland tree:
@@ -100,17 +106,25 @@ Build the nested-dev plugin against that Hyprland tree:
 make hypr-plugin-dev
 ```
 
+That copies the dev plugin to:
+
+```text
+${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr-dev.so
+```
+
 Launch nested Hyprland with the repo dev config:
 
 ```sh
 make hypr-run-dev
 ```
 
-This updates/builds the Hyprland submodule, builds the dev plugin, and launches `dev/hypr/hyprland.conf` with the Hyprland binary from `third_party/Hyprland/build`.
+This builds the dev plugin and launches `third_party/Hyprland/build/Hyprland --config dev/hypr/hyprland.conf`.
 
-`dev/hypr/hyprland.conf` uses repo-relative paths:
+If Hyprland is not built yet, run `make hypr-build` first.
 
-- `plugin = ../../build-hypr-dev/tilescript-hypr-dev.so`
+`dev/hypr/hyprland.conf` uses:
+
+- `plugin = $XDG_DATA_HOME/tilescript/tilescript-hypr-dev.so`
 - `config_path = ../../dev/test`
 
 For your normal daily-driver Hyprland session:
@@ -122,12 +136,18 @@ make hypr-plugin-snippet
 
 `make hypr-plugin-snippet` prints the `plugin` block to paste into your normal Hyprland config. It does not modify files or load the plugin for you.
 
+`make hypr-plugin` copies the daily-driver plugin to:
+
+```text
+${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr.so
+```
+
 When the plugin resolves your config root, it bootstraps missing files from `examples/js/` and syncs editor support files into `.sdk/` under that root.
 
 Example Hyprland config:
 
 ```ini
-plugin = /absolute/path/to/tilescript/build/tilescript-hypr.so
+plugin = /absolute/path/to/tilescript-hypr.so
 
 plugin {
   tilescript {

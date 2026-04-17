@@ -6,7 +6,7 @@ This document describes the architecture and project model for `tilescript-css-l
 
 `tilescript-css-lsp` provides editor features for the `tilescript` CSS language and its project-aware integration with authored TSX layouts.
 
-It is intentionally CSS-focused.
+It is CSS-focused.
 
 It is not a replacement for TypeScript or TSX language tooling.
 
@@ -17,7 +17,7 @@ It is not a replacement for TypeScript or TSX language tooling.
 - CSS language metadata
 - parser and compilation logic
 - editor-agnostic analysis primitives
-- source-ranged diagnostics and symbols that are also useful outside the LSP
+- source-ranged diagnostics and symbols that also apply outside the LSP
 
 `tilescript-css-lsp` owns:
 
@@ -59,7 +59,7 @@ Its scope includes:
 
 This is the layout-local CSS scope.
 
-Sibling layouts are intentionally isolated from each other.
+Sibling layouts are isolated from each other.
 
 ## Selector Boundary Rules
 
@@ -77,7 +77,7 @@ That means:
 
 The LSP indexes authored selector data from TSX using `oxc`.
 
-It currently extracts selector-relevant metadata from:
+It extracts selector-relevant metadata from:
 
 - `workspace`
 - `group`
@@ -92,7 +92,7 @@ It indexes:
 
 ## Implemented Feature Surface
 
-`tilescript-css-lsp` currently provides:
+`tilescript-css-lsp` provides:
 
 - diagnostics from `tilescript-css` shared analysis
 - project-aware diagnostics for unknown selector ids and classes
@@ -109,7 +109,7 @@ It indexes:
 
 ## VS Code Workspace Setup
 
-The VS Code extension client is intentionally opt-in.
+The VS Code extension client is opt-in.
 
 Create `.vscode/settings.json` in your `tilescript` config workspace with:
 

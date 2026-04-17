@@ -48,7 +48,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-`cmake --build build` now builds the Rust release FFI staticlib automatically before linking `build/tilescript-hypr.so`.
+`cmake --build build` builds the Rust release FFI staticlib before linking `build/tilescript-hypr.so`.
 
 JS tooling:
 
@@ -73,7 +73,7 @@ make playground
 
 ## Hyprland Development Loop
 
-There are now two Hyprland plugin workflows:
+There are two Hyprland plugin workflows:
 
 - daily-driver plugin build in `build/tilescript-hypr.so`
 - nested debug plugin build in `build-hypr-dev/tilescript-hypr-dev.so`
@@ -83,8 +83,8 @@ Hyprland is tracked as a git submodule at `third_party/Hyprland/`.
 One-time prerequisites:
 
 ```sh
-git submodule update --init --recursive
-make -C third_party/Hyprland debug
+make hypr-bootstrap
+make hypr-build
 ```
 
 Build the nested-debug plugin against that exact Hyprland tree:
@@ -92,6 +92,8 @@ Build the nested-debug plugin against that exact Hyprland tree:
 ```sh
 make hypr-plugin-dev
 ```
+
+That copies the dev plugin to `${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr-dev.so`.
 
 Launch a nested debug Hyprland session with the repo config:
 
@@ -101,20 +103,19 @@ make hypr-run-dev
 
 That target:
 
-- updates the Hyprland submodule and runs `make -C third_party/Hyprland debug`
 - configures `tilescript` directly against `third_party/Hyprland/src` and `third_party/Hyprland/build`
-- launches `third_party/Hyprland/build/Hyprland --config dev/hypr/hyprland.conf` when available, otherwise falls back to `third_party/Hyprland/build/start/start-hyprland`
+- launches `third_party/Hyprland/build/Hyprland --config dev/hypr/hyprland.conf`
 
-If the plugin was built against a different Hyprland revision than the running compositor, plugin init now fails with a clear hash-mismatch error instead of relying on undefined ABI behavior.
+If the Hyprland binary is missing, `hypr-run-dev` tells you to run `make hypr-build` first.
 
-`dev/hypr/hyprland.conf` now uses relative paths on purpose:
+If the plugin was built against a different Hyprland revision than the running compositor, plugin init fails with a clear hash-mismatch error instead of relying on undefined ABI behavior.
 
-- `plugin = ../../build-hypr-dev/tilescript-hypr-dev.so`
+`dev/hypr/hyprland.conf` uses:
+
+- `plugin = $XDG_DATA_HOME/tilescript/tilescript-hypr-dev.so`
 - `config_path = ../../dev/test`
 
-Those are resolved relative to `dev/hypr/hyprland.conf`, so they stay portable across machines as long as the repo layout stays the same.
-
-For your daily-driver Hyprland session, build the normal plugin and generate a portable include snippet:
+For a daily-driver Hyprland session, build the normal plugin and print the corresponding config snippet:
 
 ```sh
 make hypr-plugin
@@ -123,7 +124,7 @@ make hypr-plugin-snippet
 
 `make hypr-plugin-snippet` prints the exact `plugin` block to paste into your normal Hyprland config. It does not write a config file or load the plugin automatically.
 
-That keeps daily-driver loading on `build/tilescript-hypr.so` separate from the nested debug session using `build-hypr-dev/tilescript-hypr-dev.so`.
+Daily-driver loading uses `${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr.so`, while the nested debug session uses `${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr-dev.so`.
 
 Reload loop from inside the nested session:
 
@@ -131,7 +132,7 @@ Reload loop from inside the nested session:
 make hypr-reload
 ```
 
-That rebuilds the nested plugin, copies it to `build-hypr-dev/tilescript-hypr-dev-live.so`, and prints the unload/load command.
+That rebuilds the nested plugin, copies it to `${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr-dev.so`, and prints the unload/load command.
 
 Reload loop for your daily-driver Hyprland session:
 
@@ -139,7 +140,7 @@ Reload loop for your daily-driver Hyprland session:
 make hypr-user-reload
 ```
 
-That rebuilds the normal plugin, copies it to `build/tilescript-hypr-live.so`, and prints the unload/load command for the daily-driver instance.
+That rebuilds the normal plugin, copies it to `${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr.so`, and prints the unload/load command for the daily-driver instance.
 
 Useful runtime inspection commands:
 
@@ -165,7 +166,7 @@ Use it for:
 
 `examples/lua/` mirrors the same starter layout in Lua form.
 
-For external config roots, the Hyprland plugin now manages a local SDK mirror under:
+For external config roots, the Hyprland plugin manages a local SDK mirror under:
 
 - `.sdk/`
 - `.sdk/tsconfig.json`

@@ -49,7 +49,7 @@ For most use cases, `css.validate: false` is the lowest-friction setting to star
 
 ## Development
 
-The extension currently ships a bundled Linux x64 server binary and otherwise falls back to workspace-built binaries.
+The extension ships a bundled Linux x64 server binary and otherwise falls back to workspace-built binaries.
 
 Resolution order:
 
@@ -77,7 +77,7 @@ Otherwise the checked-in `media/icon.png` is reused as-is.
 
 ## Other Editors
 
-Neovim and other editors do not need a separate client package in this repo right now.
+Neovim and other editors do not need a separate client package in this repo.
 
 Build `tilescript-css-lsp` and point your editor's LSP configuration directly at the binary.
 

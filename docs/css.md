@@ -44,7 +44,7 @@ Invalid selector targets:
 
 ## Supported Selectors
 
-Supported now:
+Supported selectors:
 
 - `workspace`
 - `group`
@@ -81,7 +81,7 @@ Notes:
 
 The canonical supported property list lives in `crates/css/src/language.rs`.
 
-The groups below summarize the currently supported surface.
+The groups below summarize the supported surface.
 
 ### Layout And Sizing
 
@@ -187,9 +187,9 @@ Runtime notes:
 
 Notes:
 
-- `appearance` currently accepts `auto` and `none`
+- `appearance` accepts `auto` and `none`
 - `appearance` is a window decoration-policy hint
-- `opacity` currently affects compositor-managed presentation rather than arbitrary client content opacity
+- `opacity` affects compositor-managed presentation rather than arbitrary client content opacity
 - `transform` is typed and sampled, but runtime visual support is still partial
 
 ### Motion
@@ -216,8 +216,8 @@ Supported motion properties:
 Runtime notes:
 
 - motion values are parsed into typed data, not kept as raw CSS strings
-- `transition-behavior` is currently accepted for compatibility but ignored by runtime compilation
-- compositor-delegated animation support is intentionally narrower than the parsed CSS surface
+- `transition-behavior` is accepted for compatibility but ignored by runtime compilation
+- compositor-delegated animation support is narrower than the parsed CSS surface
 - see `docs/plan/animations.md` for the current delegated-animation design
 
 ## Analysis And Diagnostics
