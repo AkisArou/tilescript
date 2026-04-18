@@ -784,7 +784,7 @@ mod runtime_watch_tests {
     #[test]
     fn js_config_watch_set_excludes_prepared_runtime_artifacts() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -1756,8 +1756,8 @@ fn partition_tree_from_scene(
     resize_behavior: ResizeBehaviorConfig,
 ) -> PartitionTree {
     let mut tree = PartitionTree::default();
-    let mut path = Vec::new();
-    collect_partitions_from_scene(root, resize_behavior, &mut tree, &mut path, true);
+    let mut scope_path = Vec::new();
+    collect_partitions_from_scene(root, resize_behavior, &mut tree, &mut scope_path, true);
     tree
 }
 
@@ -1765,23 +1765,32 @@ fn collect_partitions_from_scene(
     node: &LayoutSnapshotNode,
     resize_behavior: ResizeBehaviorConfig,
     tree: &mut PartitionTree,
-    path: &mut Vec<PartitionId>,
+    scope_path: &mut Vec<String>,
     is_root: bool,
 ) -> Vec<tilescript_core::WindowId> {
-    let path_len_before_children = path.len();
+    let maybe_axis = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout));
+    let current_partition_id = (maybe_axis.is_some() && node.children().len() >= 2).then(|| {
+        node.meta()
+            .id
+            .clone()
+            .map(PartitionId::new)
+            .unwrap_or_else(|| PartitionId::new(structural_partition_id(node, scope_path)))
+    });
+    let scope_len_before_children = scope_path.len();
+    if let Some(partition_id) = current_partition_id.as_ref() {
+        scope_path.push(partition_id.0.clone());
+    }
     let child_window_sets = node
         .children()
         .iter()
-        .map(|child| collect_partitions_from_scene(child, resize_behavior, tree, path, false))
+        .map(|child| collect_partitions_from_scene(child, resize_behavior, tree, scope_path, false))
         .collect::<Vec<_>>();
-    path.truncate(path_len_before_children);
+    scope_path.truncate(scope_len_before_children);
 
     let descendant_window_ids = match node {
         LayoutSnapshotNode::Window { window_id: Some(window_id), .. } => vec![window_id.clone()],
         _ => child_window_sets.iter().flatten().cloned().collect::<Vec<_>>(),
     };
-
-    let maybe_axis = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout));
 
     if let Some(axis) = maybe_axis {
         let mut branches = node
@@ -1797,12 +1806,7 @@ fn collect_partitions_from_scene(
         if branches.len() >= 2 {
             apply_inferred_min_shares(&mut branches, axis, node.rect(), resize_behavior);
 
-            let partition_id = node
-                .meta()
-                .id
-                .clone()
-                .map(PartitionId::new)
-                .unwrap_or_else(|| PartitionId::new(structural_partition_id(node, path)));
+            let partition_id = current_partition_id.expect("partition id for flex node");
 
             let partition = PartitionNode {
                 partition_id: partition_id.clone(),
@@ -1842,8 +1846,8 @@ fn partition_branches_from_child(
 
     if child_windows.len() > 1 && child.children().len() == 1 {
         let only_child = &child.children()[0];
-        let flattenable_wrapper =
-            matches!(child, LayoutSnapshotNode::Content { .. }) || child.meta().id.is_none();
+        let flattenable_wrapper = matches!(child, LayoutSnapshotNode::Content { .. })
+            || (child.meta().id.is_none() && child.styles().is_none());
 
         if flattenable_wrapper {
             let expanded = partition_branches_from_child(parent, only_child, child_windows, index)
@@ -2083,7 +2087,7 @@ fn branch_is_fixed(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> bo
     styles.layout.flex_grow.unwrap_or(0.0) == 0.0
 }
 
-fn structural_partition_id(node: &LayoutSnapshotNode, path: &[PartitionId]) -> String {
+fn structural_partition_id(node: &LayoutSnapshotNode, path: &[String]) -> String {
     let node_kind = match node {
         LayoutSnapshotNode::Workspace { .. } => "workspace",
         LayoutSnapshotNode::Group { .. } => "group",
@@ -2094,11 +2098,7 @@ fn structural_partition_id(node: &LayoutSnapshotNode, path: &[PartitionId]) -> S
     if path.is_empty() {
         format!("{node_kind}-partition")
     } else {
-        format!(
-            "{}/{}-partition",
-            path.iter().map(|partition_id| partition_id.0.as_str()).collect::<Vec<_>>().join("/"),
-            node_kind
-        )
+        format!("{}/{}-partition", path.last().expect("non-empty path"), node_kind)
     }
 }
 
@@ -2130,7 +2130,7 @@ mod tests {
     use super::*;
 
     fn isolated_test_config_path() -> PathBuf {
-        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/test-config");
+        let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/test");
         let temp_root = tempfile::TempDir::new().expect("temp test config root");
         let root = temp_root.keep();
         copy_dir_recursively(&source_root, &root).expect("copy test config fixture");
@@ -2190,7 +2190,7 @@ mod tests {
     #[test]
     fn css_failure_diagnostic_is_classified_as_css() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2225,7 +2225,7 @@ mod tests {
     #[test]
     fn stylesheet_analysis_cache_reuses_identical_source() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2248,7 +2248,7 @@ mod tests {
     #[test]
     fn records_layout_to_stylesheet_dependency_edges() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2292,7 +2292,7 @@ mod tests {
     #[test]
     fn records_layout_to_js_graph_and_bytecode_dependency_edges() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2339,7 +2339,7 @@ mod tests {
     #[test]
     fn records_layout_to_lua_executable_and_bytecode_dependency_edges() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2381,7 +2381,7 @@ mod tests {
     #[test]
     fn records_fennel_layout_to_compiled_lua_executable_and_bytecode_dependency_edges() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .unwrap();
@@ -2505,10 +2505,11 @@ mod tests {
     #[test]
     fn workspace_scene_builds_focus_tree_for_only_current_workspace_windows() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
+        let _ = service.reload_config().expect("reloaded config");
         let loaded = service.load_config().expect("loaded config");
 
         let mut model = WmModel::default();
@@ -2563,6 +2564,7 @@ mod tests {
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
+        let _ = service.reload_config().expect("reloaded config");
 
         let workspace_id = WorkspaceId::from("1");
         let mut model = WmModel::default();
@@ -3254,8 +3256,8 @@ mod tests {
             .find(|(partition_id, _)| partition_id.0 != "frame")
             .map(|(_, adjustment)| adjustment)
             .expect("nested stack partition adjustment after repeated resize");
-
-        assert!(nested_adjustment.branch_shares.iter().all(|share| *share >= 6));
+        assert_eq!(nested_adjustment.branch_shares.iter().sum::<u32>(), 24);
+        assert_eq!(nested_adjustment.branch_shares, vec![3, 21]);
     }
 
     #[test]
@@ -3305,7 +3307,7 @@ mod tests {
                 workspace_id: Some("1".into()),
                 focused_window_id: Some("stack-c".into()),
                 direction: "right".into(),
-                partition_id: Some("frame".into()),
+                partition_id: Some("frame/group-partition/group-partition".into()),
                 grow_branch_index: Some(0),
                 shrink_branch_index: Some(1),
                 changed: true,
@@ -3314,8 +3316,10 @@ mod tests {
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![40, 20]
+            resize_state.adjustments_by_partition_id
+                [&PartitionId::new("frame/group-partition/group-partition")]
+                .branch_shares,
+            vec![15, 9]
         );
 
         let debug = resize_direction_debug(
@@ -3330,7 +3334,7 @@ mod tests {
                 workspace_id: Some("1".into()),
                 focused_window_id: Some("stack-c".into()),
                 direction: "left".into(),
-                partition_id: Some("frame".into()),
+                partition_id: Some("frame/group-partition/group-partition".into()),
                 grow_branch_index: Some(1),
                 shrink_branch_index: Some(0),
                 changed: true,
@@ -3339,8 +3343,10 @@ mod tests {
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![36, 24]
+            resize_state.adjustments_by_partition_id
+                [&PartitionId::new("frame/group-partition/group-partition")]
+                .branch_shares,
+            vec![12, 12]
         );
     }
 
@@ -3403,7 +3409,7 @@ mod tests {
     #[test]
     fn resize_direction_respects_fixed_branch_constraints() {
         let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+            .join("../../dev/test/config.ts");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
@@ -3449,6 +3455,151 @@ mod tests {
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("6"));
         assert!(resize_state.adjustments_by_partition_id.is_empty());
+    }
+
+    fn dwindle_scene() -> LayoutSnapshotNode {
+        LayoutSnapshotNode::Workspace {
+            meta: tilescript_core::LayoutNodeMeta { id: Some("frame".into()), ..Default::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 1600.0, height: 1000.0 },
+            styles: Some(tilescript_scene::SceneNodeStyle {
+                layout: tilescript_scene::ComputedStyle {
+                    display: Some(Display::Flex),
+                    flex_direction: Some(FlexDirectionValue::Row),
+                    ..Default::default()
+                },
+            }),
+            children: vec![
+                LayoutSnapshotNode::Window {
+                    meta: tilescript_core::LayoutNodeMeta {
+                        id: Some("master".into()),
+                        ..Default::default()
+                    },
+                    rect: tilescript_core::LayoutRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 800.0,
+                        height: 1000.0,
+                    },
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
+                            flex_grow: Some(1.0),
+                            ..Default::default()
+                        },
+                    }),
+                    window_id: Some(WindowId::from("w1")),
+                    children: vec![],
+                },
+                LayoutSnapshotNode::Group {
+                    meta: tilescript_core::LayoutNodeMeta::default(),
+                    rect: tilescript_core::LayoutRect {
+                        x: 800.0,
+                        y: 0.0,
+                        width: 800.0,
+                        height: 1000.0,
+                    },
+                    styles: Some(tilescript_scene::SceneNodeStyle {
+                        layout: tilescript_scene::ComputedStyle {
+                            display: Some(Display::Flex),
+                            flex_direction: Some(FlexDirectionValue::Column),
+                            flex_grow: Some(1.0),
+                            ..Default::default()
+                        },
+                    }),
+                    children: vec![
+                        LayoutSnapshotNode::Window {
+                            meta: tilescript_core::LayoutNodeMeta::default(),
+                            rect: tilescript_core::LayoutRect {
+                                x: 800.0,
+                                y: 0.0,
+                                width: 800.0,
+                                height: 500.0,
+                            },
+                            styles: Some(tilescript_scene::SceneNodeStyle {
+                                layout: tilescript_scene::ComputedStyle {
+                                    flex_grow: Some(1.0),
+                                    ..Default::default()
+                                },
+                            }),
+                            window_id: Some(WindowId::from("w2")),
+                            children: vec![],
+                        },
+                        LayoutSnapshotNode::Group {
+                            meta: tilescript_core::LayoutNodeMeta::default(),
+                            rect: tilescript_core::LayoutRect {
+                                x: 800.0,
+                                y: 500.0,
+                                width: 800.0,
+                                height: 500.0,
+                            },
+                            styles: Some(tilescript_scene::SceneNodeStyle {
+                                layout: tilescript_scene::ComputedStyle {
+                                    display: Some(Display::Flex),
+                                    flex_direction: Some(FlexDirectionValue::Row),
+                                    flex_grow: Some(1.0),
+                                    ..Default::default()
+                                },
+                            }),
+                            children: vec![
+                                LayoutSnapshotNode::Window {
+                                    meta: tilescript_core::LayoutNodeMeta::default(),
+                                    rect: tilescript_core::LayoutRect {
+                                        x: 800.0,
+                                        y: 500.0,
+                                        width: 400.0,
+                                        height: 500.0,
+                                    },
+                                    styles: Some(tilescript_scene::SceneNodeStyle {
+                                        layout: tilescript_scene::ComputedStyle {
+                                            flex_grow: Some(1.0),
+                                            ..Default::default()
+                                        },
+                                    }),
+                                    window_id: Some(WindowId::from("w3")),
+                                    children: vec![],
+                                },
+                                LayoutSnapshotNode::Window {
+                                    meta: tilescript_core::LayoutNodeMeta::default(),
+                                    rect: tilescript_core::LayoutRect {
+                                        x: 1200.0,
+                                        y: 500.0,
+                                        width: 400.0,
+                                        height: 500.0,
+                                    },
+                                    styles: Some(tilescript_scene::SceneNodeStyle {
+                                        layout: tilescript_scene::ComputedStyle {
+                                            flex_grow: Some(1.0),
+                                            ..Default::default()
+                                        },
+                                    }),
+                                    window_id: Some(WindowId::from("w4")),
+                                    children: vec![],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn nested_partition_paths_include_ancestors() {
+        let partition_tree = partition_tree_from_scene(
+            &dwindle_scene(),
+            ResizeBehaviorConfig {
+                step_px: DEFAULT_RESIZE_STEP_UNITS as f32 * 8.0,
+                min_branch_main_size_px: DEFAULT_MIN_INFERRED_BRANCH_MAIN_SIZE_PX,
+            },
+        );
+
+        assert_eq!(
+            partition_tree.window_to_partition_path.get(&WindowId::from("w4")),
+            Some(&vec![
+                PartitionId::new("frame"),
+                PartitionId::new("frame/group-partition"),
+                PartitionId::new("frame/group-partition/group-partition"),
+            ])
+        );
     }
 
     #[test]

@@ -1,13 +1,13 @@
 use crate::css::{
     CssValueError, NodeComputedStyle, StyledLayoutTree, compute_style, map_computed_style_to_taffy,
 };
+use taffy::style::Dimension as TaffyDimension;
 use tilescript_core::ResolvedLayoutNode;
 use tilescript_core::resize::{
     PartitionAxis, PartitionId, WorkspaceResizeState, reconciled_branch_shares,
     scale_authored_share_units,
 };
 use tilescript_css::{Display, FlexDirectionValue, SizeValue};
-use taffy::style::Dimension as TaffyDimension;
 
 pub fn build_styled_layout_tree_from_sheet(
     root: &ResolvedLayoutNode,
@@ -114,7 +114,7 @@ fn partition_id_for_styled_node(
 
 fn partition_structural_id(
     node: &NodeComputedStyle,
-    _path: &[String],
+    path: &[String],
     is_root: bool,
 ) -> Option<String> {
     let node_kind = match node.node {
@@ -133,7 +133,11 @@ fn partition_structural_id(
         return None;
     }
 
-    Some(format!("{node_kind}-partition"))
+    Some(if let Some(parent_id) = path.last() {
+        format!("{parent_id}/{node_kind}-partition")
+    } else {
+        format!("{node_kind}-partition")
+    })
 }
 
 fn branch_id_for_styled_child(
@@ -224,4 +228,124 @@ fn inferred_branch_default_share(
 
     let scaled = (grow * scale_authored_share_units(1) as f32).round();
     Some(scaled.max(1.0) as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pipeline::{compile_stylesheet, compute_layout_from_request_with_sheet};
+    use crate::scene::SceneRequest;
+    use tilescript_core::resize::{PartitionAdjustment, PartitionId, WorkspaceResizeState};
+    use tilescript_core::runtime::prepared_layout::{PreparedStylesheet, PreparedStylesheets};
+    use tilescript_core::{LayoutNodeMeta, LayoutSpace, ResolvedLayoutNode, WindowId, WorkspaceId};
+
+    fn dwindle_root() -> ResolvedLayoutNode {
+        ResolvedLayoutNode::Workspace {
+            meta: LayoutNodeMeta { id: Some("frame".into()), ..LayoutNodeMeta::default() },
+            children: vec![
+                ResolvedLayoutNode::Window {
+                    meta: LayoutNodeMeta { id: Some("master".into()), ..LayoutNodeMeta::default() },
+                    window_id: Some(WindowId::from("w1")),
+                    children: vec![],
+                },
+                ResolvedLayoutNode::Group {
+                    meta: LayoutNodeMeta {
+                        id: Some("stack-col".into()),
+                        ..LayoutNodeMeta::default()
+                    },
+                    children: vec![
+                        ResolvedLayoutNode::Window {
+                            meta: LayoutNodeMeta::default(),
+                            window_id: Some(WindowId::from("w2")),
+                            children: vec![],
+                        },
+                        ResolvedLayoutNode::Group {
+                            meta: LayoutNodeMeta {
+                                id: Some("stack-row".into()),
+                                ..LayoutNodeMeta::default()
+                            },
+                            children: vec![
+                                ResolvedLayoutNode::Window {
+                                    meta: LayoutNodeMeta::default(),
+                                    window_id: Some(WindowId::from("w3")),
+                                    children: vec![],
+                                },
+                                ResolvedLayoutNode::Window {
+                                    meta: LayoutNodeMeta::default(),
+                                    window_id: Some(WindowId::from("w4")),
+                                    children: vec![],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+    }
+
+    fn dwindle_stylesheet() -> &'static str {
+        "#frame { display: flex; flex-direction: row; width: 100%; height: 100%; }\
+         #master { flex-grow: 1; flex-basis: 0px; min-width: 0px; min-height: 0px; }\
+         #stack-col { display: flex; flex-direction: column; flex-grow: 1; flex-basis: 0px; min-width: 0px; min-height: 0px; }\
+         #stack-row { display: flex; flex-direction: row; flex-grow: 1; flex-basis: 0px; min-width: 0px; min-height: 0px; }\
+         window { flex-grow: 1; flex-basis: 0px; min-width: 0px; min-height: 0px; }"
+    }
+
+    #[test]
+    fn nested_vertical_resize_does_not_change_nested_horizontal_width() {
+        let root = dwindle_root();
+        let sheet = compile_stylesheet(dwindle_stylesheet()).expect("compiled stylesheet");
+
+        let base_request = SceneRequest {
+            workspace_id: WorkspaceId::from("1"),
+            output_id: None,
+            layout_name: Some("dwindle".into()),
+            root: root.clone(),
+            stylesheets: PreparedStylesheets {
+                global: None,
+                layout: Some(PreparedStylesheet {
+                    path: "layouts/dwindle/index.css".into(),
+                    source: dwindle_stylesheet().into(),
+                }),
+            },
+            space: LayoutSpace { width: 1600.0, height: 1000.0 },
+            resize_state: WorkspaceResizeState::default(),
+        };
+
+        let before =
+            compute_layout_from_request_with_sheet(&base_request, &sheet).expect("base layout");
+        let before_w3 =
+            before.root.find_by_window_id(&WindowId::from("w3")).expect("w3 before").rect();
+        let before_w4 =
+            before.root.find_by_window_id(&WindowId::from("w4")).expect("w4 before").rect();
+
+        let adjusted_request = SceneRequest {
+            resize_state: WorkspaceResizeState {
+                adjustments_by_partition_id: [(
+                    PartitionId::new("stack-col"),
+                    PartitionAdjustment {
+                        branch_ids: vec!["w2".into(), "stack-row".into()],
+                        branch_shares: vec![12, 24],
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            },
+            ..base_request
+        };
+
+        let after = compute_layout_from_request_with_sheet(&adjusted_request, &sheet)
+            .expect("adjusted layout");
+        let after_w3 =
+            after.root.find_by_window_id(&WindowId::from("w3")).expect("w3 after").rect();
+        let after_w4 =
+            after.root.find_by_window_id(&WindowId::from("w4")).expect("w4 after").rect();
+
+        assert_eq!(before_w3.x, after_w3.x);
+        assert_eq!(before_w4.x, after_w4.x);
+        assert_eq!(before_w3.width, after_w3.width);
+        assert_eq!(before_w4.width, after_w4.width);
+        assert_eq!(before_w3.height, before_w4.height);
+        assert_eq!(after_w3.height, after_w4.height);
+        assert!(after_w4.height > before_w4.height);
+    }
 }

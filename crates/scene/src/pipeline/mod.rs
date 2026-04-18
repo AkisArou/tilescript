@@ -190,14 +190,7 @@ pub fn compute_layout_from_request(
     request: &SceneRequest,
 ) -> Result<SceneResponse, LayoutPipelineError> {
     let sheet = compile_stylesheet(&request.stylesheets.combined_source())?;
-    let laid_out = compute_layout_from_sheet(
-        &request.root,
-        &sheet,
-        request.space.width,
-        request.space.height,
-    )?;
-
-    Ok(SceneResponse { root: laid_out.snapshot() })
+    compute_layout_from_request_with_sheet(request, &sheet)
 }
 
 pub fn compute_layout_from_request_with_sheet(

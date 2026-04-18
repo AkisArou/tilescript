@@ -42,3 +42,4 @@ packages/lsp/vscode/server/
 .tilescript-build/
 .tilescript/
 third_party/Hyprland/build/
+.sdk/
