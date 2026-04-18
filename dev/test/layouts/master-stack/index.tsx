@@ -3,7 +3,10 @@ import type { LayoutContext } from "@tilescript/sdk/layout";
 import "./index.css";
 
 export default function layout(ctx: LayoutContext) {
-  const hasAlacritty = ctx.windows.some((window) => window.class === "Alacritty");
+  const hasAlacritty = ctx.windows.some(
+    (window) => window.class === "Alacritty",
+  );
+
   const mainWindowCount = ctx.windows.length - Number(hasAlacritty);
 
   return (
