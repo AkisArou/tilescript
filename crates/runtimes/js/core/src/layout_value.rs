@@ -170,18 +170,20 @@ fn decode_authored_layout_node_from_node(
     node: JsAuthoredLayoutNode,
     path: &DecodePath,
 ) -> Result<AuthoredLayoutNode, String> {
+    let internal_key = path.display();
+
     Ok(match node {
         JsAuthoredLayoutNode::Workspace { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Workspace {
-                meta: decode_meta(props.meta, None),
+                meta: decode_meta(props.meta, None, internal_key),
                 children: decode_children(children, &path.field("children"))?,
             }
         }
         JsAuthoredLayoutNode::Group { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Group {
-                meta: decode_meta(props.meta, props.move_as),
+                meta: decode_meta(props.meta, props.move_as, internal_key),
                 children: decode_children(children, &path.field("children"))?,
             }
         }
@@ -189,7 +191,7 @@ fn decode_authored_layout_node_from_node(
             ensure_childless_node("window", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Window {
-                meta: decode_meta(props.meta, None),
+                meta: decode_meta(props.meta, None, internal_key),
                 match_expr: props.match_expr,
             }
         }
@@ -197,7 +199,7 @@ fn decode_authored_layout_node_from_node(
             ensure_childless_node("slot", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Slot {
-                meta: decode_meta(props.meta, None),
+                meta: decode_meta(props.meta, None, internal_key),
                 match_expr: props.match_expr,
                 take: props.take.unwrap_or_default(),
             }
@@ -227,12 +229,22 @@ fn merge_node_props(
     }
 }
 
-fn decode_meta(meta: JsAuthoredNodeMeta, move_as: Option<String>) -> AuthoredNodeMeta {
+fn decode_meta(
+    meta: JsAuthoredNodeMeta,
+    move_as: Option<String>,
+    internal_key: String,
+) -> AuthoredNodeMeta {
     let mut data = meta.data;
     if let Some(move_as) = move_as {
         data.insert("move-as".into(), move_as);
     }
-    AuthoredNodeMeta { id: meta.id, class: meta.class.into_vec(), name: meta.name, data }
+    AuthoredNodeMeta {
+        id: meta.id,
+        internal_key: Some(internal_key),
+        class: meta.class.into_vec(),
+        name: meta.name,
+        data,
+    }
 }
 
 #[cfg(test)]
@@ -272,6 +284,7 @@ mod tests {
             panic!("expected master slot");
         };
         assert_eq!(meta.id.as_deref(), Some("master"));
+        assert_eq!(meta.internal_key.as_deref(), Some("root.children.[0].children.[0]"));
         assert_eq!(meta.class, vec!["master-slot".to_owned()]);
         assert_eq!(*take, SlotTake::Count(1));
     }
@@ -297,6 +310,7 @@ mod tests {
         };
 
         assert_eq!(meta.id.as_deref(), Some("nitrogen-region"));
+        assert_eq!(meta.internal_key.as_deref(), Some("root.children.[0]"));
         assert_eq!(meta.data.get("move-as").map(String::as_str), Some("group"));
     }
 

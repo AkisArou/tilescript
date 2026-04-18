@@ -46,6 +46,8 @@ pub enum RuntimeContentKind {
 pub struct LayoutNodeMeta {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal_key: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub class: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

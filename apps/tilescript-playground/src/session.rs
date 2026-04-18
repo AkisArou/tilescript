@@ -871,18 +871,14 @@ fn preview_reorder_focused_window_across_branches(
 
     let focused_index = ordered_window_ids.iter().position(|window_id| window_id == focused_window_id)?;
     let _ = preview_contiguous_range(ordered_window_ids, current_branch_window_ids)?;
-    let (target_start, target_end) = preview_contiguous_range(ordered_window_ids, target_branch_window_ids)?;
+    let (target_start, _target_end) = preview_contiguous_range(ordered_window_ids, target_branch_window_ids)?;
 
     let mut updated = ordered_window_ids.to_vec();
     updated.remove(focused_index);
 
     let insert_index = match direction {
-        NavigationDirection::Left | NavigationDirection::Up => {
-            if target_start > focused_index { target_start - 1 } else { target_start }
-        }
-        NavigationDirection::Right | NavigationDirection::Down => {
-            if target_start > focused_index { target_end } else { target_end + 1 }
-        }
+        NavigationDirection::Left | NavigationDirection::Up => target_start,
+        NavigationDirection::Right | NavigationDirection::Down => target_start,
     };
 
     updated.insert(insert_index, focused_window_id.clone());

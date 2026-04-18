@@ -1842,7 +1842,7 @@ fn reordered_sibling_order_for_group_move(
         .children()
         .iter()
         .enumerate()
-        .map(|(index, child)| snapshot_sibling_order_key(child, index))
+        .map(|(index, child)| snapshot_stable_node_key(child, index))
         .collect::<Vec<_>>();
     let moved = sibling_order.remove(current_child_index);
     let insert_index = target_child_index;
@@ -1893,18 +1893,28 @@ fn reorder_resolved_siblings(
     let mut by_key = children
         .into_iter()
         .enumerate()
-        .map(|(index, child)| (resolved_sibling_order_key(&child, index), child))
+        .map(|(index, child)| (resolved_stable_node_key(&child, index), child))
         .collect::<std::collections::BTreeMap<_, _>>();
 
-    if by_key.len() != saved_order.len() || !saved_order.iter().all(|id| by_key.contains_key(id)) {
+    let mut reordered = saved_order
+        .iter()
+        .filter_map(|id| by_key.remove(id))
+        .collect::<Vec<_>>();
+
+    if reordered.is_empty() {
         return original_children;
     }
 
-    saved_order.iter().filter_map(|id| by_key.remove(id)).collect()
+    reordered.extend(original_children.into_iter().filter(|child| {
+        let key = child.meta().internal_key.as_ref().or(child.meta().id.as_ref());
+        key.is_none_or(|key| by_key.contains_key(key))
+    }));
+
+    reordered
 }
 
-fn snapshot_sibling_order_key(node: &LayoutSnapshotNode, index: usize) -> String {
-    node.meta().id.clone().unwrap_or_else(|| match node {
+fn snapshot_stable_node_key(node: &LayoutSnapshotNode, index: usize) -> String {
+    node.meta().internal_key.clone().or_else(|| node.meta().id.clone()).unwrap_or_else(|| match node {
         LayoutSnapshotNode::Workspace { .. } => format!("workspace-branch-{index}"),
         LayoutSnapshotNode::Group { .. } => format!("group-branch-{index}"),
         LayoutSnapshotNode::Content { .. } => format!("content-branch-{index}"),
@@ -1912,8 +1922,8 @@ fn snapshot_sibling_order_key(node: &LayoutSnapshotNode, index: usize) -> String
     })
 }
 
-fn resolved_sibling_order_key(node: &tilescript_core::ResolvedLayoutNode, index: usize) -> String {
-    node.meta().id.clone().unwrap_or_else(|| match node {
+fn resolved_stable_node_key(node: &tilescript_core::ResolvedLayoutNode, index: usize) -> String {
+    node.meta().internal_key.clone().or_else(|| node.meta().id.clone()).unwrap_or_else(|| match node {
         tilescript_core::ResolvedLayoutNode::Workspace { .. } => format!("workspace-branch-{index}"),
         tilescript_core::ResolvedLayoutNode::Group { .. } => format!("group-branch-{index}"),
         tilescript_core::ResolvedLayoutNode::Window { .. } => format!("window-branch-{index}"),
@@ -2037,11 +2047,11 @@ fn reorder_focused_window_across_branches(
     let insert_index = match direction {
         NavigationDirection::Left | NavigationDirection::Up => {
             let target_start = *target_indices.first()?;
-            if target_start > focused_index { target_start - 1 } else { target_start }
+            target_start
         }
         NavigationDirection::Right | NavigationDirection::Down => {
-            let target_end = *target_indices.last()?;
-            if target_end > focused_index { target_end } else { target_end + 1 }
+            let target_start = *target_indices.first()?;
+            target_start
         }
     };
 
@@ -2687,11 +2697,59 @@ export default function layout(ctx: LayoutContext) {
             vec![
                 WindowId::from("main-b"),
                 WindowId::from("stack-a"),
-                WindowId::from("stack-b"),
                 WindowId::from("master"),
+                WindowId::from("stack-b"),
             ]
         );
         assert_eq!(moved.sibling_order_override, None);
+    }
+
+    #[test]
+    fn directional_move_window_order_inserts_at_near_side_of_target_branch() {
+        let root = workspace_node(vec![
+            group_node(
+                "main",
+                None,
+                0.0,
+                0.0,
+                400.0,
+                600.0,
+                vec![window_node("master")],
+            ),
+            group_node(
+                "stack",
+                None,
+                400.0,
+                0.0,
+                400.0,
+                600.0,
+                vec![window_node("stack-a"), window_node("stack-b"), window_node("stack-c")],
+            ),
+        ]);
+        let ordered = vec![
+            WindowId::from("master"),
+            WindowId::from("stack-a"),
+            WindowId::from("stack-b"),
+            WindowId::from("stack-c"),
+        ];
+
+        let moved = directional_move_window_order(
+            &root,
+            &ordered,
+            &WindowId::from("master"),
+            NavigationDirection::Right,
+        )
+        .expect("moved order");
+
+        assert_eq!(
+            moved.window_order,
+            vec![
+                WindowId::from("stack-a"),
+                WindowId::from("master"),
+                WindowId::from("stack-b"),
+                WindowId::from("stack-c"),
+            ]
+        );
     }
 
     #[test]
@@ -2788,8 +2846,8 @@ export default function layout(ctx: LayoutContext) {
             moved.window_order,
             vec![
                 WindowId::from("stack-a"),
-                WindowId::from("stack-b"),
                 WindowId::from("master-a"),
+                WindowId::from("stack-b"),
             ]
         );
         assert_eq!(moved.sibling_order_override, None);
@@ -3556,7 +3614,7 @@ export default function layout(ctx: LayoutContext) {
         let resize_state = model.workspace_resize_state(&workspace_id);
         assert_eq!(
             resize_state.sibling_order_by_container_id.get("frame"),
-            Some(&vec!["main-area".to_string(), "group-branch-0".to_string()])
+            Some(&vec!["root.children.[1]".to_string(), "root.children.[0]".to_string()])
         );
         assert!(changed);
 
@@ -3584,6 +3642,204 @@ export default function layout(ctx: LayoutContext) {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
         assert!(after[&WindowId::from("alacritty")].x > after[&WindowId::from("ts1")].x);
+    }
+
+    #[test]
+    fn sibling_order_override_survives_conditional_sibling_changes() {
+        let config_path = isolated_test_config_path();
+        let layout_path = config_path.parent().expect("config root").join("layouts/master-stack/index.tsx");
+        let stylesheet_path = config_path.parent().expect("config root").join("layouts/master-stack/index.css");
+        fs::write(
+            &layout_path,
+            r#"import type { LayoutContext } from "@tilescript/sdk/layout";
+
+import "./index.css";
+
+export default function layout(ctx: LayoutContext) {
+  const hasAlacritty = ctx.windows.some((window) => window.class === "Alacritty");
+  const hasInspector = ctx.windows.some((window) => window.class === "Inspector");
+
+  return (
+    <workspace id="frame">
+      <group moveAs="group">
+        <window id="alacritty-column" match='class="Alacritty"' class="side-column" />
+      </group>
+      {hasInspector ? (
+        <group moveAs="group">
+          <window id="inspector-column" match='class="Inspector"' class="inspector-column" />
+        </group>
+      ) : null}
+      <group id="main-area" moveAs="group">
+        <slot id="master" take={1} class="master-slot" />
+        <group class="stack-group">
+          <slot id="stack-slot" class="stack-item" />
+        </group>
+      </group>
+    </workspace>
+  );
+}
+"#,
+        )
+        .expect("write conditional sibling layout");
+        fs::write(
+            &stylesheet_path,
+            r#"#frame {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+#main-area {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.master-slot {
+  flex-basis: 0;
+  flex-grow: 3;
+  min-width: 0;
+  min-height: 0;
+}
+
+.side-column,
+.inspector-column {
+  width: 240px;
+  min-width: 240px;
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 2;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stack-item {
+  flex-basis: 0;
+  flex-grow: 1;
+  min-height: 0;
+}
+"#,
+        )
+        .expect("write conditional sibling stylesheet");
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+        service.reload_config().expect("reloaded config");
+
+        let workspace_id = WorkspaceId::from("2");
+        let output_id = OutputId::from("eDP-1");
+        let mut model = WmModel::default();
+        model.upsert_output(output_id.clone(), "eDP-1".to_string(), 1600, 1000, Some(workspace_id.clone()));
+        model.upsert_workspace(workspace_id.clone(), "2".to_string());
+        model.attach_workspace_to_output(workspace_id.clone(), output_id.clone());
+        model.set_workspace_layout_space(
+            workspace_id.clone(),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+        );
+        model.set_current_output(output_id.clone());
+        model.set_current_workspace(workspace_id.clone());
+
+        for (id, class) in [
+            ("ts1", "ts1"),
+            ("ts2", "ts2"),
+            ("ts3", "ts3"),
+            ("alacritty", "Alacritty"),
+            ("inspector", "Inspector"),
+        ] {
+            upsert_window(
+                Some(&mut service),
+                &mut model,
+                WindowId::from(id),
+                None,
+                Some(workspace_id.clone()),
+                Some(output_id.clone()),
+                false,
+                true,
+                Some(class.into()),
+                None,
+                Some(class.into()),
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("upsert test window");
+        }
+
+        model.set_window_focused(Some(WindowId::from("alacritty")));
+        assert!(move_tiled_window_direction(&mut service, &mut model, NavigationDirection::Right)
+            .expect("move side column right"));
+
+        let with_inspector = placement_for_workspace(&mut service, &model, "2")
+            .expect("placement with inspector")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let with_inspector_order = model
+            .workspace_resize_state(&WorkspaceId::from("2"))
+            .sibling_order_by_container_id
+            .get("frame")
+            .cloned()
+            .expect("saved sibling order with inspector");
+        assert!(with_inspector[&WindowId::from("alacritty")].x < with_inspector[&WindowId::from("ts1")].x);
+
+        model.remove_window(WindowId::from("inspector"));
+        let without_inspector = placement_for_workspace(&mut service, &model, "2")
+            .expect("placement without inspector")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        assert!(without_inspector[&WindowId::from("alacritty")].x > without_inspector[&WindowId::from("ts1")].x);
+
+        upsert_window(
+            Some(&mut service),
+            &mut model,
+            WindowId::from("inspector"),
+            None,
+            Some(workspace_id),
+            Some(output_id),
+            false,
+            true,
+            Some("Inspector".into()),
+            None,
+            Some("Inspector".into()),
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("restore inspector");
+
+        let restored = placement_for_workspace(&mut service, &model, "2")
+            .expect("placement with restored inspector")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let restored_order = model
+            .workspace_resize_state(&WorkspaceId::from("2"))
+            .sibling_order_by_container_id
+            .get("frame")
+            .cloned()
+            .expect("saved sibling order after restore");
+        assert_eq!(restored_order, with_inspector_order);
+        assert!(restored[&WindowId::from("alacritty")].x < restored[&WindowId::from("ts1")].x);
     }
 
     #[test]

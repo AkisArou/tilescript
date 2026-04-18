@@ -13,6 +13,7 @@ pub struct ValidatedLayoutTree {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthoredNodeMeta {
     pub id: Option<String>,
+    pub internal_key: Option<String>,
     pub class: Vec<String>,
     pub name: Option<String>,
     pub data: BTreeMap<String, String>,
@@ -93,7 +94,13 @@ fn normalize_authored_node(
 }
 
 fn normalize_meta(meta: AuthoredNodeMeta) -> LayoutNodeMeta {
-    LayoutNodeMeta { id: meta.id, class: meta.class, name: meta.name, data: meta.data }
+    LayoutNodeMeta {
+        id: meta.id,
+        internal_key: meta.internal_key,
+        class: meta.class,
+        name: meta.name,
+        data: meta.data,
+    }
 }
 
 fn normalize_match(
