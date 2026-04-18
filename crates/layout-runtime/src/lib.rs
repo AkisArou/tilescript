@@ -1889,6 +1889,7 @@ fn reorder_resolved_siblings(
         return children;
     };
 
+    let original_children = children.clone();
     let mut by_key = children
         .into_iter()
         .enumerate()
@@ -1896,7 +1897,7 @@ fn reorder_resolved_siblings(
         .collect::<std::collections::BTreeMap<_, _>>();
 
     if by_key.len() != saved_order.len() || !saved_order.iter().all(|id| by_key.contains_key(id)) {
-        return by_key.into_values().collect();
+        return original_children;
     }
 
     saved_order.iter().filter_map(|id| by_key.remove(id)).collect()
