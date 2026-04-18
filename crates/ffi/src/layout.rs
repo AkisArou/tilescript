@@ -4,7 +4,8 @@ use crate::runtime_types::{
 use tilescript_core::navigation::NavigationDirection;
 use tilescript_layout_runtime::{
     LayoutRuntimePaths, LayoutRuntimeService, LayoutStatusSnapshot, close_focus_candidate,
-    directional_focus_candidate, layout_status_for_model, placement_for_workspace,
+    directional_focus_candidate, layout_status_for_model, move_tiled_window_direction,
+    placement_for_workspace,
 };
 
 use crate::response::FfiError;
@@ -162,6 +163,26 @@ pub fn layout_focus_candidate(
         .map_err(|error| FfiError::InvalidJson(error.to_string()))
 }
 
+pub fn layout_move_direction(
+    handle: &mut TilescriptRuntimeHandle,
+    direction: &str,
+) -> Result<bool, FfiError> {
+    let Some(layout_runtime) = handle.layout_runtime.as_mut() else {
+        return Ok(false);
+    };
+
+    let direction = match direction {
+        "left" => NavigationDirection::Left,
+        "right" => NavigationDirection::Right,
+        "up" => NavigationDirection::Up,
+        "down" => NavigationDirection::Down,
+        other => return Err(FfiError::InvalidJson(format!("unknown focus direction: {other}"))),
+    };
+
+    move_tiled_window_direction(&mut layout_runtime.service, &mut handle.model, direction)
+        .map_err(|error| FfiError::InvalidJson(error.to_string()))
+}
+
 pub fn layout_close_focus_candidate(
     handle: &mut TilescriptRuntimeHandle,
     window_id: &str,
@@ -234,8 +255,8 @@ mod tests {
 
     #[test]
     fn layout_focus_candidate_persists_scene_focus_tree_on_model() {
-        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test-config/config.ts");
+        let config_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/test/config.ts");
         let service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");

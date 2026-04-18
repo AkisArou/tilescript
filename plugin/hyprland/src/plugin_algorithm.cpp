@@ -88,12 +88,6 @@ public:
       return;
     }
 
-    const auto candidateId =
-        runtime()->layoutSwapCandidate(Math::toString(dir));
-    if (!candidateId.has_value()) {
-      return;
-    }
-
     const auto parent = m_parent.lock();
     if (!parent) {
       return;
@@ -104,23 +98,8 @@ public:
       return;
     }
 
-    for (const auto &weakTarget : space->targets()) {
-      const auto candidate = weakTarget.lock();
-      if (!candidate || candidate == t || candidate->floating() ||
-          !candidate->window()) {
-        continue;
-      }
-
-      if (g_algorithmCallbacks->makeWindowId(candidate->window()) ==
-          *candidateId) {
-        const bool moved = runtime()->moveTiledWindow(
-            g_algorithmCallbacks->makeWindowId(t->window()), *candidateId);
-        if (!moved) {
-          return;
-        }
-        recalculate();
-        return;
-      }
+    if (!runtime()->layoutMoveDirection(Math::toString(dir))) {
+      return;
     }
 
     recalculate();

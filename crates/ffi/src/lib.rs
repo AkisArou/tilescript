@@ -28,7 +28,7 @@ use bootstrap::bootstrap_config_root;
 use ffi_string::{cstr_to_str, optional_cstr_to_string, string_free};
 use layout::{
     drain_layout_runtime_source_changes, layout_close_focus_candidate, layout_focus_candidate,
-    layout_runtime_placement, layout_runtime_placement_for_workspace,
+    layout_move_direction, layout_runtime_placement, layout_runtime_placement_for_workspace,
     layout_runtime_source_change_fd, layout_runtime_status, load_layout_config,
     reload_layout_config,
 };
@@ -497,6 +497,22 @@ pub extern "C" fn tilescript_runtime_move_tiled_window(
             &first_window_id,
             &second_window_id,
         );
+        status_result(StatusResult { changed, focused_window_id: None })
+    })) {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error_status_result(error),
+        Err(_) => error_status_result(FfiError::Panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tilescript_runtime_layout_move_direction(
+    handle: *mut TilescriptRuntimeHandle,
+    direction: *const std::ffi::c_char,
+) -> TilescriptStatusResult {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let handle = ffi_handle_mut(handle)?;
+        let changed = layout_move_direction(handle, cstr_to_str(direction)?)?;
         status_result(StatusResult { changed, focused_window_id: None })
     })) {
         Ok(Ok(result)) => result,

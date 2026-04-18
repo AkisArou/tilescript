@@ -223,6 +223,7 @@ TilescriptPlacementResult tilescript_runtime_layout_placement_for_workspace(
 TilescriptStringResult tilescript_runtime_layout_focus_candidate(TilescriptRuntimeHandle* handle, const char* direction);
 TilescriptStringResult tilescript_runtime_layout_close_focus_candidate(TilescriptRuntimeHandle* handle, const char* window_id);
 TilescriptStringResult tilescript_runtime_layout_swap_candidate(TilescriptRuntimeHandle* handle, const char* direction);
+TilescriptStatusResult tilescript_runtime_layout_move_direction(TilescriptRuntimeHandle* handle, const char* direction);
 TilescriptStatusResult tilescript_runtime_resize_direction(TilescriptRuntimeHandle* handle, const char* direction);
 TilescriptStatusResult tilescript_runtime_move_tiled_window(
     TilescriptRuntimeHandle* handle,

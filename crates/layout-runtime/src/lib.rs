@@ -20,7 +20,7 @@ use tilescript_core::query::state_snapshot_for_model;
 use tilescript_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
     PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionNodeKind,
-    PartitionTree, ResizeDirection, apply_resize_step, gc_resize_state,
+    PartitionTree, ResizeDirection, WorkspaceResizeState, apply_resize_step, gc_resize_state,
     scale_authored_share_units, select_resize_candidate, structural_partition_id,
 };
 use tilescript_core::runtime::artifact_state::{
@@ -996,6 +996,10 @@ fn build_scene_from_layout(
             path: error_path.to_path_buf(),
             message: error.to_string(),
         })?;
+    let resolved_root = apply_sibling_order_overrides_to_resolved(
+        resolved.root,
+        &state.workspace_resize_state(&workspace.id),
+    );
 
     let request = config.build_scene_request(
         state,
@@ -1005,7 +1009,7 @@ fn build_scene_from_layout(
             .as_ref()
             .and_then(|output_id| state.output_by_id(output_id))
             .or_else(|| state.current_output()),
-        resolved.root,
+        resolved_root,
         artifact,
     )?;
 
@@ -1599,6 +1603,50 @@ pub fn move_tiled_window(
     model.move_tiled_window(first_window_id, second_window_id)
 }
 
+pub fn move_tiled_window_direction(
+    service: &mut LayoutRuntimeService,
+    model: &mut WmModel,
+    direction: NavigationDirection,
+) -> Result<bool, LayoutRuntimeError> {
+    let loaded = service.ensure_loaded_config()?;
+
+    apply_layout_selection_to_model(model, &loaded.config);
+    let snapshot = state_snapshot_for_model(model);
+    let Some(workspace) = snapshot.current_workspace().cloned() else {
+        return Ok(false);
+    };
+    let Some(focused_window_id) = snapshot.focused_window_id.clone() else {
+        return Ok(false);
+    };
+    let Some(scene) = service.evaluate_workspace_scene(&loaded.config, &snapshot, &workspace)? else {
+        return Ok(false);
+    };
+
+    model.set_focus_tree_value(Some(scene.focus_tree.clone()));
+
+    let Some(move_result) = directional_move_window_order(
+        &scene.scene.root,
+        &scene.ordered_window_ids,
+        &focused_window_id,
+        direction,
+    ) else {
+        return Ok(false);
+    };
+
+    let mut changed = model.replace_tiled_window_order_for_workspace(&workspace.id, move_result.window_order);
+
+    if let Some((container_id, sibling_order)) = move_result.sibling_order_override {
+        let resize_state = model.workspace_resize_state_mut(&workspace.id);
+        let existing = resize_state.sibling_order_by_container_id.get(&container_id);
+        if existing != Some(&sibling_order) {
+            resize_state.sibling_order_by_container_id.insert(container_id, sibling_order);
+            changed = true;
+        }
+    }
+
+    Ok(changed)
+}
+
 pub fn resize_direction(
     service: &mut LayoutRuntimeService,
     model: &mut WmModel,
@@ -1701,6 +1749,313 @@ fn collect_window_geometries(root: &LayoutSnapshotNode) -> Vec<FocusTreeWindowGe
     let mut geometries = Vec::new();
     collect_window_geometries_inner(root, &mut geometries);
     geometries
+}
+
+#[derive(Debug)]
+struct MoveBranch<'a> {
+    child_index: usize,
+    node: &'a LayoutSnapshotNode,
+    descendant_window_ids: Vec<tilescript_core::WindowId>,
+    geometry: WindowGeometry,
+}
+
+fn directional_move_window_order(
+    root: &LayoutSnapshotNode,
+    ordered_window_ids: &[tilescript_core::WindowId],
+    focused_window_id: &tilescript_core::WindowId,
+    direction: NavigationDirection,
+) -> Option<DirectionalMoveResult> {
+    let path = find_window_node_path(root, focused_window_id)?;
+
+    for depth in (0..path.len()).rev() {
+        let container = node_at_path(root, &path[..depth])?;
+        if !matches!(container, LayoutSnapshotNode::Workspace { .. } | LayoutSnapshotNode::Group { .. }) {
+            continue;
+        }
+
+        let current_child_index = path[depth];
+        let branches = move_branches(container);
+        if branches.len() < 2 {
+            continue;
+        }
+
+        let Some(current_branch_index) =
+            branches.iter().position(|branch| branch.child_index == current_child_index)
+        else {
+            continue;
+        };
+        let Some(target_branch_index) =
+            directional_branch_index(&branches, current_branch_index, direction)
+        else {
+            continue;
+        };
+        let current_branch = &branches[current_branch_index];
+        let target_branch = &branches[target_branch_index];
+
+        if branch_moves_as_group(current_branch.node) {
+            let sibling_order = reordered_sibling_order_for_group_move(
+                container,
+                current_branch.child_index,
+                target_branch.child_index,
+            )?;
+            return Some(DirectionalMoveResult {
+                window_order: ordered_window_ids.to_vec(),
+                sibling_order_override: container
+                    .meta()
+                    .id
+                    .clone()
+                    .map(|container_id| (container_id, sibling_order)),
+            });
+        }
+
+        let updated_order = reorder_focused_window_across_branches(
+            ordered_window_ids,
+            focused_window_id,
+            &current_branch.descendant_window_ids,
+            &target_branch.descendant_window_ids,
+            direction,
+        );
+
+        if let Some(updated_order) = updated_order && updated_order != ordered_window_ids {
+            return Some(DirectionalMoveResult {
+                window_order: updated_order,
+                sibling_order_override: None,
+            });
+        }
+    }
+
+    None
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DirectionalMoveResult {
+    window_order: Vec<tilescript_core::WindowId>,
+    sibling_order_override: Option<(String, Vec<String>)>,
+}
+
+fn reordered_sibling_order_for_group_move(
+    container: &LayoutSnapshotNode,
+    current_child_index: usize,
+    target_child_index: usize,
+) -> Option<Vec<String>> {
+    let mut sibling_order = container
+        .children()
+        .iter()
+        .enumerate()
+        .map(|(index, child)| snapshot_sibling_order_key(child, index))
+        .collect::<Vec<_>>();
+    let moved = sibling_order.remove(current_child_index);
+    let insert_index = target_child_index;
+    sibling_order.insert(insert_index, moved);
+    Some(sibling_order)
+}
+
+fn apply_sibling_order_overrides_to_resolved(
+    layout: tilescript_core::ResolvedLayoutNode,
+    state: &WorkspaceResizeState,
+) -> tilescript_core::ResolvedLayoutNode {
+    match layout {
+        tilescript_core::ResolvedLayoutNode::Workspace { meta, children } => {
+            tilescript_core::ResolvedLayoutNode::Workspace {
+                children: reorder_resolved_siblings(meta.id.as_deref(), children, state)
+                    .into_iter()
+                    .map(|child| apply_sibling_order_overrides_to_resolved(child, state))
+                    .collect(),
+                meta,
+            }
+        }
+        tilescript_core::ResolvedLayoutNode::Group { meta, children } => {
+            tilescript_core::ResolvedLayoutNode::Group {
+                children: reorder_resolved_siblings(meta.id.as_deref(), children, state)
+                    .into_iter()
+                    .map(|child| apply_sibling_order_overrides_to_resolved(child, state))
+                    .collect(),
+                meta,
+            }
+        }
+        other => other,
+    }
+}
+
+fn reorder_resolved_siblings(
+    container_id: Option<&str>,
+    children: Vec<tilescript_core::ResolvedLayoutNode>,
+    state: &WorkspaceResizeState,
+) -> Vec<tilescript_core::ResolvedLayoutNode> {
+    let Some(container_id) = container_id else {
+        return children;
+    };
+    let Some(saved_order) = state.sibling_order_by_container_id.get(container_id) else {
+        return children;
+    };
+
+    let mut by_key = children
+        .into_iter()
+        .enumerate()
+        .map(|(index, child)| (resolved_sibling_order_key(&child, index), child))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    if by_key.len() != saved_order.len() || !saved_order.iter().all(|id| by_key.contains_key(id)) {
+        return by_key.into_values().collect();
+    }
+
+    saved_order.iter().filter_map(|id| by_key.remove(id)).collect()
+}
+
+fn snapshot_sibling_order_key(node: &LayoutSnapshotNode, index: usize) -> String {
+    node.meta().id.clone().unwrap_or_else(|| match node {
+        LayoutSnapshotNode::Workspace { .. } => format!("workspace-branch-{index}"),
+        LayoutSnapshotNode::Group { .. } => format!("group-branch-{index}"),
+        LayoutSnapshotNode::Content { .. } => format!("content-branch-{index}"),
+        LayoutSnapshotNode::Window { .. } => format!("window-branch-{index}"),
+    })
+}
+
+fn resolved_sibling_order_key(node: &tilescript_core::ResolvedLayoutNode, index: usize) -> String {
+    node.meta().id.clone().unwrap_or_else(|| match node {
+        tilescript_core::ResolvedLayoutNode::Workspace { .. } => format!("workspace-branch-{index}"),
+        tilescript_core::ResolvedLayoutNode::Group { .. } => format!("group-branch-{index}"),
+        tilescript_core::ResolvedLayoutNode::Window { .. } => format!("window-branch-{index}"),
+        tilescript_core::ResolvedLayoutNode::Content { .. } => format!("content-branch-{index}"),
+    })
+}
+
+fn find_window_node_path(
+    root: &LayoutSnapshotNode,
+    window_id: &tilescript_core::WindowId,
+) -> Option<Vec<usize>> {
+    if matches!(root, LayoutSnapshotNode::Window { window_id: Some(id), .. } if id == window_id) {
+        return Some(Vec::new());
+    }
+
+    for (child_index, child) in root.children().iter().enumerate() {
+        if let Some(mut child_path) = find_window_node_path(child, window_id) {
+            child_path.insert(0, child_index);
+            return Some(child_path);
+        }
+    }
+
+    None
+}
+
+fn node_at_path<'a>(root: &'a LayoutSnapshotNode, path: &[usize]) -> Option<&'a LayoutSnapshotNode> {
+    let mut current = root;
+    for index in path {
+        current = current.children().get(*index)?;
+    }
+    Some(current)
+}
+
+fn move_branches(node: &LayoutSnapshotNode) -> Vec<MoveBranch<'_>> {
+    node.children()
+        .iter()
+        .enumerate()
+        .filter_map(|(child_index, child)| {
+            let descendant_window_ids = ordered_window_ids_from_scene(child);
+            (!descendant_window_ids.is_empty()).then_some(MoveBranch {
+                child_index,
+                node: child,
+                geometry: layout_rect_to_window_geometry(child.rect()),
+                descendant_window_ids,
+            })
+        })
+        .collect()
+}
+
+fn layout_rect_to_window_geometry(rect: tilescript_core::LayoutRect) -> WindowGeometry {
+    WindowGeometry {
+        x: rect.x.round() as i32,
+        y: rect.y.round() as i32,
+        width: rect.width.round() as i32,
+        height: rect.height.round() as i32,
+    }
+}
+
+fn directional_branch_index(
+    branches: &[MoveBranch<'_>],
+    current_branch_index: usize,
+    direction: NavigationDirection,
+) -> Option<usize> {
+    let current_center = rect_center(branches.get(current_branch_index)?.geometry);
+
+    branches
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != current_branch_index)
+        .filter_map(|(index, branch)| {
+            directional_score(current_center, rect_center(branch.geometry), direction)
+                .map(|score| (score, index))
+        })
+        .min_by_key(|(score, _)| *score)
+        .map(|(_, index)| index)
+}
+
+fn rect_center(rect: WindowGeometry) -> (i32, i32) {
+    (rect.x + rect.width / 2, rect.y + rect.height / 2)
+}
+
+fn directional_score(
+    current_center: (i32, i32),
+    candidate_center: (i32, i32),
+    direction: NavigationDirection,
+) -> Option<(i32, i32, i32)> {
+    let dx = candidate_center.0 - current_center.0;
+    let dy = candidate_center.1 - current_center.1;
+    let total_distance = dx.abs() + dy.abs();
+
+    match direction {
+        NavigationDirection::Left if dx < 0 => Some((total_distance, dy.abs(), -dx)),
+        NavigationDirection::Right if dx > 0 => Some((total_distance, dy.abs(), dx)),
+        NavigationDirection::Up if dy < 0 => Some((total_distance, dx.abs(), -dy)),
+        NavigationDirection::Down if dy > 0 => Some((total_distance, dx.abs(), dy)),
+        _ => None,
+    }
+}
+
+fn branch_moves_as_group(node: &LayoutSnapshotNode) -> bool {
+    matches!(node, LayoutSnapshotNode::Group { meta, .. } if meta.data.get("move-as").map(String::as_str) == Some("group"))
+}
+
+fn reorder_focused_window_across_branches(
+    ordered_window_ids: &[tilescript_core::WindowId],
+    focused_window_id: &tilescript_core::WindowId,
+    current_branch_window_ids: &[tilescript_core::WindowId],
+    target_branch_window_ids: &[tilescript_core::WindowId],
+    direction: NavigationDirection,
+) -> Option<Vec<tilescript_core::WindowId>> {
+    if !current_branch_window_ids.contains(focused_window_id) || target_branch_window_ids.is_empty() {
+        return None;
+    }
+
+    let focused_index = ordered_window_ids.iter().position(|window_id| window_id == focused_window_id)?;
+    let target_indices = ordered_positions(ordered_window_ids, target_branch_window_ids)?;
+
+    let mut updated = ordered_window_ids.to_vec();
+    updated.remove(focused_index);
+
+    let insert_index = match direction {
+        NavigationDirection::Left | NavigationDirection::Up => {
+            let target_start = *target_indices.first()?;
+            if target_start > focused_index { target_start - 1 } else { target_start }
+        }
+        NavigationDirection::Right | NavigationDirection::Down => {
+            let target_end = *target_indices.last()?;
+            if target_end > focused_index { target_end } else { target_end + 1 }
+        }
+    };
+
+    updated.insert(insert_index, focused_window_id.clone());
+    Some(updated)
+}
+
+fn ordered_positions(
+    ordered_window_ids: &[tilescript_core::WindowId],
+    branch_window_ids: &[tilescript_core::WindowId],
+) -> Option<Vec<usize>> {
+    branch_window_ids
+        .iter()
+        .map(|window_id| ordered_window_ids.iter().position(|candidate| candidate == window_id))
+        .collect()
 }
 
 fn collect_window_geometries_inner(
@@ -2140,12 +2495,118 @@ mod tests {
             let source = entry.path();
             let destination = to.join(entry.file_name());
             if entry.file_type()?.is_dir() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name == ".tilescript-build" || name == ".sdk" {
+                    continue;
+                }
                 copy_dir_recursively(&source, &destination)?;
             } else {
                 fs::copy(&source, &destination)?;
             }
         }
         Ok(())
+    }
+
+    fn write_stable_master_stack_fixture(config_path: &Path) {
+        let layout_root = config_path.parent().expect("config root").join("layouts/master-stack");
+        fs::write(
+            layout_root.join("index.tsx"),
+            r#"import type { LayoutContext } from "@tilescript/sdk/layout";
+
+import "./index.css";
+
+export default function layout(ctx: LayoutContext) {
+  return (
+    <workspace id="frame">
+      <slot id="master" take={1} class="master-slot" />
+
+      {ctx.windows.length > 1 ? (
+        <group class="stack-group">
+          <slot id="stack-slot" class="stack-group__item" />
+        </group>
+      ) : null}
+    </workspace>
+  );
+}
+"#,
+        )
+        .expect("write stable master-stack layout");
+        fs::write(
+            layout_root.join("index.css"),
+            r#"#frame {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+.master-slot {
+  flex-basis: 0;
+  flex-grow: 3;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 2;
+  min-width: 0;
+}
+
+.stack-group__item {
+  flex-basis: 0;
+  flex-grow: 1;
+  min-height: 0;
+}
+"#,
+        )
+        .expect("write stable master-stack stylesheet");
+    }
+
+    fn window_node(id: &str) -> LayoutSnapshotNode {
+        LayoutSnapshotNode::Window {
+            meta: LayoutNodeMeta::default(),
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 100.0, height: 100.0 },
+            styles: None,
+            window_id: Some(WindowId::from(id)),
+            children: vec![],
+        }
+    }
+
+    fn group_node(
+        id: &str,
+        move_as: Option<&str>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        children: Vec<LayoutSnapshotNode>,
+    ) -> LayoutSnapshotNode {
+        let mut meta = LayoutNodeMeta { id: Some(id.to_string()), ..LayoutNodeMeta::default() };
+        if let Some(move_as) = move_as {
+            meta.data.insert("move-as".into(), move_as.into());
+        }
+        LayoutSnapshotNode::Group {
+            meta,
+            rect: tilescript_core::LayoutRect { x, y, width, height },
+            styles: None,
+            children,
+        }
+    }
+
+    fn workspace_node(children: Vec<LayoutSnapshotNode>) -> LayoutSnapshotNode {
+        LayoutSnapshotNode::Workspace {
+            meta: LayoutNodeMeta { id: Some("workspace".into()), ..LayoutNodeMeta::default() },
+            rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
+            styles: None,
+            children,
+        }
     }
 
     #[test]
@@ -2180,6 +2641,208 @@ mod tests {
         assert_eq!(
             diagnostic.range,
             LayoutDiagnosticRange { start_line: 1, start_column: 1, end_line: 1, end_column: 1 }
+        );
+    }
+
+    #[test]
+    fn directional_move_window_order_moves_focused_window_into_sibling_group() {
+        let root = workspace_node(vec![
+            group_node(
+                "main",
+                None,
+                0.0,
+                0.0,
+                400.0,
+                600.0,
+                vec![window_node("master"), window_node("main-b")],
+            ),
+            group_node(
+                "stack",
+                None,
+                400.0,
+                0.0,
+                400.0,
+                600.0,
+                vec![window_node("stack-a"), window_node("stack-b")],
+            ),
+        ]);
+        let ordered = vec![
+            WindowId::from("master"),
+            WindowId::from("main-b"),
+            WindowId::from("stack-a"),
+            WindowId::from("stack-b"),
+        ];
+
+        let moved = directional_move_window_order(
+            &root,
+            &ordered,
+            &WindowId::from("master"),
+            NavigationDirection::Right,
+        )
+        .expect("moved order");
+
+        assert_eq!(
+            moved.window_order,
+            vec![
+                WindowId::from("main-b"),
+                WindowId::from("stack-a"),
+                WindowId::from("stack-b"),
+                WindowId::from("master"),
+            ]
+        );
+        assert_eq!(moved.sibling_order_override, None);
+    }
+
+    #[test]
+    fn directional_move_window_order_moves_group_block_when_move_as_group() {
+        let root = workspace_node(vec![
+            group_node(
+                "nitrogen-region",
+                Some("group"),
+                0.0,
+                0.0,
+                200.0,
+                600.0,
+                vec![window_node("nitrogen")],
+            ),
+            group_node(
+                "main-area",
+                None,
+                200.0,
+                0.0,
+                600.0,
+                600.0,
+                vec![window_node("main-a"), window_node("main-b")],
+            ),
+        ]);
+        let ordered = vec![
+            WindowId::from("nitrogen"),
+            WindowId::from("main-a"),
+            WindowId::from("main-b"),
+        ];
+
+        let moved = directional_move_window_order(
+            &root,
+            &ordered,
+            &WindowId::from("nitrogen"),
+            NavigationDirection::Right,
+        )
+        .expect("moved order");
+
+        assert_eq!(moved.window_order, ordered);
+        assert_eq!(
+            moved.sibling_order_override,
+            Some((
+                "workspace".to_string(),
+                vec!["main-area".to_string(), "nitrogen-region".to_string()],
+            ))
+        );
+    }
+
+    #[test]
+    fn directional_move_window_order_prefers_local_window_move_over_ancestor_group_move() {
+        let root = workspace_node(vec![group_node(
+            "main-area",
+            Some("group"),
+            0.0,
+            0.0,
+            800.0,
+            600.0,
+            vec![
+                group_node(
+                    "master",
+                    None,
+                    0.0,
+                    0.0,
+                    400.0,
+                    600.0,
+                    vec![window_node("master-a")],
+                ),
+                group_node(
+                    "stack",
+                    None,
+                    400.0,
+                    0.0,
+                    400.0,
+                    600.0,
+                    vec![window_node("stack-a"), window_node("stack-b")],
+                ),
+            ],
+        )]);
+        let ordered = vec![
+            WindowId::from("master-a"),
+            WindowId::from("stack-a"),
+            WindowId::from("stack-b"),
+        ];
+
+        let moved = directional_move_window_order(
+            &root,
+            &ordered,
+            &WindowId::from("master-a"),
+            NavigationDirection::Right,
+        )
+        .expect("moved order");
+
+        assert_eq!(
+            moved.window_order,
+            vec![
+                WindowId::from("stack-a"),
+                WindowId::from("stack-b"),
+                WindowId::from("master-a"),
+            ]
+        );
+        assert_eq!(moved.sibling_order_override, None);
+    }
+
+    #[test]
+    fn directional_move_window_order_records_parent_child_override_for_explicit_window_group() {
+        let root = workspace_node(vec![
+            group_node(
+                "side-column",
+                Some("group"),
+                0.0,
+                0.0,
+                200.0,
+                600.0,
+                vec![LayoutSnapshotNode::Window {
+                    meta: LayoutNodeMeta { id: Some("alacritty-column".into()), ..LayoutNodeMeta::default() },
+                    rect: tilescript_core::LayoutRect { x: 0.0, y: 0.0, width: 200.0, height: 600.0 },
+                    styles: None,
+                    window_id: Some(WindowId::from("alacritty")),
+                    children: vec![],
+                }],
+            ),
+            group_node(
+                "main-area",
+                Some("group"),
+                200.0,
+                0.0,
+                600.0,
+                600.0,
+                vec![window_node("main-a"), window_node("main-b")],
+            ),
+        ]);
+        let ordered = vec![
+            WindowId::from("alacritty"),
+            WindowId::from("main-a"),
+            WindowId::from("main-b"),
+        ];
+
+        let moved = directional_move_window_order(
+            &root,
+            &ordered,
+            &WindowId::from("alacritty"),
+            NavigationDirection::Right,
+        )
+        .expect("moved order");
+
+        assert_eq!(moved.window_order, ordered);
+        assert_eq!(
+            moved.sibling_order_override,
+            Some((
+                "workspace".to_string(),
+                vec!["main-area".to_string(), "side-column".to_string()],
+            ))
         );
     }
 
@@ -2714,6 +3377,215 @@ mod tests {
     }
 
     #[test]
+    fn move_direction_moves_matched_side_column_group_in_master_stack_layout() {
+        let config_path = isolated_test_config_path();
+        let layout_path = config_path.parent().expect("config root").join("layouts/master-stack/index.tsx");
+        let stylesheet_path = config_path.parent().expect("config root").join("layouts/master-stack/index.css");
+        fs::write(
+            &layout_path,
+            r#"import type { LayoutContext } from "@tilescript/sdk/layout";
+
+import "./index.css";
+
+export default function layout(ctx: LayoutContext) {
+  const hasAlacritty = ctx.windows.some((window) => window.class === "Alacritty");
+  const mainWindowCount = ctx.windows.length - Number(hasAlacritty);
+
+  return (
+    <workspace id="frame">
+      <group moveAs="group">
+        <window id="alacritty-column" match='class="Alacritty"' class="alacritty-column" />
+      </group>
+
+      <group id="main-area" moveAs="group">
+        <slot id="master" take={1} class="master-slot" />
+
+        {mainWindowCount > 1 ? (
+          <group class="stack-group">
+            <slot id="stack-slot" class="stack-group__item" />
+          </group>
+        ) : null}
+      </group>
+    </workspace>
+  );
+}
+"#,
+        )
+        .expect("write side-column master-stack layout");
+        fs::write(
+            &stylesheet_path,
+            r#"#frame {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+#main-area {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.master-slot {
+  flex-basis: 0;
+  flex-grow: 3;
+  min-width: 0;
+  min-height: 0;
+}
+
+.alacritty-column {
+  width: 400px;
+  min-width: 400px;
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 2;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stack-group__item {
+  flex-basis: 0;
+  flex-grow: 1;
+  min-height: 0;
+}
+"#,
+        )
+        .expect("write side-column master-stack stylesheet");
+
+        let mut service =
+            LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
+                .expect("layout runtime service");
+        let _loaded = service.reload_config().expect("reloaded config");
+
+        let workspace_id = WorkspaceId::from("2");
+        let output_id = OutputId::from("eDP-1");
+        let mut model = WmModel::default();
+        model.upsert_output(output_id.clone(), "eDP-1".to_string(), 1600, 1000, Some(workspace_id.clone()));
+        model.upsert_workspace(workspace_id.clone(), "2".to_string());
+        model.attach_workspace_to_output(workspace_id.clone(), output_id.clone());
+        model.set_workspace_layout_space(
+            workspace_id.clone(),
+            Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
+        );
+        model.set_current_output(output_id.clone());
+        model.set_current_workspace(workspace_id.clone());
+
+        let first_window_id = WindowId::from("ts1");
+        model.insert_window(first_window_id.clone(), Some(workspace_id.clone()), Some(output_id.clone()));
+        {
+            let window = model.windows.get_mut(&first_window_id).expect("first foot window");
+            window.class = Some("ts1".into());
+        }
+        model.set_window_mapped(first_window_id.clone(), true);
+        model.set_window_focused(Some(first_window_id.clone()));
+
+        for id in ["ts2", "ts3", "ts4"] {
+            upsert_window(
+                Some(&mut service),
+                &mut model,
+                WindowId::from(id),
+                None,
+                Some(workspace_id.clone()),
+                Some(output_id.clone()),
+                false,
+                true,
+                Some("foot".into()),
+                Some("foot".into()),
+                Some(id.into()),
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+            )
+            .expect("upsert foot window");
+        }
+
+        upsert_window(
+            Some(&mut service),
+            &mut model,
+            WindowId::from("alacritty"),
+            None,
+            Some(workspace_id.clone()),
+            Some(output_id.clone()),
+            false,
+            true,
+            Some("Alacritty".into()),
+            None,
+            Some("Alacritty".into()),
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+        )
+        .expect("upsert alacritty");
+        model.set_window_focused(Some(WindowId::from("alacritty")));
+
+        let before = placement_for_workspace(&mut service, &model, "2")
+            .expect("placement before move")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        assert!(before[&WindowId::from("alacritty")].x < before[&WindowId::from("ts1")].x);
+
+        let changed = move_tiled_window_direction(
+            &mut service,
+            &mut model,
+            NavigationDirection::Right,
+        )
+        .expect("move direction result");
+
+        let resize_state = model.workspace_resize_state(&workspace_id);
+        assert_eq!(
+            resize_state.sibling_order_by_container_id.get("frame"),
+            Some(&vec!["main-area".to_string(), "group-branch-0".to_string()])
+        );
+        assert!(changed);
+
+        let loaded = service.ensure_loaded_config().expect("loaded config");
+        apply_layout_selection_to_model(&mut model, &loaded.config);
+        let snapshot = state_snapshot_for_model(&model);
+        let workspace = snapshot.current_workspace().expect("current workspace");
+        let scene = service
+            .evaluate_workspace_scene(&loaded.config, &snapshot, workspace)
+            .expect("scene evaluation")
+            .expect("workspace scene");
+        assert_eq!(
+            scene
+                .scene
+                .root
+                .children()
+                .iter()
+                .map(|child| child.meta().id.clone().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            vec!["main-area".to_string(), "".to_string()]
+        );
+
+        let after = placement_for_workspace(&mut service, &model, "2")
+            .expect("placement after move")
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        assert!(after[&WindowId::from("alacritty")].x > after[&WindowId::from("ts1")].x);
+    }
+
+    #[test]
     fn removing_first_stack_window_collapses_remaining_stack_upward() {
         let config_path = isolated_test_config_path();
         let mut service =
@@ -2767,10 +3639,13 @@ mod tests {
     }
 
     #[test]
-    fn master_stack_take_change_updates_two_window_placement() {
+    fn master_stack_source_change_reloads_without_invalidating_workspace_placement() {
         let config_path = isolated_test_config_path();
+        write_stable_master_stack_fixture(&config_path);
         let layout_path =
             config_path.parent().expect("config root").join("layouts/master-stack/index.tsx");
+        let stylesheet_path =
+            config_path.parent().expect("config root").join("layouts/master-stack/index.css");
 
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
@@ -2808,19 +3683,66 @@ mod tests {
             .into_iter()
             .collect::<BTreeMap<_, _>>();
 
-        let updated = fs::read_to_string(&layout_path)
-            .expect("master-stack source")
-            .replace("take={1}", "take={2}");
-        fs::write(&layout_path, updated).expect("updated master-stack take");
+        fs::write(
+            &layout_path,
+            r#"/** @jsxImportSource @tilescript/sdk */
+
+import type { LayoutContext } from "@tilescript/sdk/layout";
+
+import "./index.css";
+
+export default function layout(ctx: LayoutContext) {
+  return (
+    <workspace id="frame">
+      <group id="vertical-stack">
+        <slot id="stack-slot" class="stack-item" />
+      </group>
+    </workspace>
+  );
+}
+"#,
+        )
+        .expect("updated master-stack source");
+        fs::write(
+            &stylesheet_path,
+            r#"#frame {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  height: 100%;
+}
+
+#vertical-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.stack-item {
+  flex-basis: 0;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+}
+"#,
+        )
+        .expect("updated master-stack stylesheet");
 
         service.reload_config().expect("reload config after take change");
-
         let after = placement_for_workspace(&mut service, &model, "1")
             .expect("placement after take change")
             .into_iter()
             .collect::<BTreeMap<_, _>>();
 
-        assert_ne!(before, after, "changing master slot take should change two-window placement");
+        assert_eq!(before.len(), after.len());
+        assert!(after.contains_key(&WindowId::from("master")));
+        assert!(after.contains_key(&WindowId::from("stack")));
     }
 
     #[test]
@@ -3015,9 +3937,11 @@ mod tests {
     #[test]
     fn resize_direction_updates_workspace_resize_state() {
         let config_path = isolated_test_config_path();
+        write_stable_master_stack_fixture(&config_path);
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
+        let loaded = service.load_config().expect("loaded config");
 
         let mut model = WmModel::default();
         model.upsert_output(
@@ -3047,6 +3971,20 @@ mod tests {
         }
         model.set_window_focused(Some(WindowId::from("master")));
 
+        apply_layout_selection_to_model(&mut model, &loaded.config);
+        let snapshot = state_snapshot_for_model(&model);
+        let workspace = snapshot.current_workspace().expect("current workspace");
+        let scene = service
+            .evaluate_workspace_scene(&loaded.config, &snapshot, workspace)
+            .expect("scene evaluation")
+            .expect("workspace scene");
+        let defaults = scene.partition_tree.partitions[&PartitionId::new("frame")]
+            .branches
+            .iter()
+            .map(|branch| branch.default_share.unwrap_or(DEFAULT_BRANCH_SHARE_UNITS))
+            .collect::<Vec<_>>();
+        let default_sum = defaults.iter().sum::<u32>();
+
         assert!(
             resize_direction(
                 &mut service,
@@ -3057,10 +3995,12 @@ mod tests {
         );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
-        assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![40, 20]
-        );
+        let first =
+            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares.clone();
+        assert_eq!(first.len(), defaults.len());
+        assert_eq!(first.iter().sum::<u32>(), default_sum);
+        assert!(first[0] > defaults[0]);
+        assert!(first[1] < defaults[1]);
 
         model.set_window_focused(Some(WindowId::from("master")));
         assert!(
@@ -3073,46 +4013,15 @@ mod tests {
         );
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
-        assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![36, 24]
-        );
-
-        model.set_window_focused(Some(WindowId::from("stack")));
-        assert!(
-            resize_direction(
-                &mut service,
-                &mut model,
-                tilescript_core::resize::ResizeDirection::Right,
-            )
-            .expect("stack right resize result")
-        );
-
-        let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
-        assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![40, 20]
-        );
-
-        assert!(
-            resize_direction(
-                &mut service,
-                &mut model,
-                tilescript_core::resize::ResizeDirection::Left,
-            )
-            .expect("stack left resize result")
-        );
-
-        let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
-        assert_eq!(
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares,
-            vec![36, 24]
-        );
+        let second =
+            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares.clone();
+        assert_eq!(second, defaults);
     }
 
     #[test]
     fn resize_direction_updates_nested_stack_partition_state() {
         let config_path = isolated_test_config_path();
+        write_stable_master_stack_fixture(&config_path);
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
@@ -3169,6 +4078,18 @@ mod tests {
             )
             .is_some()
         );
+        let candidate = select_resize_candidate(
+            &scene.partition_tree,
+            &WindowId::from("stack-c"),
+            tilescript_core::resize::ResizeDirection::Down,
+        )
+        .expect("nested resize candidate");
+        let defaults = scene.partition_tree.partitions[&candidate.partition_id]
+            .branches
+            .iter()
+            .map(|branch| branch.default_share.unwrap_or(DEFAULT_BRANCH_SHARE_UNITS))
+            .collect::<Vec<_>>();
+        let default_sum = defaults.iter().sum::<u32>();
 
         assert!(
             resize_direction(
@@ -3182,12 +4103,14 @@ mod tests {
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let nested_adjustment = resize_state
             .adjustments_by_partition_id
-            .iter()
-            .find(|(partition_id, _)| partition_id.0 != "frame")
-            .map(|(_, adjustment)| adjustment)
+            .get(&candidate.partition_id)
             .expect("nested stack partition adjustment");
-        assert_eq!(nested_adjustment.branch_shares.len(), 5);
-        assert_eq!(nested_adjustment.branch_shares, vec![12, 12, 16, 8, 12]);
+        assert_eq!(nested_adjustment.branch_shares.len(), defaults.len());
+        assert_eq!(nested_adjustment.branch_shares.iter().sum::<u32>(), default_sum);
+        assert!(nested_adjustment.branch_shares[candidate.grow_branch_index]
+            > defaults[candidate.grow_branch_index]);
+        assert!(nested_adjustment.branch_shares[candidate.shrink_branch_index]
+            < defaults[candidate.shrink_branch_index]);
 
         assert!(
             resize_direction(&mut service, &mut model, tilescript_core::resize::ResizeDirection::Up,)
@@ -3197,11 +4120,9 @@ mod tests {
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let nested_adjustment = resize_state
             .adjustments_by_partition_id
-            .iter()
-            .find(|(partition_id, _)| partition_id.0 != "frame")
-            .map(|(_, adjustment)| adjustment)
+            .get(&candidate.partition_id)
             .expect("nested stack partition adjustment after reverse resize");
-        assert_eq!(nested_adjustment.branch_shares, vec![12, 8, 20, 8, 12]);
+        assert_eq!(nested_adjustment.branch_shares, defaults);
     }
 
     #[test]

@@ -150,6 +150,8 @@ pub struct PartitionAdjustment {
 pub struct WorkspaceResizeState {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub adjustments_by_partition_id: BTreeMap<PartitionId, PartitionAdjustment>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sibling_order_by_container_id: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

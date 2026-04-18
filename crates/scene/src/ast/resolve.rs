@@ -1,12 +1,14 @@
 use std::collections::BTreeSet;
 
+use thiserror::Error;
 use tilescript_core::snapshot::WindowSnapshot;
 use tilescript_core::types::WindowShell;
-use thiserror::Error;
 
 use crate::ast::validate::ValidatedLayoutTree;
 use crate::matching::matches_window;
-use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch};
+use tilescript_core::{
+    LayoutNodeMeta, ResolvedLayoutNode, SlotTake, SourceLayoutNode, WindowMatch,
+};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedLayoutTree {
@@ -109,11 +111,14 @@ fn resolve_node(
                     claimed.insert(window.id.to_string());
                 });
 
-            vec![ResolvedLayoutNode::Window {
-                meta: resolved_window_meta(meta, claimed_window),
-                window_id: claimed_window.map(|window| window.id.clone()),
-                children: Vec::new(),
-            }]
+            claimed_window
+                .map(|window| ResolvedLayoutNode::Window {
+                    meta: resolved_window_meta(meta, Some(window)),
+                    window_id: Some(window.id.clone()),
+                    children: Vec::new(),
+                })
+                .into_iter()
+                .collect()
         }
         SourceLayoutNode::Slot { meta, window_match, take } => {
             let matching_ids: Vec<_> = windows

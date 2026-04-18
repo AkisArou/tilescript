@@ -19,9 +19,12 @@ export interface LayoutComponentProps {
 
 export interface WorkspaceProps extends LayoutBaseProps {}
 
-export interface GroupProps extends LayoutBaseProps {}
+export interface GroupProps extends LayoutBaseProps {
+  moveAs?: "window" | "group";
+}
 
 export interface SlotProps extends LayoutBaseProps {
+  match?: string;
   take?: number;
 }
 

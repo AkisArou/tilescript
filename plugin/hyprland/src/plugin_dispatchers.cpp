@@ -113,18 +113,7 @@ tilescriptMoveWindowDispatcher(std::string arg,
   callbacks.syncWorkspaceWindows(focusedWindow->m_workspace);
   callbacks.syncFocusedWindow(focusedWindow);
 
-  const auto candidateId = runtime()->layoutSwapCandidate(*direction);
-  if (!candidateId.has_value()) {
-    return {};
-  }
-
-  const auto candidateWindow = windowFromTilescriptId(*candidateId, callbacks);
-  if (!candidateWindow) {
-    return {.success = false, .error = "target window not found"};
-  }
-
-  const auto focusedWindowId = callbacks.makeWindowId(focusedWindow);
-  if (!runtime()->moveTiledWindow(focusedWindowId, *candidateId)) {
+  if (!runtime()->layoutMoveDirection(*direction)) {
     return {.success = false, .error = "failed to move tiled window"};
   }
 

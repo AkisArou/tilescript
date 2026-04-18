@@ -7,10 +7,28 @@
   height: 100%;
 }
 
+#main-area {
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  flex-basis: 0;
+  flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .master-slot {
   flex-basis: 0;
   flex-grow: 3;
   min-width: 0;
+  min-height: 0;
+}
+
+.alacritty-column {
+  width: 400px;
+  min-width: 400px;
+  flex-grow: 0;
+  flex-shrink: 0;
   min-height: 0;
 }
 
@@ -21,6 +39,7 @@
   flex-basis: 0;
   flex-grow: 2;
   min-width: 0;
+  min-height: 0;
 }
 
 .stack-group__item {

@@ -17,7 +17,7 @@ use tilescript_core::window_id;
 use tilescript_core::wm::{DrawableSpace, WindowGeometry, WmModel};
 use tilescript_core::workspace::{ensure_default_workspace, ensure_workspace};
 use tilescript_core::{OutputId, WindowId, WorkspaceId};
-use tilescript_scene::SceneResponse;
+use tilescript_scene::{LayoutSnapshotNode, SceneResponse};
 use std::collections::BTreeMap;
 
 use crate::layout_runtime::{
@@ -591,21 +591,23 @@ fn move_focused_window_by_direction(
     let Some(focused_id) = model.focused_window_id().cloned() else {
         return;
     };
-    let Some(candidates) = directional_candidates(model, scene) else {
+    let Some(scene) = scene else {
         return;
     };
-
-    let Some(target_id) = select_directional_focus_candidate(
-        &candidates,
-        Some(focused_id.clone()),
+    let Some(workspace_id) = model.current_workspace_id().cloned() else {
+        return;
+    };
+    let ordered_window_ids = model.ordered_window_ids_for_workspace(&workspace_id);
+    let Some(updated_order) = preview_directional_move_window_order(
+        &scene.root,
+        &ordered_window_ids,
+        &focused_id,
         navigation_direction(direction),
-        &model.last_focused_window_id_by_scope,
-        model.focus_tree.as_ref(),
     ) else {
         return;
     };
 
-    if target_id != focused_id && model.move_tiled_window(&focused_id, &target_id) {
+    if model.replace_tiled_window_order_for_workspace(&workspace_id, updated_order) {
         model.set_window_focused(Some(focused_id));
     }
 }
@@ -696,6 +698,251 @@ fn directional_candidates(
             })
             .collect(),
     )
+}
+
+struct PreviewMoveBranch<'a> {
+    child_index: usize,
+    node: &'a LayoutSnapshotNode,
+    descendant_window_ids: Vec<WindowId>,
+    geometry: WindowGeometry,
+}
+
+fn preview_directional_move_window_order(
+    root: &LayoutSnapshotNode,
+    ordered_window_ids: &[WindowId],
+    focused_window_id: &WindowId,
+    direction: NavigationDirection,
+) -> Option<Vec<WindowId>> {
+    let path = preview_find_window_node_path(root, focused_window_id)?;
+
+    for depth in (0..path.len()).rev() {
+        let container = preview_node_at_path(root, &path[..depth])?;
+        if !matches!(container, LayoutSnapshotNode::Workspace { .. } | LayoutSnapshotNode::Group { .. }) {
+            continue;
+        }
+
+        let branches = preview_move_branches(container);
+        if branches.len() < 2 {
+            continue;
+        }
+
+        let Some(current_branch_index) =
+            branches.iter().position(|branch| branch.child_index == path[depth])
+        else {
+            continue;
+        };
+        let Some(target_branch_index) =
+            preview_directional_branch_index(&branches, current_branch_index, direction)
+        else {
+            continue;
+        };
+
+        let current_branch = &branches[current_branch_index];
+        let target_branch = &branches[target_branch_index];
+        let updated_order = if preview_branch_moves_as_group(current_branch.node) {
+            preview_reorder_branch_block(
+                ordered_window_ids,
+                &current_branch.descendant_window_ids,
+                &target_branch.descendant_window_ids,
+            )
+        } else {
+            preview_reorder_focused_window_across_branches(
+                ordered_window_ids,
+                focused_window_id,
+                &current_branch.descendant_window_ids,
+                &target_branch.descendant_window_ids,
+                direction,
+            )
+        };
+
+        if let Some(updated_order) = updated_order
+            && updated_order != ordered_window_ids
+        {
+            return Some(updated_order);
+        }
+    }
+
+    None
+}
+
+fn preview_find_window_node_path(root: &LayoutSnapshotNode, window_id: &WindowId) -> Option<Vec<usize>> {
+    if matches!(root, LayoutSnapshotNode::Window { window_id: Some(id), .. } if id == window_id) {
+        return Some(Vec::new());
+    }
+
+    for (child_index, child) in root.children().iter().enumerate() {
+        if let Some(mut child_path) = preview_find_window_node_path(child, window_id) {
+            child_path.insert(0, child_index);
+            return Some(child_path);
+        }
+    }
+
+    None
+}
+
+fn preview_node_at_path<'a>(root: &'a LayoutSnapshotNode, path: &[usize]) -> Option<&'a LayoutSnapshotNode> {
+    let mut current = root;
+    for index in path {
+        current = current.children().get(*index)?;
+    }
+    Some(current)
+}
+
+fn preview_move_branches(node: &LayoutSnapshotNode) -> Vec<PreviewMoveBranch<'_>> {
+    node.children()
+        .iter()
+        .enumerate()
+        .filter_map(|(child_index, child)| {
+            let descendant_window_ids = preview_ordered_window_ids_from_scene(child);
+            (!descendant_window_ids.is_empty()).then_some(PreviewMoveBranch {
+                child_index,
+                node: child,
+                geometry: preview_layout_rect_to_window_geometry(child.rect()),
+                descendant_window_ids,
+            })
+        })
+        .collect()
+}
+
+fn preview_layout_rect_to_window_geometry(rect: tilescript_core::LayoutRect) -> WindowGeometry {
+    WindowGeometry {
+        x: rect.x.round() as i32,
+        y: rect.y.round() as i32,
+        width: rect.width.round() as i32,
+        height: rect.height.round() as i32,
+    }
+}
+
+fn preview_directional_branch_index(
+    branches: &[PreviewMoveBranch<'_>],
+    current_branch_index: usize,
+    direction: NavigationDirection,
+) -> Option<usize> {
+    let current_center = preview_rect_center(branches.get(current_branch_index)?.geometry);
+
+    branches
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != current_branch_index)
+        .filter_map(|(index, branch)| {
+            preview_directional_score(current_center, preview_rect_center(branch.geometry), direction)
+                .map(|score| (score, index))
+        })
+        .min_by_key(|(score, _)| *score)
+        .map(|(_, index)| index)
+}
+
+fn preview_rect_center(rect: WindowGeometry) -> (i32, i32) {
+    (rect.x + rect.width / 2, rect.y + rect.height / 2)
+}
+
+fn preview_directional_score(
+    current_center: (i32, i32),
+    candidate_center: (i32, i32),
+    direction: NavigationDirection,
+) -> Option<(i32, i32, i32)> {
+    let dx = candidate_center.0 - current_center.0;
+    let dy = candidate_center.1 - current_center.1;
+    let total_distance = dx.abs() + dy.abs();
+
+    match direction {
+        NavigationDirection::Left if dx < 0 => Some((total_distance, dy.abs(), -dx)),
+        NavigationDirection::Right if dx > 0 => Some((total_distance, dy.abs(), dx)),
+        NavigationDirection::Up if dy < 0 => Some((total_distance, dx.abs(), -dy)),
+        NavigationDirection::Down if dy > 0 => Some((total_distance, dx.abs(), dy)),
+        _ => None,
+    }
+}
+
+fn preview_branch_moves_as_group(node: &LayoutSnapshotNode) -> bool {
+    matches!(node, LayoutSnapshotNode::Group { meta, .. } if meta.data.get("move-as").map(String::as_str) == Some("group"))
+}
+
+fn preview_reorder_focused_window_across_branches(
+    ordered_window_ids: &[WindowId],
+    focused_window_id: &WindowId,
+    current_branch_window_ids: &[WindowId],
+    target_branch_window_ids: &[WindowId],
+    direction: NavigationDirection,
+) -> Option<Vec<WindowId>> {
+    if !current_branch_window_ids.contains(focused_window_id) || target_branch_window_ids.is_empty() {
+        return None;
+    }
+
+    let focused_index = ordered_window_ids.iter().position(|window_id| window_id == focused_window_id)?;
+    let _ = preview_contiguous_range(ordered_window_ids, current_branch_window_ids)?;
+    let (target_start, target_end) = preview_contiguous_range(ordered_window_ids, target_branch_window_ids)?;
+
+    let mut updated = ordered_window_ids.to_vec();
+    updated.remove(focused_index);
+
+    let insert_index = match direction {
+        NavigationDirection::Left | NavigationDirection::Up => {
+            if target_start > focused_index { target_start - 1 } else { target_start }
+        }
+        NavigationDirection::Right | NavigationDirection::Down => {
+            if target_start > focused_index { target_end } else { target_end + 1 }
+        }
+    };
+
+    updated.insert(insert_index, focused_window_id.clone());
+    Some(updated)
+}
+
+fn preview_reorder_branch_block(
+    ordered_window_ids: &[WindowId],
+    current_branch_window_ids: &[WindowId],
+    target_branch_window_ids: &[WindowId],
+) -> Option<Vec<WindowId>> {
+    let (current_start, current_end) = preview_contiguous_range(ordered_window_ids, current_branch_window_ids)?;
+    let (target_start, target_end) = preview_contiguous_range(ordered_window_ids, target_branch_window_ids)?;
+    if current_start == target_start {
+        return None;
+    }
+
+    let current_len = current_branch_window_ids.len();
+    let mut updated = ordered_window_ids.to_vec();
+    let block = updated.drain(current_start..=current_end).collect::<Vec<_>>();
+
+    let insert_index = if target_start > current_start {
+        target_end + 1 - current_len
+    } else {
+        target_start
+    };
+
+    updated.splice(insert_index..insert_index, block);
+    Some(updated)
+}
+
+fn preview_contiguous_range(
+    ordered_window_ids: &[WindowId],
+    branch_window_ids: &[WindowId],
+) -> Option<(usize, usize)> {
+    let indices = branch_window_ids
+        .iter()
+        .map(|window_id| ordered_window_ids.iter().position(|candidate| candidate == window_id))
+        .collect::<Option<Vec<_>>>()?;
+    let start = *indices.first()?;
+    let end = *indices.last()?;
+    let expected = ordered_window_ids.get(start..=end)?;
+    (expected == branch_window_ids).then_some((start, end))
+}
+
+fn preview_ordered_window_ids_from_scene(node: &LayoutSnapshotNode) -> Vec<WindowId> {
+    let mut ordered = Vec::new();
+    preview_collect_ordered_window_ids(node, &mut ordered);
+    ordered
+}
+
+fn preview_collect_ordered_window_ids(node: &LayoutSnapshotNode, out: &mut Vec<WindowId>) {
+    if let LayoutSnapshotNode::Window { window_id: Some(window_id), .. } = node {
+        out.push(window_id.clone());
+        return;
+    }
+
+    for child in node.children() {
+        preview_collect_ordered_window_ids(child, out);
+    }
 }
 
 fn navigation_direction(direction: FocusDirection) -> NavigationDirection {

@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
 use tilescript_core::{SlotTake, SourceLayoutNode};
 use tilescript_scene::ast::{AuthoredLayoutNode, AuthoredNodeMeta, ValidatedLayoutTree};
-use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DecodePath(Vec<String>);
@@ -72,6 +72,8 @@ struct SerializedAuthoredNodeProps {
     match_expr: Option<String>,
     #[serde(default)]
     take: Option<SlotTake>,
+    #[serde(default, rename = "moveAs")]
+    move_as: Option<String>,
 }
 
 impl SerializedAuthoredNodeProps {
@@ -80,6 +82,7 @@ impl SerializedAuthoredNodeProps {
             meta: self.meta.merge(nested.meta),
             match_expr: nested.match_expr.or(self.match_expr),
             take: nested.take.or(self.take),
+            move_as: nested.move_as.or(self.move_as),
         }
     }
 }
@@ -171,14 +174,14 @@ fn decode_authored_layout_node_from_node(
         SerializedLayoutNode::Workspace { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Workspace {
-                meta: decode_meta(props.meta),
+                meta: decode_meta(props.meta, None),
                 children: decode_children(children, &path.field("children"))?,
             }
         }
         SerializedLayoutNode::Group { props, legacy, children } => {
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Group {
-                meta: decode_meta(props.meta),
+                meta: decode_meta(props.meta, props.move_as),
                 children: decode_children(children, &path.field("children"))?,
             }
         }
@@ -186,7 +189,7 @@ fn decode_authored_layout_node_from_node(
             ensure_childless_node("window", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Window {
-                meta: decode_meta(props.meta),
+                meta: decode_meta(props.meta, None),
                 match_expr: props.match_expr,
             }
         }
@@ -194,7 +197,7 @@ fn decode_authored_layout_node_from_node(
             ensure_childless_node("slot", &children, path)?;
             let props = merge_node_props(props, legacy);
             AuthoredLayoutNode::Slot {
-                meta: decode_meta(props.meta),
+                meta: decode_meta(props.meta, None),
                 match_expr: props.match_expr,
                 take: props.take.unwrap_or_default(),
             }
@@ -224,8 +227,12 @@ fn merge_node_props(
     }
 }
 
-fn decode_meta(meta: SerializedAuthoredNodeMeta) -> AuthoredNodeMeta {
-    AuthoredNodeMeta { id: meta.id, class: meta.class.into_vec(), name: meta.name, data: meta.data }
+fn decode_meta(meta: SerializedAuthoredNodeMeta, move_as: Option<String>) -> AuthoredNodeMeta {
+    let mut data = meta.data;
+    if let Some(move_as) = move_as {
+        data.insert("move-as".into(), move_as);
+    }
+    AuthoredNodeMeta { id: meta.id, class: meta.class.into_vec(), name: meta.name, data }
 }
 
 #[cfg(test)]
@@ -267,5 +274,29 @@ mod tests {
         assert_eq!(meta.id.as_deref(), Some("master"));
         assert_eq!(meta.class, vec!["master-slot".to_owned()]);
         assert_eq!(*take, SlotTake::Count(1));
+    }
+
+    #[test]
+    fn decode_layout_value_preserves_group_move_as() {
+        let value = serde_json::json!({
+            "type": "workspace",
+            "children": [{
+                "type": "group",
+                "props": { "id": "nitrogen-region", "moveAs": "group" },
+                "children": []
+            }]
+        });
+
+        let decoded = decode_layout_value(&value).unwrap();
+
+        let SourceLayoutNode::Workspace { children, .. } = decoded else {
+            panic!("expected workspace root");
+        };
+        let SourceLayoutNode::Group { meta, .. } = &children[0] else {
+            panic!("expected group child");
+        };
+
+        assert_eq!(meta.id.as_deref(), Some("nitrogen-region"));
+        assert_eq!(meta.data.get("move-as").map(String::as_str), Some("group"));
     }
 }

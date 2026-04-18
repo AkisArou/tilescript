@@ -146,7 +146,7 @@ export default function Layout() {
 
 ## Behavior Notes
 
-- unclaimed `window` nodes remain in the resolved tree even if nothing matches
+- unmatched `window` nodes are omitted from the resolved tree
 - claim order is document order; later nodes only see windows not claimed by earlier nodes
 - floating windows are compositor-rendered and can override tiled placement rules
 - layout functions are called on every state change; return consistent results to avoid flickering

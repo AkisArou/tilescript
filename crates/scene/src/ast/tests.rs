@@ -160,7 +160,7 @@ fn authored_invalid_match_bubbles_up_as_validation_error() {
 }
 
 #[test]
-fn resolve_keeps_unmatched_window_node_as_empty_runtime_leaf() {
+fn resolve_omits_unmatched_window_node() {
     let tree = ValidatedLayoutTree::new(SourceLayoutNode::Workspace {
         meta: LayoutNodeMeta::default(),
         children: vec![SourceLayoutNode::Window {
@@ -176,14 +176,7 @@ fn resolve_keeps_unmatched_window_node_as_empty_runtime_leaf() {
 
     assert_eq!(
         resolved.root,
-        ResolvedLayoutNode::Workspace {
-            meta: LayoutNodeMeta::default(),
-            children: vec![ResolvedLayoutNode::Window {
-                meta: LayoutNodeMeta { id: Some("main".into()), ..LayoutNodeMeta::default() },
-                window_id: None,
-                children: vec![],
-            }],
-        }
+        ResolvedLayoutNode::Workspace { meta: LayoutNodeMeta::default(), children: vec![] }
     );
 }
 

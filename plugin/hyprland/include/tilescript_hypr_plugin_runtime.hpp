@@ -40,6 +40,7 @@ class Runtime {
     [[nodiscard]] std::optional<std::string> layoutFocusCandidate(const std::string& direction) const;
     [[nodiscard]] std::optional<std::string> layoutCloseFocusCandidate(const std::string& windowId) const;
     [[nodiscard]] std::optional<std::string> layoutSwapCandidate(const std::string& direction) const;
+    [[nodiscard]] bool layoutMoveDirection(const std::string& direction) const;
     [[nodiscard]] bool moveTiledWindow(const std::string& firstWindowId, const std::string& secondWindowId) const;
     [[nodiscard]] bool resizeDirection(const std::string& direction) const;
     [[nodiscard]] TilescriptStateResult stateResult() const;

@@ -742,6 +742,38 @@ impl WmModel {
         true
     }
 
+    pub fn replace_tiled_window_order_for_workspace(
+        &mut self,
+        workspace_id: &WorkspaceId,
+        ordered_window_ids: Vec<WindowId>,
+    ) -> bool {
+        self.sync_tiled_window_order_for_workspace(workspace_id);
+
+        let Some(existing_order) = self.tiled_window_order_by_workspace.get(workspace_id).cloned() else {
+            return false;
+        };
+
+        if existing_order.len() != ordered_window_ids.len() {
+            return false;
+        }
+
+        let existing_ids = existing_order.iter().cloned().collect::<std::collections::BTreeSet<_>>();
+        let updated_ids = ordered_window_ids
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        if existing_ids != updated_ids || updated_ids.len() != ordered_window_ids.len() {
+            return false;
+        }
+
+        if existing_order == ordered_window_ids {
+            return false;
+        }
+
+        self.tiled_window_order_by_workspace.insert(workspace_id.clone(), ordered_window_ids);
+        true
+    }
+
     fn remember_focus_for_window(&mut self, window_id: &WindowId) {
         if let Some(focus_tree) = self.focus_tree.as_ref()
             && let Some(scope_path) = focus_tree.scope_path(window_id)
@@ -1004,6 +1036,53 @@ mod tests {
             model.ordered_window_ids_for_workspace(&WorkspaceId("1".to_string())),
             vec![window_id(2), window_id(1)]
         );
+    }
+
+    #[test]
+    fn replace_tiled_window_order_for_workspace_updates_persistent_order() {
+        let workspace_id = WorkspaceId("1".to_string());
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+        model.set_current_workspace(workspace_id.clone());
+
+        for id in [1, 2, 3] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        assert!(model.replace_tiled_window_order_for_workspace(
+            &workspace_id,
+            vec![window_id(2), window_id(3), window_id(1)],
+        ));
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&workspace_id),
+            vec![window_id(2), window_id(3), window_id(1)]
+        );
+    }
+
+    #[test]
+    fn replace_tiled_window_order_for_workspace_rejects_missing_or_duplicate_windows() {
+        let workspace_id = WorkspaceId("1".to_string());
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+        model.set_current_workspace(workspace_id.clone());
+
+        for id in [1, 2, 3] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        let original_order = model.ordered_window_ids_for_workspace(&workspace_id);
+
+        assert!(!model.replace_tiled_window_order_for_workspace(
+            &workspace_id,
+            vec![window_id(1), window_id(2), window_id(2)],
+        ));
+        assert!(!model.replace_tiled_window_order_for_workspace(
+            &workspace_id,
+            vec![window_id(1), window_id(2), window_id(4)],
+        ));
+        assert_eq!(model.ordered_window_ids_for_workspace(&workspace_id), original_order);
     }
 
     #[test]

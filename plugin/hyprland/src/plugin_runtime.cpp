@@ -381,6 +381,13 @@ std::optional<std::string> Runtime::layoutSwapCandidate(const std::string& direc
     return value.empty() ? std::nullopt : std::optional<std::string>(std::move(value));
 }
 
+bool Runtime::layoutMoveDirection(const std::string& direction) const {
+    const auto result = tilescript_runtime_layout_move_direction(handle_, direction.c_str());
+    const auto changed = result.changed;
+    tilescript_runtime_free_status_result(result);
+    return changed;
+}
+
 bool Runtime::moveTiledWindow(const std::string& firstWindowId, const std::string& secondWindowId) const {
     const auto result = tilescript_runtime_move_tiled_window(handle_, firstWindowId.c_str(), secondWindowId.c_str());
     const auto changed = result.changed;
