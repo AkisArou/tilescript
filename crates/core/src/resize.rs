@@ -31,6 +31,34 @@ impl PartitionId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartitionNodeKind {
+    Workspace,
+    Group,
+    Content,
+    Window,
+}
+
+impl PartitionNodeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Workspace => "workspace",
+            Self::Group => "group",
+            Self::Content => "content",
+            Self::Window => "window",
+        }
+    }
+}
+
+pub fn structural_partition_id(node_kind: PartitionNodeKind, path: &[String]) -> String {
+    let node_kind = node_kind.as_str();
+    if path.is_empty() {
+        format!("{node_kind}-partition")
+    } else {
+        format!("{}/{}-partition", path.last().expect("non-empty path"), node_kind)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PartitionAxis {
@@ -340,6 +368,22 @@ fn default_branch_share(branch_default_shares: &[Option<u32>], index: usize) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structural_partition_id_uses_root_name_without_ancestors() {
+        assert_eq!(structural_partition_id(PartitionNodeKind::Group, &[]), "group-partition");
+    }
+
+    #[test]
+    fn structural_partition_id_uses_last_ancestor_partition_id() {
+        assert_eq!(
+            structural_partition_id(
+                PartitionNodeKind::Window,
+                &["frame".into(), "frame/group-partition".into()],
+            ),
+            "frame/group-partition/window-partition"
+        );
+    }
 
     fn partition_tree() -> PartitionTree {
         let partition_id = PartitionId::new("frame");

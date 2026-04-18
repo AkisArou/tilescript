@@ -4,8 +4,8 @@ use crate::css::{
 use taffy::style::Dimension as TaffyDimension;
 use tilescript_core::ResolvedLayoutNode;
 use tilescript_core::resize::{
-    PartitionAxis, PartitionId, WorkspaceResizeState, reconciled_branch_shares,
-    scale_authored_share_units,
+    PartitionAxis, PartitionId, PartitionNodeKind, WorkspaceResizeState, reconciled_branch_shares,
+    scale_authored_share_units, structural_partition_id,
 };
 use tilescript_css::{Display, FlexDirectionValue, SizeValue};
 
@@ -117,13 +117,6 @@ fn partition_structural_id(
     path: &[String],
     is_root: bool,
 ) -> Option<String> {
-    let node_kind = match node.node {
-        ResolvedLayoutNode::Workspace { .. } => "workspace",
-        ResolvedLayoutNode::Group { .. } => "group",
-        ResolvedLayoutNode::Content { .. } => "content",
-        ResolvedLayoutNode::Window { .. } => "window",
-    };
-
     if !is_root
         && !matches!(
             node.node,
@@ -133,11 +126,16 @@ fn partition_structural_id(
         return None;
     }
 
-    Some(if let Some(parent_id) = path.last() {
-        format!("{parent_id}/{node_kind}-partition")
-    } else {
-        format!("{node_kind}-partition")
-    })
+    Some(structural_partition_id(partition_node_kind(&node.node), path))
+}
+
+fn partition_node_kind(node: &ResolvedLayoutNode) -> PartitionNodeKind {
+    match node {
+        ResolvedLayoutNode::Workspace { .. } => PartitionNodeKind::Workspace,
+        ResolvedLayoutNode::Group { .. } => PartitionNodeKind::Group,
+        ResolvedLayoutNode::Content { .. } => PartitionNodeKind::Content,
+        ResolvedLayoutNode::Window { .. } => PartitionNodeKind::Window,
+    }
 }
 
 fn branch_id_for_styled_child(

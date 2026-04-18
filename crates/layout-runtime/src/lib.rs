@@ -19,9 +19,9 @@ use tilescript_core::navigation::{NavigationDirection, select_directional_focus_
 use tilescript_core::query::state_snapshot_for_model;
 use tilescript_core::resize::{
     DEFAULT_BRANCH_SHARE_UNITS, DEFAULT_RESIZE_STEP_UNITS, MIN_BRANCH_SHARE_UNITS, PartitionAxis,
-    PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionTree,
-    ResizeDirection, apply_resize_step, gc_resize_state, scale_authored_share_units,
-    select_resize_candidate,
+    PartitionBranch, PartitionConstraints, PartitionId, PartitionNode, PartitionNodeKind,
+    PartitionTree, ResizeDirection, apply_resize_step, gc_resize_state,
+    scale_authored_share_units, select_resize_candidate, structural_partition_id,
 };
 use tilescript_core::runtime::artifact_state::{
     ArtifactGraph, ArtifactKey, ArtifactRecord, ArtifactRegistry,
@@ -1774,7 +1774,9 @@ fn collect_partitions_from_scene(
             .id
             .clone()
             .map(PartitionId::new)
-            .unwrap_or_else(|| PartitionId::new(structural_partition_id(node, scope_path)))
+            .unwrap_or_else(|| {
+                PartitionId::new(structural_partition_id(partition_node_kind(node), scope_path))
+            })
     });
     let scope_len_before_children = scope_path.len();
     if let Some(partition_id) = current_partition_id.as_ref() {
@@ -2087,18 +2089,12 @@ fn branch_is_fixed(node: &LayoutSnapshotNode, axis: Option<PartitionAxis>) -> bo
     styles.layout.flex_grow.unwrap_or(0.0) == 0.0
 }
 
-fn structural_partition_id(node: &LayoutSnapshotNode, path: &[String]) -> String {
-    let node_kind = match node {
-        LayoutSnapshotNode::Workspace { .. } => "workspace",
-        LayoutSnapshotNode::Group { .. } => "group",
-        LayoutSnapshotNode::Content { .. } => "content",
-        LayoutSnapshotNode::Window { .. } => "window",
-    };
-
-    if path.is_empty() {
-        format!("{node_kind}-partition")
-    } else {
-        format!("{}/{}-partition", path.last().expect("non-empty path"), node_kind)
+fn partition_node_kind(node: &LayoutSnapshotNode) -> PartitionNodeKind {
+    match node {
+        LayoutSnapshotNode::Workspace { .. } => PartitionNodeKind::Workspace,
+        LayoutSnapshotNode::Group { .. } => PartitionNodeKind::Group,
+        LayoutSnapshotNode::Content { .. } => PartitionNodeKind::Content,
+        LayoutSnapshotNode::Window { .. } => PartitionNodeKind::Window,
     }
 }
 
