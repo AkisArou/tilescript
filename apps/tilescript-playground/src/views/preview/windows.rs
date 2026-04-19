@@ -230,7 +230,7 @@ pub(super) fn PreviewSceneSurface() -> impl IntoView {
     view! {
         <div
             class="bg-terminal-bg relative h-full min-h-72 w-full overflow-hidden"
-            style="background-image: linear-gradient(var(--color-preview-wallpaper-overlay-top), var(--color-preview-wallpaper-overlay-bottom)), url('/assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
+            style="background-image: linear-gradient(var(--color-preview-wallpaper-overlay-top), var(--color-preview-wallpaper-overlay-bottom)), url('./assets/hyprland-wallpaper.png'); background-position: center; background-size: cover;"
         >
             <Show when=move || preview_window_render_states(&app_state.session.get()).is_empty()>
                 <div class="text-terminal-faint/80 pointer-events-none absolute inset-x-0 bottom-[20%] z-10 flex justify-center text-sm tracking-[0.08em]">

@@ -1,6 +1,7 @@
 target/
 build/
 build-hypr-dev/
+dist-build/
 .cache/
 
 CMakeFiles/

@@ -1,4 +1,4 @@
-.PHONY: configure configure-hypr-dev hypr-bootstrap hypr-build hypr-plugin-snippet build hypr-plugin hypr-plugin-dev ffi test fmt lint lsp-check live hypr-user-reload hypr-run-dev hypr-reload playground clean
+.PHONY: configure configure-hypr-dev hypr-bootstrap hypr-build hypr-plugin-snippet build hypr-plugin hypr-plugin-dev ffi test fmt lint lsp-check live hypr-user-reload hypr-run-dev hypr-reload playground playground-build clean
 
 PLUGIN_BUILD_DIR ?= build
 PLUGIN_OUTPUT_NAME ?= tilescript-hypr
@@ -15,6 +15,8 @@ XDG_DATA_HOME ?= $(HOME)/.local/share
 TILESCRIPT_XDG_DIR ?= $(XDG_DATA_HOME)/tilescript
 HYPR_PLUGIN_INSTALL_PATH ?= $(TILESCRIPT_XDG_DIR)/tilescript-hypr.so
 HYPR_PLUGIN_DEV_INSTALL_PATH ?= $(TILESCRIPT_XDG_DIR)/tilescript-hypr-dev.so
+PLAYGROUND_PUBLIC_URL ?= /
+PLAYGROUND_BUILD_DIST ?= apps/tilescript-playground/.dist
 
 configure:
 	cmake -S . -B "$(PLUGIN_BUILD_DIR)" -DTILESCRIPT_HYPR_OUTPUT_NAME="$(PLUGIN_OUTPUT_NAME)"
@@ -67,6 +69,10 @@ hypr-reload: hypr-plugin-dev
 playground:
 	mkdir -p apps/tilescript-playground/js/dist
 	trunk serve --config apps/tilescript-playground/Trunk.toml --open
+
+playground-build:
+	mkdir -p apps/tilescript-playground/js/dist
+	trunk build --config apps/tilescript-playground/Trunk.toml --release --dist "$(PLAYGROUND_BUILD_DIST)" --public-url "$(PLAYGROUND_PUBLIC_URL)"
 
 clean:
 	rm -rf build

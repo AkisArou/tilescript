@@ -1,1 +1,1 @@
-export * from "/monaco/lua-runtime.js";
+export * from "../../../playground-assets/lua-runtime.js";

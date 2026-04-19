@@ -104,7 +104,7 @@ function ensureMonacoStyles() {
   const link = document.createElement("link");
   link.id = styleId;
   link.rel = "stylesheet";
-  link.href = "/tilescript-playground-monaco-host.css";
+  link.href = "./tilescript-playground-monaco-host.css";
   document.head.appendChild(link);
 }
 
