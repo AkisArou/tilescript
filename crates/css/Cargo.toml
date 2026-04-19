@@ -8,10 +8,10 @@ publish.workspace = true
 [dependencies]
 tilescript-core = { path = "../core" }
 cssparser.workspace = true
-precomputed-hash = "0.1"
-selectors = "0.36.1"
-stylo = "0.14.0"
-style_traits = { package = "stylo_traits", version = "0.14.0" }
-url = "2.5"
+precomputed-hash.workspace = true
+selectors.workspace = true
+stylo.workspace = true
+style_traits.workspace = true
+url.workspace = true
 serde.workspace = true
 thiserror.workspace = true
