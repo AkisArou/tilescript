@@ -220,7 +220,6 @@ Reference checked against `taffy 0.9.2` from `Cargo.lock`, specifically the publ
 | `margin-block` | logical block spacing | alias to `Style::margin.top` and `Style::margin.bottom` | horizontal-writing-mode alias |
 | `margin-block-start` | logical block start spacing | alias to `Style::margin.top` | horizontal-writing-mode alias |
 | `margin-block-end` | logical block end spacing | alias to `Style::margin.bottom` | horizontal-writing-mode alias |
-| `order` | explicit sibling ordering in flex/grid | no public `Style` field | implement in Tilescript by stable-sorting children before building the Taffy tree |
 | `flex` | common flex item shorthand | expands to `Style::flex_grow`, `Style::flex_shrink`, `Style::flex_basis` | shorthand only |
 | `flex-flow` | common flex container shorthand | expands to `Style::flex_direction` and `Style::flex_wrap` | shorthand only |
 | `place-items` | concise grid/flex alignment authoring | expands to `Style::align_items` and `Style::justify_items` | shorthand only |
@@ -234,7 +233,7 @@ Reference checked against `taffy 0.9.2` from `Cargo.lock`, specifically the publ
 Priority order for future layout-only expansion:
 
 1. logical spacing and sizing aliases
-2. `order`, `flex`, and `flex-flow`
+2. `flex` and `flex-flow`
 3. `place-*`, `grid-area`, and `grid-template`
 4. `grid`
 5. `subgrid` only if the engine story becomes real

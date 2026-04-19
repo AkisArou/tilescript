@@ -1,5 +1,5 @@
 use tilescript_css::analysis::{CssSymbolKind, analyze_stylesheet};
-use lsp_types::{Location, Position, Url};
+use lsp_types::{Location, Position, Range, Url};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
 use crate::syntax::{position_to_offset, range_for, selector_reference_at_offset, selector_references_in_segment};
@@ -87,6 +87,40 @@ fn selector_locations_in_stylesheet(
 ) -> Vec<Location> {
     let analysis = analyze_stylesheet(source);
     let mut locations = Vec::new();
+
+    if let Some(stylesheet) = analysis.stylesheet {
+        for rule in &stylesheet.rules {
+            if rule.selector_text.is_empty() {
+                continue;
+            }
+
+            for selector in selector_references_in_segment(&rule.selector_text, 0) {
+                let selector_kind = match selector.kind {
+                    crate::syntax::SelectorReferenceKind::Id => ProjectSelectorKind::Id,
+                    crate::syntax::SelectorReferenceKind::Class => ProjectSelectorKind::Class,
+                };
+                if selector_kind != kind || selector.name != name {
+                    continue;
+                }
+
+                let range = Range {
+                    start: Position {
+                        line: rule.selector_range.start_line.saturating_sub(1),
+                        character: rule.selector_range.start_column.saturating_sub(1)
+                            + selector.start as u32,
+                    },
+                    end: Position {
+                        line: rule.selector_range.start_line.saturating_sub(1),
+                        character: rule.selector_range.start_column.saturating_sub(1)
+                            + selector.end as u32,
+                    },
+                };
+                locations.push(Location { uri: uri.clone(), range });
+            }
+        }
+
+        return locations;
+    }
 
     for symbol in &analysis.symbols {
         if symbol.kind != CssSymbolKind::Rule {

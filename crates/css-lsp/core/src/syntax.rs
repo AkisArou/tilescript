@@ -1,7 +1,7 @@
 use cssparser::{Parser, ParserInput, Token};
 use lsp_types::{Position, Range};
 
-use tilescript_css::analysis::CssRange;
+use tilescript_css::CssRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorContext {

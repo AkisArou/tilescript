@@ -185,7 +185,6 @@ pub struct ComputedStyle {
     pub display: Option<Display>,
     pub box_sizing: Option<BoxSizingValue>,
     pub aspect_ratio: Option<f32>,
-    pub order: Option<i32>,
     pub flex_direction: Option<FlexDirectionValue>,
     pub flex_wrap: Option<FlexWrapValue>,
     pub flex_grow: Option<f32>,

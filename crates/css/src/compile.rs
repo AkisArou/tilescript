@@ -29,7 +29,6 @@ pub enum CompiledDeclaration {
     Display(Display),
     BoxSizing(BoxSizingValue),
     AspectRatio(f32),
-    Order(i32),
     FlexDirection(FlexDirectionValue),
     FlexWrap(FlexWrapValue),
     FlexGrow(f32),
@@ -75,7 +74,6 @@ impl CompiledDeclaration {
             Self::Display(_) => Some("display"),
             Self::BoxSizing(_) => Some("box-sizing"),
             Self::AspectRatio(_) => Some("aspect-ratio"),
-            Self::Order(_) => Some("order"),
             Self::FlexDirection(_) => Some("flex-direction"),
             Self::FlexWrap(_) => Some("flex-wrap"),
             Self::FlexGrow(_) => Some("flex-grow"),
@@ -149,7 +147,6 @@ pub fn compile_declaration_from_value(
         "aspect-ratio" => {
             Ok(CompiledDeclaration::AspectRatio(parse_aspect_ratio_direct(property, value)?))
         }
-        "order" => Ok(CompiledDeclaration::Order(parse_integer_direct(property, value)?)),
         "flex-direction" => {
             Ok(CompiledDeclaration::FlexDirection(parse_flex_direction_direct(property, value)?))
         }
@@ -244,19 +241,19 @@ pub fn compile_declaration_from_value(
         "padding" => Ok(CompiledDeclaration::Padding(parse_box_edges_direct(property, value)?)),
         "padding-top" => Ok(CompiledDeclaration::PaddingSide(
             BoxSide::Top,
-            parse_length_percentage_word(property, value.text.trim())?,
+            parse_length_percentage(property, value)?,
         )),
         "padding-right" => Ok(CompiledDeclaration::PaddingSide(
             BoxSide::Right,
-            parse_length_percentage_word(property, value.text.trim())?,
+            parse_length_percentage(property, value)?,
         )),
         "padding-bottom" => Ok(CompiledDeclaration::PaddingSide(
             BoxSide::Bottom,
-            parse_length_percentage_word(property, value.text.trim())?,
+            parse_length_percentage(property, value)?,
         )),
         "padding-left" => Ok(CompiledDeclaration::PaddingSide(
             BoxSide::Left,
-            parse_length_percentage_word(property, value.text.trim())?,
+            parse_length_percentage(property, value)?,
         )),
         "margin" => Ok(CompiledDeclaration::Margin(parse_box_edges_size_direct(property, value)?)),
         "margin-top" => Ok(CompiledDeclaration::MarginSide(
@@ -283,14 +280,10 @@ pub fn compile_declaration_from_value(
 }
 
 fn keyword<'a>(property: &str, value: &'a CssValue) -> Result<&'a str, CssValueError> {
-    let trimmed = value.text.trim();
-    if trimmed.is_empty() || trimmed.split_whitespace().count() != 1 {
-        return Err(CssValueError::UnsupportedValue {
-            property: property.to_string(),
-            value: value.text.clone(),
-        });
+    match normalized_components(value).as_slice() {
+        [CssValueToken::Ident(ident)] => Ok(ident),
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
-    Ok(trimmed)
 }
 
 fn parse_display_direct(property: &str, value: &CssValue) -> Result<Display, CssValueError> {
@@ -321,29 +314,18 @@ fn parse_box_sizing_direct(
 }
 
 fn parse_aspect_ratio_direct(property: &str, value: &CssValue) -> Result<f32, CssValueError> {
-    let trimmed = value.text.trim();
-    if let Some((left, right)) = trimmed.split_once('/') {
-        let left = left.trim().parse::<f32>().map_err(|_| CssValueError::UnsupportedValue {
-            property: property.into(),
-            value: value.text.clone(),
-        })?;
-        let right = right.trim().parse::<f32>().map_err(|_| CssValueError::UnsupportedValue {
-            property: property.into(),
-            value: value.text.clone(),
-        })?;
-        if right == 0.0 {
-            return Err(CssValueError::UnsupportedValue {
-                property: property.into(),
-                value: value.text.clone(),
-            });
+    match normalized_components(value).as_slice() {
+        [component] => parse_number_component(property, component),
+        [left, CssValueToken::Delimiter(CssDelimiter::Solidus), right] => {
+            let left = parse_number_component(property, left)?;
+            let right = parse_number_component(property, right)?;
+            if right == 0.0 {
+                return Err(invalid_value(property, text_for_value(value)));
+            }
+            Ok(left / right)
         }
-        return Ok(left / right);
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
-
-    trimmed.parse::<f32>().map_err(|_| CssValueError::UnsupportedValue {
-        property: property.into(),
-        value: value.text.clone(),
-    })
 }
 
 fn parse_flex_direction_direct(
@@ -405,20 +387,15 @@ fn parse_overflow_pair_direct(
     property: &str,
     value: &CssValue,
 ) -> Result<(OverflowValue, OverflowValue), CssValueError> {
-    let values = split_words(value)
+    let values = split_component_groups(value)
         .into_iter()
-        .map(|word| {
-            parse_overflow_direct(property, &CssValue { text: word.into(), components: Vec::new() })
-        })
+        .map(|group| parse_overflow_direct(property, &group))
         .collect::<Result<Vec<_>, _>>()?;
 
     match values.as_slice() {
         [single] => Ok((*single, *single)),
         [x, y] => Ok((*x, *y)),
-        _ => Err(CssValueError::UnsupportedValue {
-            property: property.into(),
-            value: value.text.clone(),
-        }),
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
 }
 
@@ -466,18 +443,15 @@ fn parse_gap_direct(
     property: &str,
     value: &CssValue,
 ) -> Result<Size2<LengthPercentage>, CssValueError> {
-    let values = split_words(value)
+    let values = split_component_groups(value)
         .into_iter()
-        .map(|word| parse_length_percentage_word(property, word))
+        .map(|group| parse_length_percentage(property, &group))
         .collect::<Result<Vec<_>, _>>()?;
 
     match values.as_slice() {
         [single] => Ok(Size2 { width: *single, height: *single }),
         [row, column] => Ok(Size2 { width: *column, height: *row }),
-        _ => Err(CssValueError::UnsupportedValue {
-            property: property.into(),
-            value: value.text.clone(),
-        }),
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
 }
 
@@ -486,14 +460,9 @@ fn parse_axis_gap_direct(
     value: &CssValue,
     is_row: bool,
 ) -> Result<Size2<LengthPercentage>, CssValueError> {
-    let parsed = match split_words(value).as_slice() {
-        [single] => parse_length_percentage_word(property, single)?,
-        _ => {
-            return Err(CssValueError::UnsupportedValue {
-                property: property.into(),
-                value: value.text.clone(),
-            });
-        }
+    let parsed = match split_component_groups(value).as_slice() {
+        [single] => parse_length_percentage(property, single)?,
+        _ => return Err(invalid_value(property, text_for_value(value))),
     };
 
     Ok(if is_row {
@@ -504,53 +473,16 @@ fn parse_axis_gap_direct(
 }
 
 fn parse_number_direct(property: &str, value: &CssValue) -> Result<f32, CssValueError> {
-    value.text.trim().parse::<f32>().map_err(|_| CssValueError::UnsupportedValue {
-        property: property.into(),
-        value: value.text.clone(),
-    })
-}
-
-fn parse_integer_direct(property: &str, value: &CssValue) -> Result<i32, CssValueError> {
-    value.text.trim().parse::<i32>().map_err(|_| CssValueError::UnsupportedValue {
-        property: property.into(),
-        value: value.text.clone(),
-    })
-}
-
-fn split_words(value: &CssValue) -> Vec<&str> {
-    value.text.split_whitespace().collect()
-}
-
-fn parse_length_percentage_word(
-    property: &str,
-    word: &str,
-) -> Result<LengthPercentage, CssValueError> {
-    if word == "0" || word == "0.0" {
-        return Ok(LengthPercentage::Px(0.0));
+    match normalized_components(value).as_slice() {
+        [component] => parse_number_component(property, component),
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
-    if let Some(number) = word.strip_suffix("px") {
-        return number.parse::<f32>().map(LengthPercentage::Px).map_err(|_| {
-            CssValueError::UnsupportedValue { property: property.into(), value: word.into() }
-        });
-    }
-    if let Some(number) = word.strip_suffix('%') {
-        return number.parse::<f32>().map(LengthPercentage::Percent).map_err(|_| {
-            CssValueError::UnsupportedValue { property: property.into(), value: word.into() }
-        });
-    }
-    Err(CssValueError::UnsupportedValue { property: property.into(), value: word.into() })
 }
 
 fn parse_size_value_direct(property: &str, value: &CssValue) -> Result<SizeValue, CssValueError> {
-    match split_words(value).as_slice() {
-        ["auto"] => Ok(SizeValue::Auto),
-        [single] => {
-            Ok(SizeValue::LengthPercentage(parse_length_percentage_word(property, single)?))
-        }
-        _ => Err(CssValueError::UnsupportedValue {
-            property: property.into(),
-            value: value.text.clone(),
-        }),
+    match normalized_components(value).as_slice() {
+        [CssValueToken::Ident(ident)] if ident == "auto" => Ok(SizeValue::Auto),
+        _ => parse_length_percentage(property, value).map(SizeValue::LengthPercentage),
     }
 }
 
@@ -577,37 +509,61 @@ fn parse_box_edges_direct(
     property: &str,
     value: &CssValue,
 ) -> Result<BoxEdges<LengthPercentage>, CssValueError> {
-    let parsed = split_words(value)
+    let parsed = split_component_groups(value)
         .into_iter()
-        .map(|word| parse_length_percentage_word(property, word))
+        .map(|group| parse_length_percentage(property, &group))
         .collect::<Result<Vec<_>, _>>()?;
-    expand_box_sides(&parsed).ok_or_else(|| CssValueError::UnsupportedValue {
-        property: property.into(),
-        value: value.text.clone(),
-    })
+    expand_box_sides(&parsed).ok_or_else(|| invalid_value(property, text_for_value(value)))
 }
 
 fn parse_box_edges_size_direct(
     property: &str,
     value: &CssValue,
 ) -> Result<BoxEdges<SizeValue>, CssValueError> {
-    let parsed = split_words(value)
+    let parsed = split_component_groups(value)
         .into_iter()
-        .map(|word| {
-            if word == "auto" {
+        .map(|group| {
+            if matches!(normalized_components(&group).as_slice(), [CssValueToken::Ident(ident)] if ident == "auto") {
                 Ok(SizeValue::Auto)
             } else {
-                parse_length_percentage_word(property, word).map(SizeValue::LengthPercentage)
+                parse_length_percentage(property, &group).map(SizeValue::LengthPercentage)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    expand_box_sides(&parsed).ok_or_else(|| CssValueError::UnsupportedValue {
-        property: property.into(),
-        value: value.text.clone(),
-    })
+    expand_box_sides(&parsed).ok_or_else(|| invalid_value(property, text_for_value(value)))
 }
 
-// ── Value utility helpers (used by grid and other css submodules) ──────────────
+fn parse_number_component(property: &str, component: &CssValueToken) -> Result<f32, CssValueError> {
+    match component {
+        CssValueToken::Integer(value) => Ok(*value as f32),
+        CssValueToken::Number(value) => Ok(*value),
+        _ => Err(invalid_value(property, &component_text(component))),
+    }
+}
+
+fn split_component_groups(value: &CssValue) -> Vec<CssValue> {
+    let mut groups = Vec::new();
+    let mut current = Vec::new();
+
+    for component in &value.components {
+        if matches!(component, CssValueToken::Whitespace) {
+            if !current.is_empty() {
+                groups.push(CssValue {
+                    text: components_to_text(&current),
+                    components: std::mem::take(&mut current),
+                });
+            }
+            continue;
+        }
+        current.push(component.clone());
+    }
+
+    if !current.is_empty() {
+        groups.push(CssValue { text: components_to_text(&current), components: current });
+    }
+
+    groups
+}
 
 pub(super) fn text_for_value(value: &CssValue) -> &str {
     value.text.as_str()

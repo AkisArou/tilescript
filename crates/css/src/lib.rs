@@ -6,16 +6,17 @@ pub mod language;
 pub mod parse_values;
 pub mod parsing;
 mod query;
+pub mod source;
 pub mod style;
 pub mod tokenizer;
 
 mod stylo_adapter;
-mod stylo_compile;
 
 pub use compile::{BoxSide, CompiledDeclaration, CssValueError};
-pub use compiled::{CompiledStyleRule, CompiledStyleSheet};
+pub use compiled::{CompiledDeclarationEntry, CompiledStyleRule, CompiledStyleSheet};
 pub use parsing::{CssParseError, parse_stylesheet};
 pub use query::{matching_rules, selector_matches};
+pub use source::CssRange;
 pub use style::*;
 pub use stylo_adapter::{
     LayoutDomTree, LayoutSelectorImpl, LayoutSelectorParser, StyloAdapterError,

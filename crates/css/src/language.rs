@@ -189,13 +189,6 @@ pub const PROPERTY_SPECS: &[PropertySpec] = &[
         hover: "Sets a preferred width-to-height ratio for layout sizing.",
     },
     PropertySpec {
-        name: "order",
-        status: SupportStatus::Full,
-        applies_to: ALL_ELEMENT_TARGETS,
-        value_keywords: NO_KEYWORDS,
-        hover: "Controls authored child ordering before layout.",
-    },
-    PropertySpec {
         name: "flex-direction",
         status: SupportStatus::Full,
         applies_to: ALL_ELEMENT_TARGETS,

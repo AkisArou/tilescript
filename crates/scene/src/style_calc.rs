@@ -11,7 +11,7 @@ pub fn compute_style(
 
     for rule in crate::css_matching::matching_rules(sheet, node) {
         for declaration in &rule.declarations {
-            style.apply(declaration.clone());
+            style.apply(&declaration.declaration);
         }
     }
 

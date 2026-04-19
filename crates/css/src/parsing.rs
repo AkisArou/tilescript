@@ -1,5 +1,6 @@
 use cssparser::{
-    AtRuleParser, CowRcStr, Parser, ParserInput, QualifiedRuleParser, StyleSheetParser,
+    AtRuleParser, CowRcStr, DeclarationParser, Parser, ParserInput, QualifiedRuleParser,
+    RuleBodyItemParser, RuleBodyParser, StyleSheetParser,
 };
 
 use crate::selector_matches;
@@ -7,19 +8,16 @@ use crate::stylo_adapter::{
     LayoutSelectorImpl, LayoutSelectorParser, parse_selector_list_from_parser,
 };
 
-use crate::compile::{CssValueError, compile_declaration, compile_declaration_from_value};
-use crate::compiled::{CompiledStyleRule, CompiledStyleSheet};
-use crate::grid::parse_grid_fallback_declarations;
-use crate::language::is_supported_property;
+use crate::compile::{CssValueError, compile_declaration, components_to_text};
+use crate::compiled::{CompiledDeclarationEntry, CompiledStyleRule, CompiledStyleSheet};
+use crate::language::property_spec;
 use crate::parse_values::{CssValue, ParsedDeclaration};
-use crate::tokenizer::parse_value_tokens;
-use style::parser::ParserContext;
-use style::properties::declaration_block::parse_property_declaration_list;
-use style::stylesheets::{CssRuleType, Origin, UrlExtraData};
-use style_traits::ParsingMode;
-use style_traits::values::ToCss;
+use crate::source::{CssRange, SourceMap, leading_trimmed_len, trailing_trimmed_len};
+use crate::tokenizer::parse_component_values;
 
 struct ParsedSelectorPrelude {
+    selector_text: String,
+    selector_range: CssRange,
     selectors: selectors::parser::SelectorList<LayoutSelectorImpl>,
 }
 
@@ -37,13 +35,19 @@ pub enum CssParseError {
     CssValue(#[from] CssValueError),
 }
 
-#[derive(Default)]
-struct LayoutCssRuleParser;
+struct LayoutCssRuleParser<'a> {
+    source_map: &'a SourceMap<'a>,
+}
+
+struct LayoutDeclarationParser<'a> {
+    source_map: &'a SourceMap<'a>,
+}
 
 pub fn parse_stylesheet(input: &str) -> Result<CompiledStyleSheet, CssParseError> {
+    let source_map = SourceMap::new(input);
     let mut input_buf = ParserInput::new(input);
     let mut parser_input = Parser::new(&mut input_buf);
-    let mut parser = LayoutCssRuleParser;
+    let mut parser = LayoutCssRuleParser { source_map: &source_map };
     let mut rules = Vec::new();
 
     for item in StyleSheetParser::new(&mut parser_input, &mut parser) {
@@ -65,7 +69,7 @@ pub fn parse_stylesheet(input: &str) -> Result<CompiledStyleSheet, CssParseError
     Ok(CompiledStyleSheet { rules })
 }
 
-impl<'i> AtRuleParser<'i> for LayoutCssRuleParser {
+impl<'a, 'i> AtRuleParser<'i> for LayoutCssRuleParser<'a> {
     type Prelude = ();
     type AtRule = CompiledStyleRule;
     type Error = CssParseError;
@@ -79,7 +83,7 @@ impl<'i> AtRuleParser<'i> for LayoutCssRuleParser {
     }
 }
 
-impl<'i> QualifiedRuleParser<'i> for LayoutCssRuleParser {
+impl<'a, 'i> QualifiedRuleParser<'i> for LayoutCssRuleParser<'a> {
     type Prelude = ParsedSelectorPrelude;
     type QualifiedRule = CompiledStyleRule;
     type Error = CssParseError;
@@ -95,13 +99,20 @@ impl<'i> QualifiedRuleParser<'i> for LayoutCssRuleParser {
             input.new_custom_error(CssParseError::UnsupportedSelector { selector })
         })?;
 
-        let selector = input.slice_from(start.position()).trim().to_string();
+        let selector_slice = input.slice_from(start.position());
+        let selector = selector_slice.trim().to_string();
+        let selector_start = start.position().byte_index() + leading_trimmed_len(selector_slice);
+        let selector_end = input.position().byte_index() - trailing_trimmed_len(selector_slice);
 
         if selector_matches_slot(&parsed) {
             return Err(input.new_custom_error(CssParseError::UnsupportedSelector { selector }));
         }
 
-        Ok(ParsedSelectorPrelude { selectors: parsed })
+        Ok(ParsedSelectorPrelude {
+            selector_text: selector,
+            selector_range: self.source_map.range(selector_start, selector_end),
+            selectors: parsed,
+        })
     }
 
     fn parse_block<'t>(
@@ -110,111 +121,94 @@ impl<'i> QualifiedRuleParser<'i> for LayoutCssRuleParser {
         _start: &cssparser::ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self::QualifiedRule, cssparser::ParseError<'i, Self::Error>> {
-        let url_data = UrlExtraData(url::Url::parse("about:blank").unwrap().into());
-        let context = ParserContext::new(
-            Origin::Author,
-            &url_data,
-            Some(CssRuleType::Style),
-            ParsingMode::DEFAULT,
-            style::context::QuirksMode::NoQuirks,
-            Default::default(),
-            None,
-            None,
-        );
-        let block_start = input.state();
-        let _ = parse_property_declaration_list(&context, input, &[]);
-        let raw_block = input.slice_from(block_start.position()).trim().to_string();
-        let declarations = compile_declarations_from_raw_block(&raw_block)
-            .map_err(|error| input.new_custom_error(error))?;
+        let block_start = input.position().byte_index().saturating_sub(1);
+        let mut declaration_parser = LayoutDeclarationParser { source_map: self.source_map };
+        let mut declarations = Vec::new();
 
-        Ok(CompiledStyleRule { selectors: prelude.selectors, declarations })
+        for item in RuleBodyParser::new(input, &mut declaration_parser) {
+            match item {
+                Ok(declaration) => declarations.push(declaration),
+                Err((err, _slice)) => {
+                    return Err(input.new_custom_error(match err.kind {
+                        cssparser::ParseErrorKind::Custom(error) => error,
+                        _ => CssParseError::InvalidSyntax {
+                            line: err.location.line,
+                            column: err.location.column,
+                        },
+                    }));
+                }
+            }
+        }
+
+        Ok(CompiledStyleRule {
+            selector_text: prelude.selector_text,
+            selector_range: prelude.selector_range,
+            block_range: self.source_map.range(block_start, input.position().byte_index() + 1),
+            selectors: prelude.selectors,
+            declarations,
+        })
     }
 }
 
-fn compile_declarations_from_raw_block(
-    raw_block: &str,
-) -> Result<Vec<crate::compile::CompiledDeclaration>, CssParseError> {
-    let url_data = UrlExtraData(url::Url::parse("about:blank").unwrap().into());
-    let context = ParserContext::new(
-        Origin::Author,
-        &url_data,
-        Some(CssRuleType::Style),
-        ParsingMode::DEFAULT,
-        style::context::QuirksMode::NoQuirks,
-        Default::default(),
-        None,
-        None,
-    );
+impl<'a, 'i> DeclarationParser<'i> for LayoutDeclarationParser<'a> {
+    type Declaration = CompiledDeclarationEntry;
+    type Error = CssParseError;
 
-    let mut input_buf = ParserInput::new(raw_block);
-    let mut parser = Parser::new(&mut input_buf);
-    let block = parse_property_declaration_list(&context, &mut parser, &[]);
-    let mut declarations = Vec::new();
-    for declaration in block.normal_declaration_iter() {
-        let property = declaration.id().to_css_string();
-        if !is_supported_property(&property) {
-            return Err(CssParseError::UnsupportedProperty { property });
+    fn parse_value<'t>(
+        &mut self,
+        name: CowRcStr<'i>,
+        input: &mut Parser<'i, 't>,
+        declaration_start: &cssparser::ParserState,
+    ) -> Result<Self::Declaration, cssparser::ParseError<'i, Self::Error>> {
+        let property = name.to_string().to_ascii_lowercase();
+        if property_spec(&property).is_none() {
+            return Err(input.new_custom_error(CssParseError::UnsupportedProperty { property }));
         }
 
-        if let Some(compiled) = crate::stylo_compile::compile_stylo_declaration(declaration)? {
-            declarations.push(compiled);
-            continue;
-        }
-
-        let mut value = String::new();
-        declaration
-            .to_css(&mut value)
-            .map_err(|_| CssParseError::InvalidSyntax { line: 1, column: 1 })?;
-
+        let property_start = declaration_start.position().byte_index();
+        let property_end = property_start + name.len();
+        let components = parse_component_values(input)?;
+        let value_text = components_to_text(&components);
         let parsed = ParsedDeclaration {
-            property,
-            value: CssValue { text: value.clone(), components: parse_value_tokens(&value)? },
+            property: property.clone(),
+            value: CssValue { text: value_text, components },
         };
-        let compiled = compile_declaration(&parsed).map_err(CssParseError::CssValue)?;
-        declarations.push(compiled);
+
+        let declaration = compile_declaration(&parsed)
+            .map_err(|error| input.new_custom_error(CssParseError::CssValue(error)))?;
+
+        Ok(CompiledDeclarationEntry {
+            property,
+            property_range: self.source_map.range(property_start, property_end),
+            declaration,
+        })
     }
-
-    let fallback_declarations = fallback_declarations(raw_block)?;
-
-    if declarations.is_empty() && needs_grid_fallback(&fallback_declarations) {
-        declarations = parse_grid_fallback_declarations(raw_block)?;
-    }
-
-    append_custom_tilescript_declarations(&fallback_declarations, &mut declarations)?;
-
-    Ok(declarations)
 }
 
-fn append_custom_tilescript_declarations(
-    fallback_declarations: &[ParsedDeclaration],
-    declarations: &mut Vec<crate::compile::CompiledDeclaration>,
-) -> Result<(), CssParseError> {
-    for declaration in fallback_declarations {
-        if !declaration.property.starts_with("-tilescript-") {
-            continue;
-        }
+impl<'a, 'i> AtRuleParser<'i> for LayoutDeclarationParser<'a> {
+    type Prelude = ();
+    type AtRule = CompiledDeclarationEntry;
+    type Error = CssParseError;
+}
 
-        if !is_supported_property(&declaration.property) {
-            return Err(CssParseError::UnsupportedProperty {
-                property: declaration.property.clone(),
-            });
-        }
+impl<'a, 'i> QualifiedRuleParser<'i> for LayoutDeclarationParser<'a> {
+    type Prelude = ();
+    type QualifiedRule = CompiledDeclarationEntry;
+    type Error = CssParseError;
+}
 
-        let already_present = declarations.iter().any(|compiled| {
-            compiled.canonical_property_name() == Some(declaration.property.as_str())
-        });
-        if already_present {
-            continue;
-        }
-
-        declarations.push(
-            compile_declaration_from_value(&declaration.property, &declaration.value)
-                .map_err(CssParseError::CssValue)?,
-        );
+impl<'a, 'i> RuleBodyItemParser<'i, CompiledDeclarationEntry, CssParseError>
+    for LayoutDeclarationParser<'a>
+{
+    fn parse_declarations(&self) -> bool {
+        true
     }
 
-    Ok(())
+    fn parse_qualified(&self) -> bool {
+        false
+    }
 }
+
 fn selector_matches_slot(selectors: &selectors::parser::SelectorList<LayoutSelectorImpl>) -> bool {
     selector_matches(selectors, &synthetic_slot_node())
 }
@@ -229,194 +223,6 @@ fn synthetic_slot_node() -> tilescript_core::ResolvedLayoutNode {
         text: None,
         children: Vec::new(),
     }
-}
-
-fn needs_grid_fallback(fallback_declarations: &[ParsedDeclaration]) -> bool {
-    fallback_declarations.iter().any(|declaration| {
-        matches!(
-            declaration.property.as_str(),
-            "grid-template-rows"
-                | "grid-template-columns"
-                | "grid-template-areas"
-                | "grid-row"
-                | "grid-column"
-                | "grid-row-start"
-                | "grid-row-end"
-                | "grid-column-start"
-                | "grid-column-end"
-                | "grid-auto-rows"
-                | "grid-auto-columns"
-                | "grid-auto-flow"
-        )
-    })
-}
-
-fn fallback_declarations(raw_block: &str) -> Result<Vec<ParsedDeclaration>, CssParseError> {
-    let mut declarations = Vec::new();
-    let mut start = 0usize;
-    let mut offset = 0usize;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = raw_block.as_bytes();
-
-    while offset < raw_block.len() {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(raw_block, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            b';' if paren_depth == 0 && bracket_depth == 0 => {
-                if let Some(declaration) =
-                    parse_fallback_declaration_segment(raw_block, start, offset)?
-                {
-                    declarations.push(declaration);
-                }
-                start = offset + 1;
-            }
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    if let Some(declaration) =
-        parse_fallback_declaration_segment(raw_block, start, raw_block.len())?
-    {
-        declarations.push(declaration);
-    }
-
-    Ok(declarations)
-}
-
-fn parse_fallback_declaration_segment(
-    raw_block: &str,
-    start: usize,
-    end: usize,
-) -> Result<Option<ParsedDeclaration>, CssParseError> {
-    let Some(trimmed_start) = skip_ws_and_comments(raw_block, start, end) else {
-        return Ok(None);
-    };
-    let segment = &raw_block[trimmed_start..end];
-    let trimmed_end = end - trailing_trimmed_len(segment);
-    if trimmed_start >= trimmed_end {
-        return Ok(None);
-    }
-
-    let Some(colon) = find_top_level_colon(raw_block, trimmed_start, trimmed_end) else {
-        return Ok(None);
-    };
-    let property = raw_block[trimmed_start..colon].trim().to_ascii_lowercase();
-    if property.is_empty() {
-        return Ok(None);
-    }
-
-    let value_text = raw_block[colon + 1..trimmed_end].trim().to_string();
-    let components = parse_value_tokens(&value_text)?;
-
-    Ok(Some(ParsedDeclaration { property, value: CssValue { text: value_text, components } }))
-}
-
-fn find_top_level_colon(source: &str, start: usize, end: usize) -> Option<usize> {
-    let mut offset = start;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = source.as_bytes();
-
-    while offset < end {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(source, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            b':' if paren_depth == 0 && bracket_depth == 0 => return Some(offset),
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    None
-}
-
-fn starts_comment(bytes: &[u8], offset: usize) -> Option<usize> {
-    if bytes.get(offset) == Some(&b'/') && bytes.get(offset + 1) == Some(&b'*') {
-        let mut end = offset + 2;
-        while end + 1 < bytes.len() {
-            if bytes[end] == b'*' && bytes[end + 1] == b'/' {
-                return Some(end + 2);
-            }
-            end += 1;
-        }
-        return Some(bytes.len());
-    }
-
-    None
-}
-
-fn starts_string(source: &str, offset: usize) -> Option<usize> {
-    let quote = match source.as_bytes().get(offset) {
-        Some(b'\'') => b'\'',
-        Some(b'"') => b'"',
-        _ => return None,
-    };
-
-    let mut escaped = false;
-    let mut index = offset + 1;
-    let bytes = source.as_bytes();
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if escaped {
-            escaped = false;
-        } else if byte == b'\\' {
-            escaped = true;
-        } else if byte == quote {
-            return Some(index + 1);
-        }
-        index += 1;
-    }
-
-    Some(bytes.len())
-}
-
-fn trailing_trimmed_len(input: &str) -> usize {
-    input.len() - input.trim_end().len()
-}
-
-fn skip_ws_and_comments(source: &str, mut offset: usize, end: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-
-    while offset < end {
-        if bytes[offset].is_ascii_whitespace() {
-            offset += 1;
-            continue;
-        }
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end.min(end);
-            continue;
-        }
-        return Some(offset);
-    }
-
-    None
 }
 
 #[cfg(test)]
@@ -439,16 +245,5 @@ mod tests {
     fn rejects_window_titlebar_selectors() {
         let parsed = parse_stylesheet("window::titlebar { display: flex; }");
         assert!(matches!(parsed, Err(CssParseError::UnsupportedSelector { .. })));
-    }
-
-    #[test]
-    fn fallback_property_scan_ignores_comments_and_strings() {
-        let parsed =
-            fallback_declarations("display: flex; /* color: red; */ width: calc(100% - 8px);")
-                .unwrap();
-
-        assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].property, "display");
-        assert_eq!(parsed[1].property, "width");
     }
 }

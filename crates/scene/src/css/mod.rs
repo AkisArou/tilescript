@@ -43,6 +43,7 @@ mod tests {
             .into_iter()
             .next()
             .unwrap()
+            .declaration
     }
 
     #[test]
@@ -53,7 +54,7 @@ mod tests {
 
         assert_eq!(sheet.rules.len(), 1);
         assert_eq!(sheet.rules[0].selectors.slice().len(), 2);
-        assert_eq!(sheet.rules[0].declarations.len(), 4);
+        assert_eq!(sheet.rules[0].declarations.len(), 3);
     }
 
     #[test]
@@ -135,8 +136,8 @@ mod tests {
         let matches = matching_rules(&sheet, &node);
 
         assert_eq!(matches.len(), 2);
-        assert!(matches!(matches[0].declarations[0], CompiledDeclaration::Width(_)));
-        assert!(matches!(matches[1].declarations[0], CompiledDeclaration::Height(_)));
+        assert!(matches!(matches[0].declarations[0].declaration, CompiledDeclaration::Width(_)));
+        assert!(matches!(matches[1].declarations[0].declaration, CompiledDeclaration::Height(_)));
     }
 
     #[test]
@@ -273,22 +274,6 @@ mod tests {
                 value: "inline".into(),
             })
         );
-    }
-
-    #[test]
-    fn compiles_order_value() {
-        let declaration = only_declaration("window { order: -2; }");
-
-        assert_eq!(declaration, CompiledDeclaration::Order(-2));
-    }
-
-    #[test]
-    fn supports_order_property() {
-        let sheet = parse_stylesheet("window { order: 3; }").unwrap();
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-        let style = compute_style(&sheet, &node).unwrap();
-
-        assert_eq!(style.order, Some(3));
     }
 
     #[test]

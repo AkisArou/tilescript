@@ -2,7 +2,7 @@ use std::path::Path;
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, Url};
 use tilescript_css::analysis::{
-    CssDiagnostic, CssDiagnosticCode, CssDiagnosticSeverity, CssSymbolKind, analyze_stylesheet,
+    CssDiagnostic, CssDiagnosticCode, CssDiagnosticSeverity, analyze_stylesheet,
 };
 
 use crate::project::ProjectIndex;
@@ -70,11 +70,23 @@ fn project_selector_diagnostics(
 
     let mut diagnostics = Vec::new();
 
-    for symbol in &analysis.symbols {
-        if symbol.kind != CssSymbolKind::Rule {
-            continue;
-        }
+    if let Some(stylesheet) = &analysis.stylesheet {
+        for rule in &stylesheet.rules {
+            if rule.selector_text.is_empty() {
+                continue;
+            }
 
+            diagnostics.extend(selector_reference_diagnostics(
+                &path,
+                &rule.selector_text,
+                rule.selector_range,
+                project_index,
+            ));
+        }
+        return diagnostics;
+    }
+
+    for symbol in &analysis.symbols {
         let start = position_to_offset(
             source,
             Position {
@@ -96,9 +108,8 @@ fn project_selector_diagnostics(
 
         diagnostics.extend(selector_reference_diagnostics(
             &path,
-            source,
             &source[start..end],
-            start,
+            symbol.selection_range,
             project_index,
         ));
     }
@@ -108,21 +119,18 @@ fn project_selector_diagnostics(
 
 fn selector_reference_diagnostics(
     path: &Path,
-    source: &str,
     selector: &str,
-    selector_offset: usize,
+    selector_range: tilescript_css::CssRange,
     project_index: &ProjectIndex,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    for reference in selector_references_in_segment(selector, selector_offset) {
+    for reference in selector_references_in_segment(selector, 0) {
         match reference.kind {
             crate::syntax::SelectorReferenceKind::Id => {
                 if !project_index.has_id_for_path(path, &reference.name) {
                     diagnostics.push(project_selector_diagnostic(
-                        source,
-                        reference.start,
-                        reference.end,
+                        translate_selector_range(reference.start, reference.end, selector_range),
                         "unknown-selector-id",
                         format!(
                             "unknown selector id `#{}` in authored TSX layouts",
@@ -134,9 +142,7 @@ fn selector_reference_diagnostics(
             crate::syntax::SelectorReferenceKind::Class => {
                 if !project_index.has_class_for_path(path, &reference.name) {
                     diagnostics.push(project_selector_diagnostic(
-                        source,
-                        reference.start,
-                        reference.end,
+                        translate_selector_range(reference.start, reference.end, selector_range),
                         "unknown-selector-class",
                         format!(
                             "unknown selector class `.{}` in authored TSX layouts",
@@ -151,18 +157,9 @@ fn selector_reference_diagnostics(
     diagnostics
 }
 
-fn project_selector_diagnostic(
-    source: &str,
-    start: usize,
-    end: usize,
-    code: &str,
-    message: String,
-) -> Diagnostic {
+fn project_selector_diagnostic(range: Range, code: &str, message: String) -> Diagnostic {
     Diagnostic {
-        range: Range {
-            start: offset_to_position(source, start),
-            end: offset_to_position(source, end),
-        },
+        range,
         severity: Some(DiagnosticSeverity::WARNING),
         code: Some(NumberOrString::String(code.to_string())),
         source: Some("tilescript-css-lsp".to_string()),
@@ -171,23 +168,21 @@ fn project_selector_diagnostic(
     }
 }
 
-fn offset_to_position(source: &str, offset: usize) -> Position {
-    let mut line = 0u32;
-    let mut character = 0u32;
-
-    for (index, ch) in source.char_indices() {
-        if index == offset {
-            return Position { line, character };
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += 1;
-        }
+fn translate_selector_range(
+    start: usize,
+    end: usize,
+    selector_range: tilescript_css::CssRange,
+) -> Range {
+    Range {
+        start: Position {
+            line: selector_range.start_line.saturating_sub(1),
+            character: selector_range.start_column.saturating_sub(1) + start as u32,
+        },
+        end: Position {
+            line: selector_range.start_line.saturating_sub(1),
+            character: selector_range.start_column.saturating_sub(1) + end as u32,
+        },
     }
-
-    Position { line, character }
 }
 
 #[cfg(test)]

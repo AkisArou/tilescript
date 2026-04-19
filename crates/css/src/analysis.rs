@@ -1,22 +1,11 @@
-use crate::compiled::CompiledStyleSheet;
+use crate::compiled::{CompiledStyleRule, CompiledStyleSheet};
 use crate::language::{StyleTarget, is_supported_attribute_key, property_spec};
 use crate::parse_stylesheet;
 use crate::query::selector_matches;
+use crate::source::{CssRange, SourceMap, leading_trimmed_len, trailing_trimmed_len};
+use crate::{LayoutSelectorParser, parse_selector_list_from_parser};
+use cssparser::{AtRuleParser, Parser, ParserInput, QualifiedRuleParser, StyleSheetParser};
 use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CssRange {
-    pub start_line: u32,
-    pub start_column: u32,
-    pub end_line: u32,
-    pub end_column: u32,
-}
-
-impl CssRange {
-    pub const fn whole_document() -> Self {
-        Self { start_line: 1, start_column: 1, end_line: u32::MAX, end_column: u32::MAX }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CssDiagnosticSeverity {
@@ -64,83 +53,131 @@ pub struct CssSymbol {
     pub selection_range: CssRange,
 }
 
-#[derive(Debug, Clone)]
-struct AuthoredRule {
-    selector_text: String,
-    selector_range: CssRange,
-    block_range: CssRange,
-    targets: Vec<StyleTarget>,
-    declarations: Vec<AuthoredDeclaration>,
-}
-
-#[derive(Debug, Clone)]
-struct AuthoredDeclaration {
-    property: String,
-    property_range: CssRange,
-}
-
 pub fn analyze_stylesheet(source: &str) -> CssAnalysis {
     match parse_stylesheet(source) {
         Ok(stylesheet) => {
-            let authored_rules = authored_rules(source, Some(&stylesheet));
-            let diagnostics = semantic_diagnostics(&authored_rules, &stylesheet);
-            let symbols = extract_symbols(source, &authored_rules);
+            let diagnostics = semantic_diagnostics(&stylesheet);
+            let symbols = extract_symbols(&stylesheet);
             CssAnalysis { stylesheet: Some(stylesheet), diagnostics, symbols }
         }
-        Err(error) => {
-            let authored_rules = authored_rules(source, None);
-            let symbols = extract_symbols(source, &authored_rules);
-            CssAnalysis {
-                stylesheet: None,
-                diagnostics: vec![diagnostic_from_parse_error(&error)],
-                symbols,
-            }
-        }
+        Err(error) => CssAnalysis {
+            stylesheet: None,
+            diagnostics: vec![diagnostic_from_parse_error(&error)],
+            symbols: fallback_symbols(source),
+        },
     }
 }
 
-fn extract_symbols(_source: &str, rules: &[AuthoredRule]) -> Vec<CssSymbol> {
-    let mut symbols = Vec::new();
-
-    for rule in rules {
-        symbols.push(CssSymbol {
+fn extract_symbols(stylesheet: &CompiledStyleSheet) -> Vec<CssSymbol> {
+    stylesheet
+        .rules
+        .iter()
+        .map(|rule| CssSymbol {
             kind: CssSymbolKind::Rule,
             name: rule.selector_text.clone(),
             range: rule.block_range,
             selection_range: rule.selector_range,
-        });
+        })
+        .collect()
+}
+
+fn fallback_symbols(source: &str) -> Vec<CssSymbol> {
+    let source_map = SourceMap::new(source);
+    let mut input_buf = ParserInput::new(source);
+    let mut parser_input = Parser::new(&mut input_buf);
+    let mut parser = SymbolRuleParser { source_map: &source_map };
+    let mut symbols = Vec::new();
+
+    for rule in StyleSheetParser::new(&mut parser_input, &mut parser).flatten() {
+        symbols.push(rule);
     }
+
     symbols
 }
 
-fn semantic_diagnostics(
-    rules: &[AuthoredRule],
-    _stylesheet: &CompiledStyleSheet,
-) -> Vec<CssDiagnostic> {
-    let mut diagnostics = selector_attribute_key_diagnostics(rules);
-    diagnostics.extend(applicability_diagnostics(rules));
+struct SymbolRuleParser<'a> {
+    source_map: &'a SourceMap<'a>,
+}
+
+struct SymbolPrelude {
+    selector_text: String,
+    selector_range: CssRange,
+}
+
+impl<'a, 'i> AtRuleParser<'i> for SymbolRuleParser<'a> {
+    type Prelude = ();
+    type AtRule = CssSymbol;
+    type Error = ();
+}
+
+impl<'a, 'i> QualifiedRuleParser<'i> for SymbolRuleParser<'a> {
+    type Prelude = SymbolPrelude;
+    type QualifiedRule = CssSymbol;
+    type Error = ();
+
+    fn parse_prelude<'t>(
+        &mut self,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self::Prelude, cssparser::ParseError<'i, Self::Error>> {
+        let start = input.state();
+        let parser = LayoutSelectorParser;
+        parse_selector_list_from_parser(&parser, input).map_err(|_| input.new_custom_error(()))?;
+
+        let selector_slice = input.slice_from(start.position());
+        let selector_text = selector_slice.trim().to_string();
+        let selector_start = start.position().byte_index() + leading_trimmed_len(selector_slice);
+        let selector_end = input.position().byte_index() - trailing_trimmed_len(selector_slice);
+
+        Ok(SymbolPrelude {
+            selector_text,
+            selector_range: self.source_map.range(selector_start, selector_end),
+        })
+    }
+
+    fn parse_block<'t>(
+        &mut self,
+        prelude: Self::Prelude,
+        _start: &cssparser::ParserState,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self::QualifiedRule, cssparser::ParseError<'i, Self::Error>> {
+        let block_start = input.position().byte_index().saturating_sub(1);
+        while input.next_including_whitespace_and_comments().is_ok() {}
+
+        Ok(CssSymbol {
+            kind: CssSymbolKind::Rule,
+            name: prelude.selector_text,
+            range: self.source_map.range(block_start, input.position().byte_index() + 1),
+            selection_range: prelude.selector_range,
+        })
+    }
+}
+
+fn semantic_diagnostics(stylesheet: &CompiledStyleSheet) -> Vec<CssDiagnostic> {
+    let mut diagnostics = selector_attribute_key_diagnostics(stylesheet);
+    diagnostics.extend(applicability_diagnostics(stylesheet));
     diagnostics
 }
 
-fn selector_attribute_key_diagnostics(rules: &[AuthoredRule]) -> Vec<CssDiagnostic> {
+fn selector_attribute_key_diagnostics(stylesheet: &CompiledStyleSheet) -> Vec<CssDiagnostic> {
     let mut diagnostics = Vec::new();
 
-    for rule in rules {
-        diagnostics.extend(attribute_key_diagnostics_for_selector(rule));
+    for rule in &stylesheet.rules {
+        diagnostics.extend(attribute_key_diagnostics_for_rule(rule));
     }
 
     diagnostics
 }
 
-fn applicability_diagnostics(rules: &[AuthoredRule]) -> Vec<CssDiagnostic> {
+fn applicability_diagnostics(stylesheet: &CompiledStyleSheet) -> Vec<CssDiagnostic> {
     let mut diagnostics = Vec::new();
 
-    for rule in rules {
+    for rule in &stylesheet.rules {
+        let targets = infer_style_targets(&rule.selectors);
         for declaration in &rule.declarations {
             let Some(spec) = property_spec(&declaration.property) else {
                 continue;
             };
-            if rule.targets.iter().any(|target| spec.applies_to.contains(target)) {
+            if targets.iter().any(|target| spec.applies_to.contains(target)) {
                 continue;
             }
 
@@ -150,7 +187,7 @@ fn applicability_diagnostics(rules: &[AuthoredRule]) -> Vec<CssDiagnostic> {
                 message: format!(
                     "property `{}` does not apply to {}",
                     declaration.property,
-                    describe_targets(&rule.targets)
+                    describe_targets(&targets)
                 ),
                 range: declaration.property_range,
             });
@@ -158,163 +195,6 @@ fn applicability_diagnostics(rules: &[AuthoredRule]) -> Vec<CssDiagnostic> {
     }
 
     diagnostics
-}
-
-fn authored_rules(source: &str, stylesheet: Option<&CompiledStyleSheet>) -> Vec<AuthoredRule> {
-    let source_map = SourceMap::new(source);
-    let mut rules = Vec::new();
-    let mut offset = 0;
-    let mut style_rule_index = 0usize;
-
-    while let Some(start) = skip_ws_and_comments(source, offset) {
-        let Some(prelude_end) = find_top_level_token(source, start, &['{', ';']) else {
-            break;
-        };
-        let token = source[prelude_end..].chars().next().unwrap();
-
-        if token == ';' {
-            offset = prelude_end + 1;
-            continue;
-        }
-
-        let Some(block_end) = find_matching_brace_end(source, prelude_end) else {
-            break;
-        };
-        let prelude = source[start..prelude_end].trim();
-        if !prelude.starts_with('@') {
-            let declarations =
-                authored_declarations(source, prelude_end + 1, block_end - 1, &source_map);
-            let selector_start = start + leading_trimmed_len(&source[start..prelude_end]);
-            let selector_end = prelude_end - trailing_trimmed_len(&source[start..prelude_end]);
-            let targets = stylesheet
-                .and_then(|stylesheet| stylesheet.rules.get(style_rule_index))
-                .map(|rule| infer_style_targets(&rule.selectors))
-                .unwrap_or_else(|| {
-                    vec![StyleTarget::Workspace, StyleTarget::Group, StyleTarget::Window]
-                });
-            rules.push(AuthoredRule {
-                selector_text: source[selector_start..selector_end].to_string(),
-                selector_range: source_map.range(selector_start, selector_end),
-                block_range: source_map.range(start, block_end),
-                targets,
-                declarations,
-            });
-            style_rule_index += 1;
-        }
-
-        offset = block_end;
-    }
-
-    rules
-}
-
-fn authored_declarations(
-    source: &str,
-    start: usize,
-    end: usize,
-    source_map: &SourceMap<'_>,
-) -> Vec<AuthoredDeclaration> {
-    let mut declarations = Vec::new();
-    let mut segment_start = start;
-    let mut offset = start;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = source.as_bytes();
-
-    while offset < end {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(source, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            b';' if paren_depth == 0 && bracket_depth == 0 => {
-                if let Some(declaration) =
-                    parse_declaration_segment(source, segment_start, offset, source_map)
-                {
-                    declarations.push(declaration);
-                }
-                segment_start = offset + 1;
-            }
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    if let Some(declaration) = parse_declaration_segment(source, segment_start, end, source_map) {
-        declarations.push(declaration);
-    }
-
-    declarations
-}
-
-fn parse_declaration_segment(
-    source: &str,
-    start: usize,
-    end: usize,
-    source_map: &SourceMap<'_>,
-) -> Option<AuthoredDeclaration> {
-    let segment = &source[start..end];
-    let trimmed_start = start + leading_trimmed_len(segment);
-    let trimmed_end = end - trailing_trimmed_len(segment);
-
-    if trimmed_start >= trimmed_end {
-        return None;
-    }
-
-    let colon = find_top_level_colon(source, trimmed_start, trimmed_end)?;
-    let name = source[trimmed_start..colon].trim();
-    if name.is_empty() {
-        return None;
-    }
-
-    let name_start = trimmed_start + leading_trimmed_len(&source[trimmed_start..colon]);
-    let name_end = colon - trailing_trimmed_len(&source[trimmed_start..colon]);
-
-    Some(AuthoredDeclaration {
-        property: name.to_string(),
-        property_range: source_map.range(name_start, name_end),
-    })
-}
-
-fn find_top_level_colon(source: &str, start: usize, end: usize) -> Option<usize> {
-    let mut offset = start;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = source.as_bytes();
-
-    while offset < end {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(source, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            b':' if paren_depth == 0 && bracket_depth == 0 => return Some(offset),
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    None
 }
 
 fn infer_style_targets(
@@ -355,28 +235,25 @@ fn synthetic_window_node() -> ResolvedLayoutNode {
     }
 }
 
-fn attribute_key_diagnostics_for_selector(rule: &AuthoredRule) -> Vec<CssDiagnostic> {
+fn attribute_key_diagnostics_for_rule(rule: &CompiledStyleRule) -> Vec<CssDiagnostic> {
     let mut diagnostics = Vec::new();
-    let source_map = SourceMap::new(&rule.selector_text);
+    let selector = &rule.selector_text;
+    let source_map = SourceMap::new(selector);
     let mut offset = 0;
-    let bytes = rule.selector_text.as_bytes();
+    let bytes = selector.as_bytes();
 
-    while offset < rule.selector_text.len() {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(&rule.selector_text, offset) {
+    while offset < selector.len() {
+        if let Some(string_end) = starts_string(selector, offset) {
             offset = string_end;
             continue;
         }
 
         if bytes[offset] == b'[' {
-            let Some(end) = find_matching_bracket_end(&rule.selector_text, offset) else {
+            let Some(end) = find_matching_bracket_end(selector, offset) else {
                 break;
             };
             if let Some(diagnostic) = attribute_key_diagnostic_for_segment(
-                &rule.selector_text,
+                selector,
                 offset,
                 end,
                 &source_map,
@@ -491,6 +368,32 @@ fn find_matching_bracket_end(source: &str, open_bracket: usize) -> Option<usize>
     None
 }
 
+fn starts_string(source: &str, offset: usize) -> Option<usize> {
+    let quote = match source.as_bytes().get(offset) {
+        Some(b'\'') => b'\'',
+        Some(b'"') => b'"',
+        _ => return None,
+    };
+
+    let mut escaped = false;
+    let mut index = offset + 1;
+    let bytes = source.as_bytes();
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == quote {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+
+    Some(bytes.len())
+}
+
 fn translate_range(local: CssRange, base: CssRange) -> CssRange {
     CssRange {
         start_line: base.start_line + local.start_line - 1,
@@ -577,171 +480,6 @@ fn push_unique(targets: &mut Vec<StyleTarget>, target: StyleTarget) {
     }
 }
 
-fn skip_ws_and_comments(source: &str, mut offset: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-
-    while offset < source.len() {
-        if bytes[offset].is_ascii_whitespace() {
-            offset += 1;
-            continue;
-        }
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        return Some(offset);
-    }
-
-    None
-}
-
-fn find_top_level_token(source: &str, start: usize, tokens: &[char]) -> Option<usize> {
-    let mut offset = start;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = source.as_bytes();
-
-    while offset < source.len() {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(source, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            byte if paren_depth == 0 && bracket_depth == 0 && tokens.contains(&(byte as char)) => {
-                return Some(offset);
-            }
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    None
-}
-
-fn find_matching_brace_end(source: &str, open_brace: usize) -> Option<usize> {
-    let mut offset = open_brace;
-    let mut depth = 0i32;
-    let bytes = source.as_bytes();
-
-    while offset < source.len() {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(source, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'{' => depth += 1,
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(offset + 1);
-                }
-            }
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    None
-}
-
-fn starts_comment(bytes: &[u8], offset: usize) -> Option<usize> {
-    if bytes.get(offset) == Some(&b'/') && bytes.get(offset + 1) == Some(&b'*') {
-        let mut end = offset + 2;
-        while end + 1 < bytes.len() {
-            if bytes[end] == b'*' && bytes[end + 1] == b'/' {
-                return Some(end + 2);
-            }
-            end += 1;
-        }
-        return Some(bytes.len());
-    }
-
-    None
-}
-
-fn starts_string(source: &str, offset: usize) -> Option<usize> {
-    let quote = match source.as_bytes().get(offset) {
-        Some(b'\'') => b'\'',
-        Some(b'"') => b'"',
-        _ => return None,
-    };
-
-    let mut escaped = false;
-    let mut index = offset + 1;
-    let bytes = source.as_bytes();
-
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if escaped {
-            escaped = false;
-        } else if byte == b'\\' {
-            escaped = true;
-        } else if byte == quote {
-            return Some(index + 1);
-        }
-        index += 1;
-    }
-
-    Some(bytes.len())
-}
-
-fn leading_trimmed_len(input: &str) -> usize {
-    input.len() - input.trim_start().len()
-}
-
-fn trailing_trimmed_len(input: &str) -> usize {
-    input.len() - input.trim_end().len()
-}
-
-struct SourceMap<'a> {
-    source: &'a str,
-    line_starts: Vec<usize>,
-}
-
-impl<'a> SourceMap<'a> {
-    fn new(source: &'a str) -> Self {
-        let mut line_starts = vec![0];
-        for (offset, ch) in source.char_indices() {
-            if ch == '\n' {
-                line_starts.push(offset + 1);
-            }
-        }
-        Self { source, line_starts }
-    }
-
-    fn range(&self, start: usize, end: usize) -> CssRange {
-        let (start_line, start_column) = self.position(start);
-        let (end_line, end_column) = self.position(end);
-        CssRange { start_line, start_column, end_line, end_column }
-    }
-
-    fn position(&self, offset: usize) -> (u32, u32) {
-        let line_index = match self.line_starts.binary_search(&offset) {
-            Ok(index) => index,
-            Err(index) => index.saturating_sub(1),
-        };
-        let line_start = self.line_starts[line_index];
-        let column = self.source[line_start..offset].chars().count() as u32 + 1;
-        (line_index as u32 + 1, column)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,8 +543,7 @@ mod tests {
 
     #[test]
     fn extracts_rule_symbols() {
-        let analysis =
-            analyze_stylesheet("window { display: flex; }\ngroup { gap: 8px; order: 2; }");
+        let analysis = analyze_stylesheet("window { display: flex; }\ngroup { gap: 8px; }");
 
         assert_eq!(analysis.symbols.len(), 2);
         assert_eq!(analysis.symbols[0].kind, CssSymbolKind::Rule);

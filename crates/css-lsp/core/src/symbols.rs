@@ -1,5 +1,6 @@
 use lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
-use tilescript_css::analysis::{CssRange, CssSymbolKind, analyze_stylesheet};
+use tilescript_css::CssRange;
+use tilescript_css::analysis::{CssSymbolKind, analyze_stylesheet};
 
 pub fn document_symbols_for(source: &str) -> Vec<DocumentSymbol> {
     let analysis = analyze_stylesheet(source);

@@ -1,18 +1,9 @@
-use cssparser::{Parser, ParserInput, Token};
+use cssparser::{Parser, Token};
 
 use crate::parse_values::{
     CssDelimiter, CssDimension, CssFunction, CssSimpleBlock, CssSimpleBlockKind, CssValueToken,
 };
 use crate::parsing::CssParseError;
-
-pub(super) fn parse_value_tokens(input: &str) -> Result<Vec<CssValueToken>, CssParseError> {
-    let mut input_buf = ParserInput::new(input);
-    let mut parser = Parser::new(&mut input_buf);
-    parse_component_values(&mut parser).map_err(|err| CssParseError::InvalidSyntax {
-        line: err.location.line,
-        column: err.location.column,
-    })
-}
 
 pub(super) fn parse_component_values<'i, 't>(
     parser: &mut Parser<'i, 't>,
