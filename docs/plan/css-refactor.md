@@ -50,7 +50,19 @@ We should progressively replace string round-trips with direct lowering from Sty
 
 `grid` already mostly follows this direct-lowering approach and should be the model.
 
-### Phase 3: Move stylesheet parsing closer to Stylo rule parsing
+### Phase 3: Make the compiled stylesheet model rule-tree capable
+
+Before adopting Stylo's full nested rule model, Tilescript should stop assuming stylesheets are permanently flat.
+
+The compiled stylesheet should support nested child rules even while the current parser still emits only top-level rules.
+
+That gives us a stable substrate for future nesting work:
+
+- parser-produced source ranges live on rules and declarations
+- rule/query/analysis traversal already handles recursive rule trees
+- later nesting support can populate child rules without another whole-model rewrite
+
+### Phase 4: Move stylesheet parsing closer to Stylo rule parsing
 
 We should stop treating authored CSS as a flat custom stylesheet parser if we want modern features cleanly.
 
@@ -63,15 +75,16 @@ The better direction is:
 
 This becomes especially important for nesting.
 
-### Phase 4: Add nesting from crate-backed parsing
+### Phase 5: Add nesting from crate-backed parsing
 
-Stylo already has nesting-aware rule parsing and nested style rule structures.
+Nesting should be implemented on Tilescript's long-term selector front-end, not by switching to Stylo's stylesheet parser.
 
-When we adopt that parser path, nesting support should be implemented by:
+The clean direction is:
 
-- parsing nested style rules through Stylo
-- flattening nested selectors into flat Tilescript rules
-- preserving source locations for diagnostics and LSP
+- parse nested qualified rules with `cssparser::RuleBodyParser`
+- parse nested selectors with `selectors` using `LayoutSelectorImpl`
+- resolve parent selectors through the selectors crate's own nesting APIs
+- preserve parser-produced source locations for diagnostics and LSP
 
 We should not implement nesting with a hand-rolled string transformer.
 

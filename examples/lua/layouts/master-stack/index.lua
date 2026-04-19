@@ -2,9 +2,8 @@ local h = require("tilescript")
 
 ---@param ctx Tilescript.LayoutContext
 return function(ctx)
-  return h.workspace({ id = "frame" }) {
+  return h.workspace() {
     h.slot({
-      id = "master",
       take = 1,
       class = "master-slot",
     }),
@@ -12,8 +11,7 @@ return function(ctx)
     h.when(#ctx.windows > 1) {
       h.group({ class = "stack-group" }) {
         h.slot({
-          id = "stack-slot",
-          class = "stack-group__item",
+          class = "stack-slot",
         }),
       },
     },

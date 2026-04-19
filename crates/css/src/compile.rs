@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::grid::*;
+use crate::language::property_spec;
 use crate::parse_values::*;
 
 use crate::style::{
@@ -132,6 +133,12 @@ impl CompiledDeclaration {
 pub fn compile_declaration(
     parsed: &ParsedDeclaration,
 ) -> Result<CompiledDeclaration, CssValueError> {
+    if property_spec(&parsed.property).is_none() {
+        return Err(CssValueError::UnsupportedValue {
+            property: parsed.property.clone(),
+            value: parsed.value.text.clone(),
+        });
+    }
     compile_declaration_from_value(&parsed.property, &parsed.value)
 }
 

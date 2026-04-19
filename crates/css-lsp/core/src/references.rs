@@ -90,33 +90,7 @@ fn selector_locations_in_stylesheet(
 
     if let Some(stylesheet) = analysis.stylesheet {
         for rule in &stylesheet.rules {
-            if rule.selector_text.is_empty() {
-                continue;
-            }
-
-            for selector in selector_references_in_segment(&rule.selector_text, 0) {
-                let selector_kind = match selector.kind {
-                    crate::syntax::SelectorReferenceKind::Id => ProjectSelectorKind::Id,
-                    crate::syntax::SelectorReferenceKind::Class => ProjectSelectorKind::Class,
-                };
-                if selector_kind != kind || selector.name != name {
-                    continue;
-                }
-
-                let range = Range {
-                    start: Position {
-                        line: rule.selector_range.start_line.saturating_sub(1),
-                        character: rule.selector_range.start_column.saturating_sub(1)
-                            + selector.start as u32,
-                    },
-                    end: Position {
-                        line: rule.selector_range.start_line.saturating_sub(1),
-                        character: rule.selector_range.start_column.saturating_sub(1)
-                            + selector.end as u32,
-                    },
-                };
-                locations.push(Location { uri: uri.clone(), range });
-            }
+            collect_rule_selector_locations(rule, uri, kind, name, &mut locations);
         }
 
         return locations;
@@ -163,6 +137,42 @@ fn selector_locations_in_stylesheet(
     }
 
     locations
+}
+
+fn collect_rule_selector_locations(
+    rule: &tilescript_css::CompiledStyleRule,
+    uri: &Url,
+    kind: ProjectSelectorKind,
+    name: &str,
+    locations: &mut Vec<Location>,
+) {
+    if !rule.selector_text.is_empty() {
+        for selector in selector_references_in_segment(&rule.selector_text, 0) {
+            let selector_kind = match selector.kind {
+                crate::syntax::SelectorReferenceKind::Id => ProjectSelectorKind::Id,
+                crate::syntax::SelectorReferenceKind::Class => ProjectSelectorKind::Class,
+            };
+            if selector_kind != kind || selector.name != name {
+                continue;
+            }
+
+            let range = Range {
+                start: Position {
+                    line: rule.selector_range.start_line.saturating_sub(1),
+                    character: rule.selector_range.start_column.saturating_sub(1) + selector.start as u32,
+                },
+                end: Position {
+                    line: rule.selector_range.start_line.saturating_sub(1),
+                    character: rule.selector_range.start_column.saturating_sub(1) + selector.end as u32,
+                },
+            };
+            locations.push(Location { uri: uri.clone(), range });
+        }
+    }
+
+    for child in &rule.children {
+        collect_rule_selector_locations(child, uri, kind, name, locations);
+    }
 }
 
 fn dedupe_locations(locations: Vec<Location>) -> Vec<Location> {

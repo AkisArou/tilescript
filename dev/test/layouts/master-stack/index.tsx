@@ -10,7 +10,7 @@ export default function layout(ctx: LayoutContext) {
   const mainWindowCount = ctx.windows.length - Number(hasAlacritty);
 
   return (
-    <workspace id="frame">
+    <workspace>
       <group moveAs="group">
         <window
           id="alacritty-column"
@@ -19,12 +19,12 @@ export default function layout(ctx: LayoutContext) {
         />
       </group>
 
-      <group id="main-area" moveAs="group">
-        <slot id="master" take={1} class="master-slot" />
+      <group class="main-area" moveAs="group">
+        <slot take={1} class="master-slot" />
 
         {mainWindowCount > 1 ? (
           <group class="stack-group">
-            <slot id="stack-slot" class="stack-group__item" />
+            <slot class="stack-slot" />
           </group>
         ) : null}
       </group>

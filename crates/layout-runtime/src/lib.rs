@@ -1798,11 +1798,7 @@ fn directional_move_window_order(
             )?;
             return Some(DirectionalMoveResult {
                 window_order: ordered_window_ids.to_vec(),
-                sibling_order_override: container
-                    .meta()
-                    .id
-                    .clone()
-                    .map(|container_id| (container_id, sibling_order)),
+                sibling_order_override: Some((snapshot_container_key(container), sibling_order)),
             });
         }
 
@@ -1855,7 +1851,11 @@ fn apply_sibling_order_overrides_to_resolved(
     match layout {
         tilescript_core::ResolvedLayoutNode::Workspace { meta, children } => {
             tilescript_core::ResolvedLayoutNode::Workspace {
-                children: reorder_resolved_siblings(meta.id.as_deref(), children, state)
+                children: reorder_resolved_siblings(
+                    meta.internal_key.as_deref().or(meta.id.as_deref()),
+                    children,
+                    state,
+                )
                     .into_iter()
                     .map(|child| apply_sibling_order_overrides_to_resolved(child, state))
                     .collect(),
@@ -1864,7 +1864,11 @@ fn apply_sibling_order_overrides_to_resolved(
         }
         tilescript_core::ResolvedLayoutNode::Group { meta, children } => {
             tilescript_core::ResolvedLayoutNode::Group {
-                children: reorder_resolved_siblings(meta.id.as_deref(), children, state)
+                children: reorder_resolved_siblings(
+                    meta.internal_key.as_deref().or(meta.id.as_deref()),
+                    children,
+                    state,
+                )
                     .into_iter()
                     .map(|child| apply_sibling_order_overrides_to_resolved(child, state))
                     .collect(),
@@ -1918,6 +1922,18 @@ fn snapshot_stable_node_key(node: &LayoutSnapshotNode, index: usize) -> String {
         LayoutSnapshotNode::Content { .. } => format!("content-branch-{index}"),
         LayoutSnapshotNode::Window { .. } => format!("window-branch-{index}"),
     })
+}
+
+fn snapshot_container_key(node: &LayoutSnapshotNode) -> String {
+    node.meta()
+        .internal_key
+        .clone()
+        .or_else(|| node.meta().id.clone())
+        .expect("container with sibling order override must have a stable key")
+}
+
+fn snapshot_partition_key(node: &LayoutSnapshotNode) -> Option<String> {
+    node.meta().id.clone().or_else(|| node.meta().internal_key.clone())
 }
 
 fn resolved_stable_node_key(node: &tilescript_core::ResolvedLayoutNode, index: usize) -> String {
@@ -2134,9 +2150,7 @@ fn collect_partitions_from_scene(
 ) -> Vec<tilescript_core::WindowId> {
     let maybe_axis = node.styles().and_then(|styles| partition_axis_from_style(&styles.layout));
     let current_partition_id = (maybe_axis.is_some() && node.children().len() >= 2).then(|| {
-        node.meta()
-            .id
-            .clone()
+        snapshot_partition_key(node)
             .map(PartitionId::new)
             .unwrap_or_else(|| {
                 PartitionId::new(structural_partition_id(partition_node_kind(node), scope_path))
@@ -2527,12 +2541,12 @@ import "./index.css";
 
 export default function layout(ctx: LayoutContext) {
   return (
-    <workspace id="frame">
-      <slot id="master" take={1} class="master-slot" />
+    <workspace>
+      <slot take={1} class="master-slot" />
 
       {ctx.windows.length > 1 ? (
         <group class="stack-group">
-          <slot id="stack-slot" class="stack-group__item" />
+          <slot class="stack-slot" />
         </group>
       ) : null}
     </workspace>
@@ -2543,35 +2557,35 @@ export default function layout(ctx: LayoutContext) {
         .expect("write stable master-stack layout");
         fs::write(
             layout_root.join("index.css"),
-            r#"#frame {
+r#"workspace {
   display: flex;
   flex-direction: row;
   gap: 6px;
   padding: 6px;
   width: 100%;
   height: 100%;
-}
 
-.master-slot {
-  flex-basis: 0;
-  flex-grow: 3;
-  min-width: 0;
-  min-height: 0;
-}
+  .master-slot {
+    flex-basis: 0;
+    flex-grow: 3;
+    min-width: 0;
+    min-height: 0;
+  }
 
-.stack-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex-basis: 0;
-  flex-grow: 2;
-  min-width: 0;
-}
+  .stack-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-basis: 0;
+    flex-grow: 2;
+    min-width: 0;
 
-.stack-group__item {
-  flex-basis: 0;
-  flex-grow: 1;
-  min-height: 0;
+    .stack-slot {
+      flex-basis: 0;
+      flex-grow: 1;
+      min-height: 0;
+    }
+  }
 }
 "#,
         )
@@ -3449,17 +3463,17 @@ export default function layout(ctx: LayoutContext) {
   const mainWindowCount = ctx.windows.length - Number(hasAlacritty);
 
   return (
-    <workspace id="frame">
+    <workspace>
       <group moveAs="group">
         <window id="alacritty-column" match='class="Alacritty"' class="alacritty-column" />
       </group>
 
-      <group id="main-area" moveAs="group">
-        <slot id="master" take={1} class="master-slot" />
+      <group id="main-area" class="main-area" moveAs="group">
+        <slot take={1} class="master-slot" />
 
         {mainWindowCount > 1 ? (
           <group class="stack-group">
-            <slot id="stack-slot" class="stack-group__item" />
+            <slot class="stack-slot" />
           </group>
         ) : null}
       </group>
@@ -3471,7 +3485,7 @@ export default function layout(ctx: LayoutContext) {
         .expect("write side-column master-stack layout");
         fs::write(
             &stylesheet_path,
-            r#"#frame {
+r#"workspace {
   display: flex;
   flex-direction: row;
   gap: 6px;
@@ -3480,7 +3494,7 @@ export default function layout(ctx: LayoutContext) {
   height: 100%;
 }
 
-#main-area {
+.main-area {
   display: flex;
   flex-direction: row;
   gap: 6px;
@@ -3515,7 +3529,7 @@ export default function layout(ctx: LayoutContext) {
   min-height: 0;
 }
 
-.stack-group__item {
+.stack-slot {
   flex-basis: 0;
   flex-grow: 1;
   min-height: 0;
@@ -3611,7 +3625,7 @@ export default function layout(ctx: LayoutContext) {
 
         let resize_state = model.workspace_resize_state(&workspace_id);
         assert_eq!(
-            resize_state.sibling_order_by_container_id.get("frame"),
+            resize_state.sibling_order_by_container_id.get("root"),
             Some(&vec!["root.children.[1]".to_string(), "root.children.[0]".to_string()])
         );
         assert!(changed);
@@ -3658,7 +3672,7 @@ export default function layout(ctx: LayoutContext) {
   const hasInspector = ctx.windows.some((window) => window.class === "Inspector");
 
   return (
-    <workspace id="frame">
+    <workspace>
       <group moveAs="group">
         <window id="alacritty-column" match='class="Alacritty"' class="side-column" />
       </group>
@@ -3667,10 +3681,10 @@ export default function layout(ctx: LayoutContext) {
           <window id="inspector-column" match='class="Inspector"' class="inspector-column" />
         </group>
       ) : null}
-      <group id="main-area" moveAs="group">
-        <slot id="master" take={1} class="master-slot" />
+      <group class="main-area" moveAs="group">
+        <slot take={1} class="master-slot" />
         <group class="stack-group">
-          <slot id="stack-slot" class="stack-item" />
+          <slot class="stack-item" />
         </group>
       </group>
     </workspace>
@@ -3681,7 +3695,7 @@ export default function layout(ctx: LayoutContext) {
         .expect("write conditional sibling layout");
         fs::write(
             &stylesheet_path,
-            r#"#frame {
+r#"workspace {
   display: flex;
   flex-direction: row;
   gap: 6px;
@@ -3690,7 +3704,7 @@ export default function layout(ctx: LayoutContext) {
   height: 100%;
 }
 
-#main-area {
+.main-area {
   display: flex;
   flex-direction: row;
   gap: 6px;
@@ -3790,10 +3804,10 @@ export default function layout(ctx: LayoutContext) {
             .expect("placement with inspector")
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        let with_inspector_order = model
-            .workspace_resize_state(&WorkspaceId::from("2"))
+        let resize_state = model.workspace_resize_state(&WorkspaceId::from("2"));
+        let with_inspector_order = resize_state
             .sibling_order_by_container_id
-            .get("frame")
+            .get("root")
             .cloned()
             .expect("saved sibling order with inspector");
         assert!(with_inspector[&WindowId::from("alacritty")].x < with_inspector[&WindowId::from("ts1")].x);
@@ -3833,7 +3847,7 @@ export default function layout(ctx: LayoutContext) {
         let restored_order = model
             .workspace_resize_state(&WorkspaceId::from("2"))
             .sibling_order_by_container_id
-            .get("frame")
+            .get("root")
             .cloned()
             .expect("saved sibling order after restore");
         assert_eq!(restored_order, with_inspector_order);
@@ -3949,8 +3963,8 @@ import "./index.css";
 export default function layout(ctx: LayoutContext) {
   return (
     <workspace id="frame">
-      <group id="vertical-stack">
-        <slot id="stack-slot" class="stack-item" />
+      <group class="vertical-stack">
+        <slot class="stack-item" />
       </group>
     </workspace>
   );
@@ -3960,7 +3974,7 @@ export default function layout(ctx: LayoutContext) {
         .expect("updated master-stack source");
         fs::write(
             &stylesheet_path,
-            r#"#frame {
+r#"workspace {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -3969,7 +3983,7 @@ export default function layout(ctx: LayoutContext) {
   height: 100%;
 }
 
-#vertical-stack {
+.vertical-stack {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4043,8 +4057,8 @@ export default function layout(ctx: LayoutContext) {
             .expect("scene evaluation")
             .expect("workspace scene");
 
-        assert!(scene.partition_tree.partitions.contains_key(&PartitionId::new("frame")));
-        let frame = &scene.partition_tree.partitions[&PartitionId::new("frame")];
+        assert!(scene.partition_tree.partitions.contains_key(&PartitionId::new("root")));
+        let frame = &scene.partition_tree.partitions[&PartitionId::new("root")];
         assert_eq!(frame.axis, PartitionAxis::Horizontal);
         assert_eq!(frame.branches.len(), 2);
         assert!(
@@ -4052,7 +4066,7 @@ export default function layout(ctx: LayoutContext) {
                 .partition_tree
                 .window_to_partition_path
                 .get(&WindowId::from("master"))
-                .is_some_and(|path| path == &vec![PartitionId::new("frame")])
+                .is_some_and(|path| path == &vec![PartitionId::new("root")])
         );
     }
 
@@ -4233,7 +4247,7 @@ export default function layout(ctx: LayoutContext) {
             .evaluate_workspace_scene(&loaded.config, &snapshot, workspace)
             .expect("scene evaluation")
             .expect("workspace scene");
-        let defaults = scene.partition_tree.partitions[&PartitionId::new("frame")]
+        let defaults = scene.partition_tree.partitions[&PartitionId::new("root")]
             .branches
             .iter()
             .map(|branch| branch.default_share.unwrap_or(DEFAULT_BRANCH_SHARE_UNITS))
@@ -4251,7 +4265,9 @@ export default function layout(ctx: LayoutContext) {
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let first =
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares.clone();
+            resize_state.adjustments_by_partition_id[&PartitionId::new("root")]
+                .branch_shares
+                .clone();
         assert_eq!(first.len(), defaults.len());
         assert_eq!(first.iter().sum::<u32>(), default_sum);
         assert!(first[0] > defaults[0]);
@@ -4269,7 +4285,9 @@ export default function layout(ctx: LayoutContext) {
 
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         let second =
-            resize_state.adjustments_by_partition_id[&PartitionId::new("frame")].branch_shares.clone();
+            resize_state.adjustments_by_partition_id[&PartitionId::new("root")]
+                .branch_shares
+                .clone();
         assert_eq!(second, defaults);
     }
 
@@ -4479,7 +4497,7 @@ export default function layout(ctx: LayoutContext) {
                 workspace_id: Some("1".into()),
                 focused_window_id: Some("stack-c".into()),
                 direction: "right".into(),
-                partition_id: Some("frame/group-partition/group-partition".into()),
+                partition_id: Some("root.children.[1].children.[1]".into()),
                 grow_branch_index: Some(0),
                 shrink_branch_index: Some(1),
                 changed: true,
@@ -4489,7 +4507,7 @@ export default function layout(ctx: LayoutContext) {
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
             resize_state.adjustments_by_partition_id
-                [&PartitionId::new("frame/group-partition/group-partition")]
+                [&PartitionId::new("root.children.[1].children.[1]")]
                 .branch_shares,
             vec![15, 9]
         );
@@ -4506,7 +4524,7 @@ export default function layout(ctx: LayoutContext) {
                 workspace_id: Some("1".into()),
                 focused_window_id: Some("stack-c".into()),
                 direction: "left".into(),
-                partition_id: Some("frame/group-partition/group-partition".into()),
+                partition_id: Some("root.children.[1].children.[1]".into()),
                 grow_branch_index: Some(1),
                 shrink_branch_index: Some(0),
                 changed: true,
@@ -4516,7 +4534,7 @@ export default function layout(ctx: LayoutContext) {
         let resize_state = model.workspace_resize_state(&WorkspaceId::from("1"));
         assert_eq!(
             resize_state.adjustments_by_partition_id
-                [&PartitionId::new("frame/group-partition/group-partition")]
+                [&PartitionId::new("root.children.[1].children.[1]")]
                 .branch_shares,
             vec![12, 12]
         );
@@ -4570,7 +4588,7 @@ export default function layout(ctx: LayoutContext) {
                 workspace_id: Some("1".into()),
                 focused_window_id: Some("stack-a".into()),
                 direction: "right".into(),
-                partition_id: Some("frame".into()),
+                partition_id: Some("root".into()),
                 grow_branch_index: Some(0),
                 shrink_branch_index: Some(1),
                 changed: true,

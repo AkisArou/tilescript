@@ -75,6 +75,9 @@ Notes:
 
 - runtime window state class aliases like `.focused`, `.floating`, `.fullscreen`, and `.urgent` are still supported as runtime state classes
 - selector matching is structural and metadata-based
+- CSS nesting is supported for nested style rules inside a qualified rule block
+- nesting uses the same Tilescript selector front-end, including Tilescript-specific pseudo-classes
+- nested selectors currently serialize canonically through the `selectors` crate, so flattened internal forms may include `:is(...)`
 
 ## Properties
 
@@ -191,6 +194,10 @@ workspace {
 window {
   min-width: 0;
   overflow: hidden;
+
+  > .focused {
+    display: grid;
+  }
 }
 ```
 

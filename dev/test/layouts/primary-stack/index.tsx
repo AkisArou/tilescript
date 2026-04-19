@@ -5,11 +5,11 @@ import "./index.css";
 
 export default function layout(ctx: LayoutContext) {
   return (
-    <workspace id="root">
-      <group id="frame">
-        <slot id="master" take={1} />
+    <workspace>
+      <group class="frame">
+        <slot take={1} class="master-slot" />
         {ctx.windows.length > 1 && (
-          <group id="stack">
+          <group class="stack-column">
             <slot class="stack-item" />
           </group>
         )}

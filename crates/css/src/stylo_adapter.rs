@@ -243,6 +243,12 @@ impl LayoutDomTree {
         LayoutElement { tree: self, index: self.root }
     }
 
+    pub fn find_element(&self, target: &ResolvedLayoutNode) -> Option<LayoutElement<'_>> {
+        self.nodes.iter().enumerate().find_map(|(index, node)| {
+            if &node.node == target { Some(LayoutElement { tree: self, index }) } else { None }
+        })
+    }
+
     #[cfg(test)]
     pub fn find_window_element(
         &self,
@@ -478,7 +484,15 @@ pub fn parse_selector_list_from_parser<'i, 't>(
     parser: &LayoutSelectorParser,
     input: &mut cssparser::Parser<'i, 't>,
 ) -> Result<SelectorList<LayoutSelectorImpl>, StyloAdapterError> {
-    SelectorList::parse(parser, input, ParseRelative::No)
+    parse_selector_list_from_parser_relative(parser, input, ParseRelative::No)
+}
+
+pub fn parse_selector_list_from_parser_relative<'i, 't>(
+    parser: &LayoutSelectorParser,
+    input: &mut cssparser::Parser<'i, 't>,
+    parse_relative: ParseRelative,
+) -> Result<SelectorList<LayoutSelectorImpl>, StyloAdapterError> {
+    SelectorList::parse(parser, input, parse_relative)
         .map_err(|_| StyloAdapterError::InvalidSelector)
 }
 

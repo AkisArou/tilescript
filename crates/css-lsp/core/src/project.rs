@@ -770,7 +770,7 @@ mod tests {
                 PathBuf::from("/tmp/layouts/master-stack/index.tsx"),
                 r#"
                 export default function layout(weight: number) {
-                  return <slot class={joinClasses("stack-group__item", growClass(weight))} />
+                  return <slot class={joinClasses("stack-slot", growClass(weight))} />
                 }
                 "#
                 .to_string(),
@@ -782,7 +782,7 @@ mod tests {
             index
                 .classes_for_path(Path::new("/tmp/layouts/master-stack/index.css"))
                 .iter()
-                .any(|class_name| class_name == "stack-group__item")
+                .any(|class_name| class_name == "stack-slot")
         );
         assert!(
             !index

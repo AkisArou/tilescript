@@ -15,7 +15,7 @@ export function StackGroup({ ctx, children, ...props }: StackGroupProps) {
   }
 
   return (
-    <group id="stack" class="stack-group" {...props}>
+    <group class="stack-group" {...props}>
       <StackSlot />
       {children}
     </group>

@@ -17,6 +17,7 @@ pub struct CompiledStyleRule {
     pub block_range: CssRange,
     pub selectors: SelectorList<LayoutSelectorImpl>,
     pub declarations: Vec<CompiledDeclarationEntry>,
+    pub children: Vec<CompiledStyleRule>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

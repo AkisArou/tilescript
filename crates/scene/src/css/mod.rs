@@ -8,8 +8,9 @@ pub(crate) mod stylo_adapter {
 }
 
 pub use crate::style::*;
-pub use crate::style_calc::compute_style;
+pub use crate::style_calc::{compute_style, compute_style_in_tree};
 pub use taffy::{NodeComputedStyle, StyledLayoutTree, map_computed_style_to_taffy};
+pub use tilescript_css::LayoutDomTree;
 pub use tilescript_css::compile;
 pub use tilescript_css::compile::CompiledDeclaration;
 pub use tilescript_css::compile::CssValueError;

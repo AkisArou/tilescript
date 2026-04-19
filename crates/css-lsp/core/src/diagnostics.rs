@@ -72,16 +72,7 @@ fn project_selector_diagnostics(
 
     if let Some(stylesheet) = &analysis.stylesheet {
         for rule in &stylesheet.rules {
-            if rule.selector_text.is_empty() {
-                continue;
-            }
-
-            diagnostics.extend(selector_reference_diagnostics(
-                &path,
-                &rule.selector_text,
-                rule.selector_range,
-                project_index,
-            ));
+            collect_rule_selector_diagnostics(rule, &path, project_index, &mut diagnostics);
         }
         return diagnostics;
     }
@@ -115,6 +106,26 @@ fn project_selector_diagnostics(
     }
 
     diagnostics
+}
+
+fn collect_rule_selector_diagnostics(
+    rule: &tilescript_css::CompiledStyleRule,
+    path: &Path,
+    project_index: &ProjectIndex,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !rule.selector_text.is_empty() {
+        diagnostics.extend(selector_reference_diagnostics(
+            path,
+            &rule.selector_text,
+            rule.selector_range,
+            project_index,
+        ));
+    }
+
+    for child in &rule.children {
+        collect_rule_selector_diagnostics(child, path, project_index, diagnostics);
+    }
 }
 
 fn selector_reference_diagnostics(

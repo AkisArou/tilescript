@@ -69,16 +69,11 @@ pub fn analyze_stylesheet(source: &str) -> CssAnalysis {
 }
 
 fn extract_symbols(stylesheet: &CompiledStyleSheet) -> Vec<CssSymbol> {
-    stylesheet
-        .rules
-        .iter()
-        .map(|rule| CssSymbol {
-            kind: CssSymbolKind::Rule,
-            name: rule.selector_text.clone(),
-            range: rule.block_range,
-            selection_range: rule.selector_range,
-        })
-        .collect()
+    let mut symbols = Vec::new();
+    for rule in &stylesheet.rules {
+        collect_symbols(rule, &mut symbols);
+    }
+    symbols
 }
 
 fn fallback_symbols(source: &str) -> Vec<CssSymbol> {
@@ -162,7 +157,7 @@ fn selector_attribute_key_diagnostics(stylesheet: &CompiledStyleSheet) -> Vec<Cs
     let mut diagnostics = Vec::new();
 
     for rule in &stylesheet.rules {
-        diagnostics.extend(attribute_key_diagnostics_for_rule(rule));
+        collect_attribute_key_diagnostics(rule, &mut diagnostics);
     }
 
     diagnostics
@@ -172,26 +167,7 @@ fn applicability_diagnostics(stylesheet: &CompiledStyleSheet) -> Vec<CssDiagnost
     let mut diagnostics = Vec::new();
 
     for rule in &stylesheet.rules {
-        let targets = infer_style_targets(&rule.selectors);
-        for declaration in &rule.declarations {
-            let Some(spec) = property_spec(&declaration.property) else {
-                continue;
-            };
-            if targets.iter().any(|target| spec.applies_to.contains(target)) {
-                continue;
-            }
-
-            diagnostics.push(CssDiagnostic {
-                code: CssDiagnosticCode::InapplicableProperty,
-                severity: CssDiagnosticSeverity::Warning,
-                message: format!(
-                    "property `{}` does not apply to {}",
-                    declaration.property,
-                    describe_targets(&targets)
-                ),
-                range: declaration.property_range,
-            });
-        }
+        collect_applicability_diagnostics(rule, &mut diagnostics);
     }
 
     diagnostics
@@ -269,6 +245,60 @@ fn attribute_key_diagnostics_for_rule(rule: &CompiledStyleRule) -> Vec<CssDiagno
     }
 
     diagnostics
+}
+
+fn collect_symbols(rule: &CompiledStyleRule, symbols: &mut Vec<CssSymbol>) {
+    symbols.push(CssSymbol {
+        kind: CssSymbolKind::Rule,
+        name: rule.selector_text.clone(),
+        range: rule.block_range,
+        selection_range: rule.selector_range,
+    });
+
+    for child in &rule.children {
+        collect_symbols(child, symbols);
+    }
+}
+
+fn collect_attribute_key_diagnostics(
+    rule: &CompiledStyleRule,
+    diagnostics: &mut Vec<CssDiagnostic>,
+) {
+    diagnostics.extend(attribute_key_diagnostics_for_rule(rule));
+
+    for child in &rule.children {
+        collect_attribute_key_diagnostics(child, diagnostics);
+    }
+}
+
+fn collect_applicability_diagnostics(
+    rule: &CompiledStyleRule,
+    diagnostics: &mut Vec<CssDiagnostic>,
+) {
+    let targets = infer_style_targets(&rule.selectors);
+    for declaration in &rule.declarations {
+        let Some(spec) = property_spec(&declaration.property) else {
+            continue;
+        };
+        if targets.iter().any(|target| spec.applies_to.contains(target)) {
+            continue;
+        }
+
+        diagnostics.push(CssDiagnostic {
+            code: CssDiagnosticCode::InapplicableProperty,
+            severity: CssDiagnosticSeverity::Warning,
+            message: format!(
+                "property `{}` does not apply to {}",
+                declaration.property,
+                describe_targets(&targets)
+            ),
+            range: declaration.property_range,
+        });
+    }
+
+    for child in &rule.children {
+        collect_applicability_diagnostics(child, diagnostics);
+    }
 }
 
 fn attribute_key_diagnostic_for_segment(
@@ -486,7 +516,7 @@ mod tests {
 
     #[test]
     fn class_names_containing_group_do_not_become_group_targets() {
-        let analysis = analyze_stylesheet(".stack-group__item { width: 50%; height: 100%; }");
+        let analysis = analyze_stylesheet(".stack-slot { width: 50%; height: 100%; }");
 
         assert!(!analysis.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == CssDiagnosticCode::InapplicableProperty

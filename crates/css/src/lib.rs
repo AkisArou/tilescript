@@ -15,13 +15,15 @@ mod stylo_adapter;
 pub use compile::{BoxSide, CompiledDeclaration, CssValueError};
 pub use compiled::{CompiledDeclarationEntry, CompiledStyleRule, CompiledStyleSheet};
 pub use parsing::{CssParseError, parse_stylesheet};
-pub use query::{matching_rules, selector_matches};
+pub use query::{matching_rules, matching_rules_for_element, selector_matches};
 pub use source::CssRange;
 pub use style::*;
 pub use stylo_adapter::{
-    LayoutDomTree, LayoutSelectorImpl, LayoutSelectorParser, StyloAdapterError,
+    LayoutDomTree, LayoutElement, LayoutSelectorImpl, LayoutSelectorParser, StyloAdapterError,
     selector_matches_element,
 };
 
 #[doc(hidden)]
-pub use stylo_adapter::{parse_selector_list, parse_selector_list_from_parser};
+pub use stylo_adapter::{
+    parse_selector_list, parse_selector_list_from_parser, parse_selector_list_from_parser_relative,
+};
