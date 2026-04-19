@@ -45,8 +45,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install Trunk
-        run: cargo install trunk --locked
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Trunk
+        uses: jetli/trunk-action@v0.5.0
+
+      - name: Setup wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
 
       - name: Build playground
         run: make playground-build PLAYGROUND_PUBLIC_URL="/${GITHUB_REPOSITORY#*/}/"
