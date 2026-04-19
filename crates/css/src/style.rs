@@ -55,6 +55,18 @@ pub enum AlignmentValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SelfAlignmentValue {
+    Auto,
+    Start,
+    End,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    Stretch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentAlignmentValue {
     Start,
     End,
@@ -201,9 +213,9 @@ pub struct ComputedStyle {
     pub max_width: Option<SizeValue>,
     pub max_height: Option<SizeValue>,
     pub align_items: Option<AlignmentValue>,
-    pub align_self: Option<AlignmentValue>,
+    pub align_self: Option<SelfAlignmentValue>,
     pub justify_items: Option<AlignmentValue>,
-    pub justify_self: Option<AlignmentValue>,
+    pub justify_self: Option<SelfAlignmentValue>,
     pub align_content: Option<ContentAlignmentValue>,
     pub justify_content: Option<ContentAlignmentValue>,
     pub gap: Option<Size2<LengthPercentage>>,

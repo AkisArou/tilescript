@@ -7,7 +7,8 @@ use crate::parse_values::*;
 use crate::style::{
     AlignmentValue, BoxEdges, BoxSizingValue, ContentAlignmentValue, Display, FlexDirectionValue,
     FlexWrapValue, GridAutoFlow, GridPlacementValue, GridTemplate, GridTemplateArea,
-    GridTrackValue, LengthPercentage, Line, OverflowValue, PositionValue, Size2, SizeValue,
+    GridTrackValue, LengthPercentage, Line, OverflowValue, PositionValue, SelfAlignmentValue,
+    Size2, SizeValue,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +31,8 @@ pub enum CompiledDeclaration {
     Display(Display),
     BoxSizing(BoxSizingValue),
     AspectRatio(f32),
+    Flex(f32, f32, SizeValue),
+    FlexFlow(FlexDirectionValue, FlexWrapValue),
     FlexDirection(FlexDirectionValue),
     FlexWrap(FlexWrapValue),
     FlexGrow(f32),
@@ -48,10 +51,13 @@ pub enum CompiledDeclaration {
     MaxWidth(SizeValue),
     MaxHeight(SizeValue),
     AlignItems(AlignmentValue),
-    AlignSelf(AlignmentValue),
+    PlaceItems(AlignmentValue, AlignmentValue),
+    AlignSelf(SelfAlignmentValue),
+    PlaceSelf(SelfAlignmentValue, SelfAlignmentValue),
     JustifyItems(AlignmentValue),
-    JustifySelf(AlignmentValue),
+    JustifySelf(SelfAlignmentValue),
     AlignContent(ContentAlignmentValue),
+    PlaceContent(ContentAlignmentValue, ContentAlignmentValue),
     JustifyContent(ContentAlignmentValue),
     Gap(Size2<LengthPercentage>),
     GridTemplateRows(GridTemplate),
@@ -60,6 +66,16 @@ pub enum CompiledDeclaration {
     GridAutoColumns(Vec<GridTrackValue>),
     GridAutoFlow(GridAutoFlow),
     GridTemplateAreas(Vec<GridTemplateArea>),
+    GridTemplate(Option<GridTemplate>, Option<GridTemplate>, Option<Vec<GridTemplateArea>>),
+    Grid(
+        Option<GridTemplate>,
+        Option<GridTemplate>,
+        Option<Vec<GridTemplateArea>>,
+        Option<GridAutoFlow>,
+        Option<Vec<GridTrackValue>>,
+        Option<Vec<GridTrackValue>>,
+    ),
+    GridArea(Line<GridPlacementValue>, Line<GridPlacementValue>),
     GridRow(Line<GridPlacementValue>),
     GridColumn(Line<GridPlacementValue>),
     Padding(BoxEdges<LengthPercentage>),
@@ -75,6 +91,8 @@ impl CompiledDeclaration {
             Self::Display(_) => Some("display"),
             Self::BoxSizing(_) => Some("box-sizing"),
             Self::AspectRatio(_) => Some("aspect-ratio"),
+            Self::Flex(_, _, _) => Some("flex"),
+            Self::FlexFlow(_, _) => Some("flex-flow"),
             Self::FlexDirection(_) => Some("flex-direction"),
             Self::FlexWrap(_) => Some("flex-wrap"),
             Self::FlexGrow(_) => Some("flex-grow"),
@@ -98,10 +116,13 @@ impl CompiledDeclaration {
             Self::MaxWidth(_) => Some("max-width"),
             Self::MaxHeight(_) => Some("max-height"),
             Self::AlignItems(_) => Some("align-items"),
+            Self::PlaceItems(_, _) => Some("place-items"),
             Self::AlignSelf(_) => Some("align-self"),
+            Self::PlaceSelf(_, _) => Some("place-self"),
             Self::JustifyItems(_) => Some("justify-items"),
             Self::JustifySelf(_) => Some("justify-self"),
             Self::AlignContent(_) => Some("align-content"),
+            Self::PlaceContent(_, _) => Some("place-content"),
             Self::JustifyContent(_) => Some("justify-content"),
             Self::Gap(_) => Some("gap"),
             Self::GridTemplateRows(_) => Some("grid-template-rows"),
@@ -110,6 +131,9 @@ impl CompiledDeclaration {
             Self::GridAutoColumns(_) => Some("grid-auto-columns"),
             Self::GridAutoFlow(_) => Some("grid-auto-flow"),
             Self::GridTemplateAreas(_) => Some("grid-template-areas"),
+            Self::GridTemplate(_, _, _) => Some("grid-template"),
+            Self::Grid(_, _, _, _, _, _) => Some("grid"),
+            Self::GridArea(_, _) => Some("grid-area"),
             Self::GridRow(_) => Some("grid-row"),
             Self::GridColumn(_) => Some("grid-column"),
             Self::Padding(_) => Some("padding"),
@@ -154,6 +178,14 @@ pub fn compile_declaration_from_value(
         "aspect-ratio" => {
             Ok(CompiledDeclaration::AspectRatio(parse_aspect_ratio_direct(property, value)?))
         }
+        "flex" => {
+            let (grow, shrink, basis) = parse_flex_shorthand_direct(property, value)?;
+            Ok(CompiledDeclaration::Flex(grow, shrink, basis))
+        }
+        "flex-flow" => {
+            let (direction, wrap) = parse_flex_flow_direct(property, value)?;
+            Ok(CompiledDeclaration::FlexFlow(direction, wrap))
+        }
         "flex-direction" => {
             Ok(CompiledDeclaration::FlexDirection(parse_flex_direction_direct(property, value)?))
         }
@@ -187,27 +219,43 @@ pub fn compile_declaration_from_value(
         }
         "overflow-x" => Ok(CompiledDeclaration::OverflowX(parse_overflow_direct(property, value)?)),
         "overflow-y" => Ok(CompiledDeclaration::OverflowY(parse_overflow_direct(property, value)?)),
-        "width" => Ok(CompiledDeclaration::Width(parse_size_value_direct(property, value)?)),
-        "height" => Ok(CompiledDeclaration::Height(parse_size_value_direct(property, value)?)),
-        "min-width" => Ok(CompiledDeclaration::MinWidth(parse_size_value_direct(property, value)?)),
-        "min-height" => {
+        "width" | "inline-size" => {
+            Ok(CompiledDeclaration::Width(parse_size_value_direct(property, value)?))
+        }
+        "height" | "block-size" => {
+            Ok(CompiledDeclaration::Height(parse_size_value_direct(property, value)?))
+        }
+        "min-width" | "min-inline-size" => {
+            Ok(CompiledDeclaration::MinWidth(parse_size_value_direct(property, value)?))
+        }
+        "min-height" | "min-block-size" => {
             Ok(CompiledDeclaration::MinHeight(parse_size_value_direct(property, value)?))
         }
-        "max-width" => Ok(CompiledDeclaration::MaxWidth(parse_size_value_direct(property, value)?)),
-        "max-height" => {
+        "max-width" | "max-inline-size" => {
+            Ok(CompiledDeclaration::MaxWidth(parse_size_value_direct(property, value)?))
+        }
+        "max-height" | "max-block-size" => {
             Ok(CompiledDeclaration::MaxHeight(parse_size_value_direct(property, value)?))
         }
         "align-items" => {
             Ok(CompiledDeclaration::AlignItems(parse_alignment_direct(property, value)?))
         }
         "align-self" => {
-            Ok(CompiledDeclaration::AlignSelf(parse_alignment_direct(property, value)?))
+            Ok(CompiledDeclaration::AlignSelf(parse_self_alignment_direct(property, value)?))
         }
         "justify-items" => {
             Ok(CompiledDeclaration::JustifyItems(parse_alignment_direct(property, value)?))
         }
         "justify-self" => {
-            Ok(CompiledDeclaration::JustifySelf(parse_alignment_direct(property, value)?))
+            Ok(CompiledDeclaration::JustifySelf(parse_self_alignment_direct(property, value)?))
+        }
+        "place-items" => {
+            let (align, justify) = parse_place_alignment_pair(property, value)?;
+            Ok(CompiledDeclaration::PlaceItems(align, justify))
+        }
+        "place-self" => {
+            let (align, justify) = parse_place_self_pair(property, value)?;
+            Ok(CompiledDeclaration::PlaceSelf(align, justify))
         }
         "align-content" => {
             Ok(CompiledDeclaration::AlignContent(parse_content_alignment_direct(property, value)?))
@@ -215,6 +263,10 @@ pub fn compile_declaration_from_value(
         "justify-content" => Ok(CompiledDeclaration::JustifyContent(
             parse_content_alignment_direct(property, value)?,
         )),
+        "place-content" => {
+            let (align, justify) = parse_place_content_pair(property, value)?;
+            Ok(CompiledDeclaration::PlaceContent(align, justify))
+        }
         "gap" => Ok(CompiledDeclaration::Gap(parse_gap_direct(property, value)?)),
         "row-gap" => Ok(CompiledDeclaration::Gap(parse_axis_gap_direct(property, value, true)?)),
         "column-gap" => {
@@ -232,8 +284,31 @@ pub fn compile_declaration_from_value(
         "grid-auto-columns" => {
             Ok(CompiledDeclaration::GridAutoColumns(parse_grid_auto_tracks(property, value)?))
         }
+        "grid-auto-flow" => {
+            Ok(CompiledDeclaration::GridAutoFlow(parse_grid_auto_flow_direct(property, value)?))
+        }
         "grid-template-areas" => {
             Ok(CompiledDeclaration::GridTemplateAreas(parse_grid_template_areas(property, value)?))
+        }
+        "grid-template" => {
+            let (rows, columns, areas) = parse_grid_template_shorthand(property, value)?;
+            Ok(CompiledDeclaration::GridTemplate(rows, columns, areas))
+        }
+        "grid" => {
+            let (rows, columns, areas, auto_flow, auto_rows, auto_columns) =
+                parse_grid_shorthand(property, value)?;
+            Ok(CompiledDeclaration::Grid(
+                rows,
+                columns,
+                areas,
+                auto_flow,
+                auto_rows,
+                auto_columns,
+            ))
+        }
+        "grid-area" => {
+            let (row, column) = parse_grid_area_shorthand(property, value)?;
+            Ok(CompiledDeclaration::GridArea(row, column))
         }
         "grid-row" => Ok(CompiledDeclaration::GridRow(parse_grid_line_shorthand(property, value)?)),
         "grid-column" => {
@@ -246,6 +321,28 @@ pub fn compile_declaration_from_value(
             Ok(CompiledDeclaration::GridColumn(parse_grid_line_side(property, value)?))
         }
         "padding" => Ok(CompiledDeclaration::Padding(parse_box_edges_direct(property, value)?)),
+        "padding-inline" => Ok(CompiledDeclaration::Padding(expand_inline_logical_padding(
+            property, value,
+        )?)),
+        "padding-block" => Ok(CompiledDeclaration::Padding(expand_block_logical_padding(
+            property, value,
+        )?)),
+        "padding-inline-start" => Ok(CompiledDeclaration::PaddingSide(
+            BoxSide::Left,
+            parse_length_percentage(property, value)?,
+        )),
+        "padding-inline-end" => Ok(CompiledDeclaration::PaddingSide(
+            BoxSide::Right,
+            parse_length_percentage(property, value)?,
+        )),
+        "padding-block-start" => Ok(CompiledDeclaration::PaddingSide(
+            BoxSide::Top,
+            parse_length_percentage(property, value)?,
+        )),
+        "padding-block-end" => Ok(CompiledDeclaration::PaddingSide(
+            BoxSide::Bottom,
+            parse_length_percentage(property, value)?,
+        )),
         "padding-top" => Ok(CompiledDeclaration::PaddingSide(
             BoxSide::Top,
             parse_length_percentage(property, value)?,
@@ -263,6 +360,28 @@ pub fn compile_declaration_from_value(
             parse_length_percentage(property, value)?,
         )),
         "margin" => Ok(CompiledDeclaration::Margin(parse_box_edges_size_direct(property, value)?)),
+        "margin-inline" => Ok(CompiledDeclaration::Margin(expand_inline_logical_margin(
+            property, value,
+        )?)),
+        "margin-block" => Ok(CompiledDeclaration::Margin(expand_block_logical_margin(
+            property, value,
+        )?)),
+        "margin-inline-start" => Ok(CompiledDeclaration::MarginSide(
+            BoxSide::Left,
+            parse_size_value_direct(property, value)?,
+        )),
+        "margin-inline-end" => Ok(CompiledDeclaration::MarginSide(
+            BoxSide::Right,
+            parse_size_value_direct(property, value)?,
+        )),
+        "margin-block-start" => Ok(CompiledDeclaration::MarginSide(
+            BoxSide::Top,
+            parse_size_value_direct(property, value)?,
+        )),
+        "margin-block-end" => Ok(CompiledDeclaration::MarginSide(
+            BoxSide::Bottom,
+            parse_size_value_direct(property, value)?,
+        )),
         "margin-top" => Ok(CompiledDeclaration::MarginSide(
             BoxSide::Top,
             parse_size_value_direct(property, value)?,
@@ -366,6 +485,79 @@ fn parse_flex_wrap_direct(
     }
 }
 
+fn parse_flex_flow_direct(
+    property: &str,
+    value: &CssValue,
+) -> Result<(FlexDirectionValue, FlexWrapValue), CssValueError> {
+    let groups = split_component_groups(value);
+    let mut direction = None;
+    let mut wrap = None;
+
+    for group in groups {
+        if direction.is_none() && let Ok(parsed) = parse_flex_direction_direct(property, &group) {
+            direction = Some(parsed);
+            continue;
+        }
+        if wrap.is_none() && let Ok(parsed) = parse_flex_wrap_direct(property, &group) {
+            wrap = Some(parsed);
+            continue;
+        }
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    Ok((
+        direction.unwrap_or(FlexDirectionValue::Row),
+        wrap.unwrap_or(FlexWrapValue::NoWrap),
+    ))
+}
+
+fn parse_flex_shorthand_direct(
+    property: &str,
+    value: &CssValue,
+) -> Result<(f32, f32, SizeValue), CssValueError> {
+    let groups = split_component_groups(value);
+
+    match groups.as_slice() {
+        [single] => {
+            if let Ok(keyword) = keyword(property, single) {
+                return match keyword {
+                    "none" => Ok((0.0, 0.0, SizeValue::Auto)),
+                    "auto" => Ok((1.0, 1.0, SizeValue::Auto)),
+                    "initial" => Ok((0.0, 1.0, SizeValue::Auto)),
+                    _ => Err(invalid_value(property, text_for_value(value))),
+                };
+            }
+
+            if let Ok(number) = parse_number_direct(property, single) {
+                return Ok((number, 1.0, SizeValue::LengthPercentage(LengthPercentage::Px(0.0))));
+            }
+
+            Ok((1.0, 1.0, parse_size_value_direct(property, single)?))
+        }
+        [first, second] => {
+            if let Ok(shrink) = parse_number_direct(property, second) {
+                return Ok((
+                    parse_number_direct(property, first)?,
+                    shrink,
+                    SizeValue::LengthPercentage(LengthPercentage::Px(0.0)),
+                ));
+            }
+
+            Ok((
+                parse_number_direct(property, first)?,
+                1.0,
+                parse_size_value_direct(property, second)?,
+            ))
+        }
+        [grow, shrink, basis] => Ok((
+            parse_number_direct(property, grow)?,
+            parse_number_direct(property, shrink)?,
+            parse_size_value_direct(property, basis)?,
+        )),
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
+}
+
 fn parse_position_direct(property: &str, value: &CssValue) -> Result<PositionValue, CssValueError> {
     match keyword(property, value)? {
         "relative" => Ok(PositionValue::Relative),
@@ -425,6 +617,26 @@ fn parse_alignment_direct(
     }
 }
 
+fn parse_self_alignment_direct(
+    property: &str,
+    value: &CssValue,
+) -> Result<SelfAlignmentValue, CssValueError> {
+    match keyword(property, value)? {
+        "auto" => Ok(SelfAlignmentValue::Auto),
+        "start" => Ok(SelfAlignmentValue::Start),
+        "end" => Ok(SelfAlignmentValue::End),
+        "flex-start" => Ok(SelfAlignmentValue::FlexStart),
+        "flex-end" => Ok(SelfAlignmentValue::FlexEnd),
+        "center" => Ok(SelfAlignmentValue::Center),
+        "baseline" => Ok(SelfAlignmentValue::Baseline),
+        "stretch" => Ok(SelfAlignmentValue::Stretch),
+        _ => Err(CssValueError::UnsupportedValue {
+            property: property.into(),
+            value: value.text.clone(),
+        }),
+    }
+}
+
 fn parse_content_alignment_direct(
     property: &str,
     value: &CssValue,
@@ -443,6 +655,60 @@ fn parse_content_alignment_direct(
             property: property.into(),
             value: value.text.clone(),
         }),
+    }
+}
+
+fn parse_place_alignment_pair(
+    property: &str,
+    value: &CssValue,
+) -> Result<(AlignmentValue, AlignmentValue), CssValueError> {
+    let groups = split_component_groups(value);
+    match groups.as_slice() {
+        [single] => {
+            let parsed = parse_alignment_direct(property, single)?;
+            Ok((parsed, parsed))
+        }
+        [align, justify] => Ok((
+            parse_alignment_direct(property, align)?,
+            parse_alignment_direct(property, justify)?,
+        )),
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
+}
+
+fn parse_place_self_pair(
+    property: &str,
+    value: &CssValue,
+) -> Result<(SelfAlignmentValue, SelfAlignmentValue), CssValueError> {
+    let groups = split_component_groups(value);
+    match groups.as_slice() {
+        [single] => {
+            let parsed = parse_self_alignment_direct(property, single)?;
+            Ok((parsed, parsed))
+        }
+        [align, justify] => Ok((
+            parse_self_alignment_direct(property, align)?,
+            parse_self_alignment_direct(property, justify)?,
+        )),
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
+}
+
+fn parse_place_content_pair(
+    property: &str,
+    value: &CssValue,
+) -> Result<(ContentAlignmentValue, ContentAlignmentValue), CssValueError> {
+    let groups = split_component_groups(value);
+    match groups.as_slice() {
+        [single] => {
+            let parsed = parse_content_alignment_direct(property, single)?;
+            Ok((parsed, parsed))
+        }
+        [align, justify] => Ok((
+            parse_content_alignment_direct(property, align)?,
+            parse_content_alignment_direct(property, justify)?,
+        )),
+        _ => Err(invalid_value(property, text_for_value(value))),
     }
 }
 
@@ -476,6 +742,32 @@ fn parse_axis_gap_direct(
         Size2 { width: LengthPercentage::Px(0.0), height: parsed }
     } else {
         Size2 { width: parsed, height: LengthPercentage::Px(0.0) }
+    })
+}
+
+pub(super) fn parse_grid_auto_flow_direct(
+    property: &str,
+    value: &CssValue,
+) -> Result<GridAutoFlow, CssValueError> {
+    let groups = split_component_groups(value);
+    let mut axis = None;
+    let mut dense = false;
+
+    for group in groups {
+        match keyword(property, &group)? {
+            "row" if axis.is_none() => axis = Some(GridAutoFlow::Row),
+            "column" if axis.is_none() => axis = Some(GridAutoFlow::Column),
+            "dense" if !dense => dense = true,
+            _ => return Err(invalid_value(property, text_for_value(value))),
+        }
+    }
+
+    Ok(match (axis.unwrap_or(GridAutoFlow::Row), dense) {
+        (GridAutoFlow::Row, false) => GridAutoFlow::Row,
+        (GridAutoFlow::Row, true) => GridAutoFlow::RowDense,
+        (GridAutoFlow::Column, false) => GridAutoFlow::Column,
+        (GridAutoFlow::Column, true) => GridAutoFlow::ColumnDense,
+        _ => unreachable!(),
     })
 }
 
@@ -538,6 +830,95 @@ fn parse_box_edges_size_direct(
         })
         .collect::<Result<Vec<_>, _>>()?;
     expand_box_sides(&parsed).ok_or_else(|| invalid_value(property, text_for_value(value)))
+}
+
+fn expand_inline_logical_padding(
+    property: &str,
+    value: &CssValue,
+) -> Result<BoxEdges<LengthPercentage>, CssValueError> {
+    let logical = parse_logical_axis_length_percentage(property, value)?;
+    Ok(BoxEdges {
+        top: LengthPercentage::Px(0.0),
+        right: logical.end,
+        bottom: LengthPercentage::Px(0.0),
+        left: logical.start,
+    })
+}
+
+fn expand_block_logical_padding(
+    property: &str,
+    value: &CssValue,
+) -> Result<BoxEdges<LengthPercentage>, CssValueError> {
+    let logical = parse_logical_axis_length_percentage(property, value)?;
+    Ok(BoxEdges {
+        top: logical.start,
+        right: LengthPercentage::Px(0.0),
+        bottom: logical.end,
+        left: LengthPercentage::Px(0.0),
+    })
+}
+
+fn expand_inline_logical_margin(
+    property: &str,
+    value: &CssValue,
+) -> Result<BoxEdges<SizeValue>, CssValueError> {
+    let logical = parse_logical_axis_size_value(property, value)?;
+    Ok(BoxEdges {
+        top: SizeValue::Auto,
+        right: logical.end,
+        bottom: SizeValue::Auto,
+        left: logical.start,
+    })
+}
+
+fn expand_block_logical_margin(
+    property: &str,
+    value: &CssValue,
+) -> Result<BoxEdges<SizeValue>, CssValueError> {
+    let logical = parse_logical_axis_size_value(property, value)?;
+    Ok(BoxEdges {
+        top: logical.start,
+        right: SizeValue::Auto,
+        bottom: logical.end,
+        left: SizeValue::Auto,
+    })
+}
+
+struct LogicalAxisValues<T> {
+    start: T,
+    end: T,
+}
+
+fn parse_logical_axis_length_percentage(
+    property: &str,
+    value: &CssValue,
+) -> Result<LogicalAxisValues<LengthPercentage>, CssValueError> {
+    let parsed = split_component_groups(value)
+        .into_iter()
+        .map(|group| parse_length_percentage(property, &group))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    match parsed.as_slice() {
+        [single] => Ok(LogicalAxisValues { start: *single, end: *single }),
+        [start, end] => Ok(LogicalAxisValues { start: *start, end: *end }),
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
+}
+
+fn parse_logical_axis_size_value(
+    property: &str,
+    value: &CssValue,
+) -> Result<LogicalAxisValues<SizeValue>, CssValueError> {
+    let parsed = split_component_groups(value)
+        .into_iter()
+        .map(|group| parse_size_value_direct(property, &group))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    match parsed.as_slice() {
+        [single] => Ok(LogicalAxisValues { start: *single, end: *single }),
+        [start, end] => Ok(LogicalAxisValues { start: *start, end: *end }),
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
 }
 
 fn parse_number_component(property: &str, component: &CssValueToken) -> Result<f32, CssValueError> {

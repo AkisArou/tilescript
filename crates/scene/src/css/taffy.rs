@@ -100,13 +100,13 @@ pub fn map_computed_style_to_taffy(style: &ComputedStyle) -> TaffyStyle {
         taffy_style.align_items = Some(map_align_items(align_items));
     }
     if let Some(align_self) = style.align_self {
-        taffy_style.align_self = Some(map_align_items(align_self));
+        taffy_style.align_self = map_self_alignment(align_self);
     }
     if let Some(justify_items) = style.justify_items {
         taffy_style.justify_items = Some(map_align_items(justify_items));
     }
     if let Some(justify_self) = style.justify_self {
-        taffy_style.justify_self = Some(map_align_items(justify_self));
+        taffy_style.justify_self = map_self_alignment(justify_self);
     }
     if let Some(align_content) = style.align_content {
         taffy_style.align_content = Some(map_align_content(align_content));
@@ -212,6 +212,19 @@ fn map_align_items(value: AlignmentValue) -> TaffyAlignItems {
         AlignmentValue::Center => TaffyAlignItems::Center,
         AlignmentValue::Baseline => TaffyAlignItems::Baseline,
         AlignmentValue::Stretch => TaffyAlignItems::Stretch,
+    }
+}
+
+fn map_self_alignment(value: SelfAlignmentValue) -> Option<TaffyAlignItems> {
+    match value {
+        SelfAlignmentValue::Auto => None,
+        SelfAlignmentValue::Start => Some(TaffyAlignItems::Start),
+        SelfAlignmentValue::End => Some(TaffyAlignItems::End),
+        SelfAlignmentValue::FlexStart => Some(TaffyAlignItems::FlexStart),
+        SelfAlignmentValue::FlexEnd => Some(TaffyAlignItems::FlexEnd),
+        SelfAlignmentValue::Center => Some(TaffyAlignItems::Center),
+        SelfAlignmentValue::Baseline => Some(TaffyAlignItems::Baseline),
+        SelfAlignmentValue::Stretch => Some(TaffyAlignItems::Stretch),
     }
 }
 

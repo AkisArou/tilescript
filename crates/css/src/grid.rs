@@ -47,6 +47,118 @@ pub(super) fn parse_grid_tracks(
     Ok(GridTemplate { components: template_components, line_names })
 }
 
+pub(super) fn parse_grid_template_shorthand(
+    property: &str,
+    value: &CssValue,
+) -> Result<(Option<GridTemplate>, Option<GridTemplate>, Option<Vec<GridTemplateArea>>), CssValueError>
+{
+    let components = normalized_components(value);
+
+    match components.as_slice() {
+        [CssValueToken::Ident(ident)] if ident == "none" => return Ok((None, None, None)),
+        [] => return Err(invalid_value(property, text_for_value(value))),
+        _ => {}
+    }
+
+    if components.iter().any(|component| matches!(component, CssValueToken::String(_))) {
+        return parse_grid_template_area_shorthand(property, &components);
+    }
+
+    let slash_positions = slash_positions(&components);
+    if slash_positions.len() != 1 {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    let slash = slash_positions[0];
+    if slash == 0 || slash + 1 >= components.len() {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    Ok((
+        Some(parse_grid_tracks(property, &slice_to_value(&components[..slash]))?),
+        Some(parse_grid_tracks(property, &slice_to_value(&components[slash + 1..]))?),
+        None,
+    ))
+}
+
+pub(super) fn parse_grid_shorthand(
+    property: &str,
+    value: &CssValue,
+) -> Result<
+    (
+        Option<GridTemplate>,
+        Option<GridTemplate>,
+        Option<Vec<GridTemplateArea>>,
+        Option<GridAutoFlow>,
+        Option<Vec<GridTrackValue>>,
+        Option<Vec<GridTrackValue>>,
+    ),
+    CssValueError,
+> {
+    let components = normalized_components(value);
+
+    match components.as_slice() {
+        [CssValueToken::Ident(ident)] if ident == "none" => {
+            return Ok((None, None, None, None, None, None));
+        }
+        [] => return Err(invalid_value(property, text_for_value(value))),
+        _ => {}
+    }
+
+    if !components.iter().any(|component| matches!(component, CssValueToken::Ident(ident) if ident == "auto-flow")) {
+        let (rows, columns, areas) = parse_grid_template_shorthand(property, value)?;
+        return Ok((rows, columns, areas, None, None, None));
+    }
+
+    let slash_positions = slash_positions(&components);
+    if slash_positions.len() != 1 {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    let slash = slash_positions[0];
+    if slash == 0 || slash + 1 >= components.len() {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    let left = &components[..slash];
+    let right = &components[slash + 1..];
+
+    let left_has_auto_flow = left
+        .iter()
+        .any(|component| matches!(component, CssValueToken::Ident(ident) if ident == "auto-flow"));
+    let right_has_auto_flow = right
+        .iter()
+        .any(|component| matches!(component, CssValueToken::Ident(ident) if ident == "auto-flow"));
+
+    match (left_has_auto_flow, right_has_auto_flow) {
+        (true, false) => {
+            let (auto_flow, auto_rows) =
+                parse_grid_auto_flow_tracks(property, left, GridAutoFlow::Row)?;
+            Ok((
+                None,
+                Some(parse_grid_tracks(property, &slice_to_value(right))?),
+                None,
+                Some(auto_flow),
+                Some(auto_rows),
+                None,
+            ))
+        }
+        (false, true) => {
+            let (auto_flow, auto_columns) =
+                parse_grid_auto_flow_tracks(property, right, GridAutoFlow::Column)?;
+            Ok((
+                Some(parse_grid_tracks(property, &slice_to_value(left))?),
+                None,
+                None,
+                Some(auto_flow),
+                None,
+                Some(auto_columns),
+            ))
+        }
+        _ => Err(invalid_value(property, text_for_value(value))),
+    }
+}
+
 pub(super) fn parse_grid_auto_tracks(
     property: &str,
     value: &CssValue,
@@ -231,6 +343,81 @@ pub(super) fn parse_grid_line_shorthand(
     }
 }
 
+pub(super) fn parse_grid_area_shorthand(
+    property: &str,
+    value: &CssValue,
+) -> Result<(Line<GridPlacementValue>, Line<GridPlacementValue>), CssValueError> {
+    let components = normalized_components(value);
+    let slash_positions = slash_positions(&components);
+
+    if slash_positions.len() > 3 {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+
+    let mut parts = Vec::with_capacity(slash_positions.len() + 1);
+    let mut start = 0;
+    for slash in slash_positions {
+        if slash == start {
+            return Err(invalid_value(property, text_for_value(value)));
+        }
+        parts.push(&components[start..slash]);
+        start = slash + 1;
+    }
+    if start == components.len() {
+        return Err(invalid_value(property, text_for_value(value)));
+    }
+    parts.push(&components[start..]);
+
+    let row_start = parse_grid_placement(property, &slice_to_value(parts[0]))?;
+    let default_from_first = implied_grid_area_placement(property, parts[0])?;
+
+    let (column_start, default_from_second, row_end, column_end) = match parts.as_slice() {
+        [_first] => {
+            let implied = default_from_first.clone().unwrap_or(GridPlacementValue::Auto);
+            (
+                implied.clone(),
+                default_from_first,
+                implied.clone(),
+                implied,
+            )
+        }
+        [_, second] => {
+            let column_start = parse_grid_placement(property, &slice_to_value(second))?;
+            let default_from_second = implied_grid_area_placement(property, second)?;
+            (
+                column_start,
+                default_from_second.clone(),
+                default_from_first.unwrap_or(GridPlacementValue::Auto),
+                default_from_second.unwrap_or(GridPlacementValue::Auto),
+            )
+        }
+        [_, second, third] => {
+            let column_start = parse_grid_placement(property, &slice_to_value(second))?;
+            let default_from_second = implied_grid_area_placement(property, second)?;
+            (
+                column_start,
+                default_from_second.clone(),
+                parse_grid_placement(property, &slice_to_value(third))?,
+                default_from_second.unwrap_or(GridPlacementValue::Auto),
+            )
+        }
+        [_, second, third, fourth] => (
+            parse_grid_placement(property, &slice_to_value(second))?,
+            None,
+            parse_grid_placement(property, &slice_to_value(third))?,
+            parse_grid_placement(property, &slice_to_value(fourth))?,
+        ),
+        _ => return Err(invalid_value(property, text_for_value(value))),
+    };
+
+    let _ = default_from_second;
+
+    Ok((
+        Line { start: row_start, end: row_end },
+        Line { start: column_start, end: column_end },
+    ))
+}
+
 pub(super) fn parse_grid_line_side(
     property: &str,
     value: &CssValue,
@@ -298,6 +485,182 @@ pub(super) fn parse_grid_placement(
             .map_err(|_| invalid_value(property, text_for_value(value))),
         _ => Err(invalid_value(property, text_for_value(value))),
     }
+}
+
+fn implied_grid_area_placement(
+    property: &str,
+    components: &[&CssValueToken],
+) -> Result<Option<GridPlacementValue>, CssValueError> {
+    match components {
+        [CssValueToken::Ident(ident)] if ident != "auto" => {
+            parse_grid_placement(property, &slice_to_value(components)).map(Some)
+        }
+        _ => Ok(None),
+    }
+}
+
+fn parse_grid_template_area_shorthand(
+    property: &str,
+    components: &[&CssValueToken],
+) -> Result<(Option<GridTemplate>, Option<GridTemplate>, Option<Vec<GridTemplateArea>>), CssValueError>
+{
+    let slash_positions = slash_positions(components);
+    if slash_positions.len() > 1 {
+        return Err(invalid_value(property, &components_to_text_refs(components)));
+    }
+
+    let (row_components, column_components) = match slash_positions.first().copied() {
+        Some(slash) => {
+            if slash == 0 || slash + 1 >= components.len() {
+                return Err(invalid_value(property, &components_to_text_refs(components)));
+            }
+            (&components[..slash], Some(&components[slash + 1..]))
+        }
+        None => (components, None),
+    };
+
+    let mut index = 0;
+    let mut pending_line_names = Vec::new();
+    let mut line_names = Vec::new();
+    let mut tracks = Vec::new();
+    let mut area_rows = Vec::new();
+
+    while index < row_components.len() {
+        while let CssValueToken::SimpleBlock(block) = row_components[index] {
+            if block.kind != CssSimpleBlockKind::Bracket {
+                break;
+            }
+            pending_line_names.extend(parse_line_name_block(property, block)?);
+            index += 1;
+            if index >= row_components.len() {
+                line_names.push(pending_line_names);
+                return Ok((
+                    Some(GridTemplate { components: tracks, line_names }),
+                    column_components
+                        .map(|components| parse_grid_tracks(property, &slice_to_value(components)))
+                        .transpose()?,
+                    Some(parse_grid_template_areas(property, &grid_area_rows_value(&area_rows))?),
+                ));
+            }
+        }
+
+        let CssValueToken::String(row) = row_components[index] else {
+            return Err(invalid_value(property, &components_to_text_refs(components)));
+        };
+        area_rows.push(row.clone());
+        line_names.push(std::mem::take(&mut pending_line_names));
+        index += 1;
+
+        let track = if index < row_components.len()
+            && !matches!(row_components[index], CssValueToken::SimpleBlock(_) | CssValueToken::String(_))
+        {
+            let parsed = parse_grid_track(property, &slice_to_value(&row_components[index..index + 1]))?;
+            index += 1;
+            parsed
+        } else {
+            GridTrackValue::Auto
+        };
+        tracks.push(GridTemplateComponent::Single(track));
+
+        while index < row_components.len() {
+            let CssValueToken::SimpleBlock(block) = row_components[index] else {
+                break;
+            };
+            if block.kind != CssSimpleBlockKind::Bracket {
+                break;
+            }
+            pending_line_names.extend(parse_line_name_block(property, block)?);
+            index += 1;
+        }
+    }
+
+    if area_rows.is_empty() {
+        return Err(invalid_value(property, &components_to_text_refs(components)));
+    }
+
+    line_names.push(pending_line_names);
+
+    Ok((
+        Some(GridTemplate { components: tracks, line_names }),
+        column_components
+            .map(|components| parse_grid_tracks(property, &slice_to_value(components)))
+            .transpose()?,
+        Some(parse_grid_template_areas(property, &grid_area_rows_value(&area_rows))?),
+    ))
+}
+
+fn grid_area_rows_value(rows: &[String]) -> CssValue {
+    let mut components = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if index > 0 {
+            components.push(CssValueToken::Whitespace);
+        }
+        components.push(CssValueToken::String(row.clone()));
+    }
+
+    CssValue { text: rows.join(" "), components }
+}
+
+fn slash_positions(components: &[&CssValueToken]) -> Vec<usize> {
+    components
+        .iter()
+        .enumerate()
+        .filter_map(|(index, component)| {
+            matches!(component, CssValueToken::Delimiter(CssDelimiter::Solidus)).then_some(index)
+        })
+        .collect()
+}
+
+fn components_to_text_refs(components: &[&CssValueToken]) -> String {
+    let owned = components.iter().map(|component| (*component).clone()).collect::<Vec<_>>();
+    components_to_text(&owned)
+}
+
+fn parse_grid_auto_flow_tracks(
+    property: &str,
+    components: &[&CssValueToken],
+    default_axis: GridAutoFlow,
+) -> Result<(GridAutoFlow, Vec<GridTrackValue>), CssValueError> {
+    let mut flow_components = Vec::new();
+    let mut track_components = Vec::new();
+
+    let mut auto_flow_seen = false;
+    let mut parsing_flow = true;
+
+    for component in components.iter().copied() {
+        match component {
+            CssValueToken::Ident(ident) if ident == "auto-flow" => {
+                if auto_flow_seen || !parsing_flow {
+                    return Err(invalid_value(property, &components_to_text_refs(components)));
+                }
+                auto_flow_seen = true;
+            }
+            CssValueToken::Ident(ident)
+                if parsing_flow && matches!(ident.as_str(), "row" | "column" | "dense") =>
+            {
+                flow_components.push(component);
+            }
+            _ => {
+                parsing_flow = false;
+                track_components.push(component);
+            }
+        }
+    }
+
+    if !auto_flow_seen || track_components.is_empty() {
+        return Err(invalid_value(property, &components_to_text_refs(components)));
+    }
+
+    let auto_flow = match (default_axis, flow_components.as_slice()) {
+        (GridAutoFlow::Row, []) => GridAutoFlow::Row,
+        (GridAutoFlow::Column, []) => GridAutoFlow::Column,
+        _ => parse_grid_auto_flow_direct(property, &slice_to_value(&flow_components))?,
+    };
+
+    Ok((
+        auto_flow,
+        parse_grid_auto_tracks(property, &slice_to_value(&track_components))?,
+    ))
 }
 
 pub(super) fn parse_grid_template_areas(

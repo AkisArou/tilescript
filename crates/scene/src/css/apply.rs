@@ -12,6 +12,15 @@ impl ApplyCompiledDeclaration for ComputedStyle {
             CompiledDeclaration::Display(value) => self.display = Some(*value),
             CompiledDeclaration::BoxSizing(value) => self.box_sizing = Some(*value),
             CompiledDeclaration::AspectRatio(value) => self.aspect_ratio = Some(*value),
+            CompiledDeclaration::Flex(grow, shrink, basis) => {
+                self.flex_grow = Some(*grow);
+                self.flex_shrink = Some(*shrink);
+                self.flex_basis = Some(*basis);
+            }
+            CompiledDeclaration::FlexFlow(direction, wrap) => {
+                self.flex_direction = Some(*direction);
+                self.flex_wrap = Some(*wrap);
+            }
             CompiledDeclaration::FlexDirection(value) => self.flex_direction = Some(*value),
             CompiledDeclaration::FlexWrap(value) => self.flex_wrap = Some(*value),
             CompiledDeclaration::FlexGrow(value) => self.flex_grow = Some(*value),
@@ -47,10 +56,22 @@ impl ApplyCompiledDeclaration for ComputedStyle {
             CompiledDeclaration::MaxWidth(value) => self.max_width = Some(*value),
             CompiledDeclaration::MaxHeight(value) => self.max_height = Some(*value),
             CompiledDeclaration::AlignItems(value) => self.align_items = Some(*value),
+            CompiledDeclaration::PlaceItems(align, justify) => {
+                self.align_items = Some(*align);
+                self.justify_items = Some(*justify);
+            }
             CompiledDeclaration::AlignSelf(value) => self.align_self = Some(*value),
+            CompiledDeclaration::PlaceSelf(align, justify) => {
+                self.align_self = Some(*align);
+                self.justify_self = Some(*justify);
+            }
             CompiledDeclaration::JustifyItems(value) => self.justify_items = Some(*value),
             CompiledDeclaration::JustifySelf(value) => self.justify_self = Some(*value),
             CompiledDeclaration::AlignContent(value) => self.align_content = Some(*value),
+            CompiledDeclaration::PlaceContent(align, justify) => {
+                self.align_content = Some(*align);
+                self.justify_content = Some(*justify);
+            }
             CompiledDeclaration::JustifyContent(value) => self.justify_content = Some(*value),
             CompiledDeclaration::Gap(value) => match &mut self.gap {
                 Some(existing) => {
@@ -76,6 +97,23 @@ impl ApplyCompiledDeclaration for ComputedStyle {
             CompiledDeclaration::GridAutoFlow(value) => self.grid_auto_flow = Some(*value),
             CompiledDeclaration::GridTemplateAreas(value) => {
                 self.grid_template_areas = Some(value.clone())
+            }
+            CompiledDeclaration::GridTemplate(rows, columns, areas) => {
+                self.grid_template_rows = rows.clone();
+                self.grid_template_columns = columns.clone();
+                self.grid_template_areas = areas.clone();
+            }
+            CompiledDeclaration::Grid(rows, columns, areas, auto_flow, auto_rows, auto_columns) => {
+                self.grid_template_rows = rows.clone();
+                self.grid_template_columns = columns.clone();
+                self.grid_template_areas = areas.clone();
+                self.grid_auto_flow = *auto_flow;
+                self.grid_auto_rows = auto_rows.clone();
+                self.grid_auto_columns = auto_columns.clone();
+            }
+            CompiledDeclaration::GridArea(row, column) => {
+                merge_grid_line(&mut self.grid_row, row.clone());
+                merge_grid_line(&mut self.grid_column, column.clone());
             }
             CompiledDeclaration::GridRow(value) => {
                 merge_grid_line(&mut self.grid_row, value.clone())

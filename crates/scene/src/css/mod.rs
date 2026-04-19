@@ -244,6 +244,172 @@ mod tests {
     }
 
     #[test]
+    fn supports_logical_size_aliases() {
+        let sheet = parse_stylesheet(
+            "window { inline-size: 40%; block-size: 30%; min-inline-size: 10px; min-block-size: 20px; max-inline-size: 80%; max-block-size: 90%; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.width, Some(SizeValue::LengthPercentage(LengthPercentage::Percent(40.0))));
+        assert_eq!(style.height, Some(SizeValue::LengthPercentage(LengthPercentage::Percent(30.0))));
+        assert_eq!(
+            style.min_width,
+            Some(SizeValue::LengthPercentage(LengthPercentage::Px(10.0)))
+        );
+        assert_eq!(
+            style.min_height,
+            Some(SizeValue::LengthPercentage(LengthPercentage::Px(20.0)))
+        );
+        assert_eq!(
+            style.max_width,
+            Some(SizeValue::LengthPercentage(LengthPercentage::Percent(80.0)))
+        );
+        assert_eq!(
+            style.max_height,
+            Some(SizeValue::LengthPercentage(LengthPercentage::Percent(90.0)))
+        );
+    }
+
+    #[test]
+    fn supports_logical_padding_and_margin_aliases() {
+        let sheet = parse_stylesheet(
+            "window { padding-inline: 8px 12px; padding-block-start: 4px; padding-block-end: 6px; margin-inline: auto 10px; margin-block: 2px 3px; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(
+            style.padding,
+            Some(BoxEdges {
+                top: LengthPercentage::Px(4.0),
+                right: LengthPercentage::Px(12.0),
+                bottom: LengthPercentage::Px(6.0),
+                left: LengthPercentage::Px(8.0),
+            })
+        );
+        assert_eq!(
+            style.margin,
+            Some(BoxEdges {
+                top: SizeValue::LengthPercentage(LengthPercentage::Px(2.0)),
+                right: SizeValue::Auto,
+                bottom: SizeValue::LengthPercentage(LengthPercentage::Px(3.0)),
+                left: SizeValue::Auto,
+            })
+        );
+    }
+
+    #[test]
+    fn supports_place_alignment_shorthands() {
+        let sheet = parse_stylesheet(
+            "window { place-items: center stretch; place-self: end stretch; place-content: space-between center; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.align_items, Some(AlignmentValue::Center));
+        assert_eq!(style.justify_items, Some(AlignmentValue::Stretch));
+        assert_eq!(style.align_self, Some(SelfAlignmentValue::End));
+        assert_eq!(style.justify_self, Some(SelfAlignmentValue::Stretch));
+        assert_eq!(style.align_content, Some(ContentAlignmentValue::SpaceBetween));
+        assert_eq!(style.justify_content, Some(ContentAlignmentValue::Center));
+    }
+
+    #[test]
+    fn supports_auto_self_alignment_values() {
+        let sheet =
+            parse_stylesheet("window { align-self: end; justify-self: stretch; place-self: auto center; }")
+                .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+        let mapped = map_computed_style_to_taffy(&style);
+
+        assert_eq!(style.align_self, Some(SelfAlignmentValue::Auto));
+        assert_eq!(style.justify_self, Some(SelfAlignmentValue::Center));
+        assert_eq!(mapped.align_self, None);
+        assert_eq!(mapped.justify_self, Some(::taffy::prelude::AlignItems::Center));
+    }
+
+    #[test]
+    fn supports_flex_flow_shorthand() {
+        let sheet = parse_stylesheet("window { flex-flow: column wrap-reverse; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.flex_direction, Some(FlexDirectionValue::Column));
+        assert_eq!(style.flex_wrap, Some(FlexWrapValue::WrapReverse));
+    }
+
+    #[test]
+    fn supports_flex_shorthand() {
+        let sheet = parse_stylesheet("window { flex: 2 0 10px; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.flex_grow, Some(2.0));
+        assert_eq!(style.flex_shrink, Some(0.0));
+        assert_eq!(style.flex_basis, Some(SizeValue::LengthPercentage(LengthPercentage::Px(10.0))));
+    }
+
+    #[test]
+    fn supports_flex_number_basis_shorthand() {
+        let sheet = parse_stylesheet("window { flex: 2 10px; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.flex_grow, Some(2.0));
+        assert_eq!(style.flex_shrink, Some(1.0));
+        assert_eq!(style.flex_basis, Some(SizeValue::LengthPercentage(LengthPercentage::Px(10.0))));
+    }
+
+    #[test]
+    fn supports_flex_keyword_shorthands() {
+        let auto_sheet = parse_stylesheet("window { flex: auto; }").unwrap();
+        let none_sheet = parse_stylesheet("window { flex: none; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let auto_style = compute_style(&auto_sheet, &node).unwrap();
+        let none_style = compute_style(&none_sheet, &node).unwrap();
+
+        assert_eq!(auto_style.flex_grow, Some(1.0));
+        assert_eq!(auto_style.flex_shrink, Some(1.0));
+        assert_eq!(auto_style.flex_basis, Some(SizeValue::Auto));
+
+        assert_eq!(none_style.flex_grow, Some(0.0));
+        assert_eq!(none_style.flex_shrink, Some(0.0));
+        assert_eq!(none_style.flex_basis, Some(SizeValue::Auto));
+    }
+
+    #[test]
+    fn supports_dimension_auto_keyword_values() {
+        let sheet = parse_stylesheet("window { width: auto; min-width: auto; max-width: auto; flex-basis: auto; }")
+            .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+
+        let style = compute_style(&sheet, &node).unwrap();
+        let mapped = map_computed_style_to_taffy(&style);
+
+        assert_eq!(style.width, Some(SizeValue::Auto));
+        assert_eq!(style.min_width, Some(SizeValue::Auto));
+        assert_eq!(style.max_width, Some(SizeValue::Auto));
+        assert_eq!(style.flex_basis, Some(SizeValue::Auto));
+        assert!(mapped.size.width.is_auto());
+        assert!(mapped.min_size.width.is_auto());
+        assert!(mapped.max_size.width.is_auto());
+        assert!(mapped.flex_basis.is_auto());
+    }
+
+    #[test]
     fn later_matching_rules_override_earlier_declarations() {
         let sheet = parse_stylesheet(
             "window { width: 40%; gap: 8px; } .stack { width: 60%; } #main { gap: 12px; }",
@@ -325,6 +491,47 @@ mod tests {
     }
 
     #[test]
+    fn compiles_grid_area_shorthand_value() {
+        let placement = only_declaration("window { grid-area: header / left / footer / right; }");
+
+        assert_eq!(
+            placement,
+            CompiledDeclaration::GridArea(
+                Line {
+                    start: GridPlacementValue::NamedLine("header".into(), 1),
+                    end: GridPlacementValue::NamedLine("footer".into(), 1),
+                },
+                Line {
+                    start: GridPlacementValue::NamedLine("left".into(), 1),
+                    end: GridPlacementValue::NamedLine("right".into(), 1),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn grid_area_single_named_line_expands_to_both_axes() {
+        let sheet = parse_stylesheet("window { grid-area: hero; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(
+            style.grid_row,
+            Some(Line {
+                start: GridPlacementValue::NamedLine("hero".into(), 1),
+                end: GridPlacementValue::NamedLine("hero".into(), 1),
+            })
+        );
+        assert_eq!(
+            style.grid_column,
+            Some(Line {
+                start: GridPlacementValue::NamedLine("hero".into(), 1),
+                end: GridPlacementValue::NamedLine("hero".into(), 1),
+            })
+        );
+    }
+
+    #[test]
     fn merges_grid_line_side_declarations_into_single_line() {
         let sheet =
             parse_stylesheet("window { grid-column-start: left; grid-column-end: span 2 right; }")
@@ -371,6 +578,164 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn compiles_grid_template_shorthand_rows_and_columns() {
+        let template = only_declaration("window { grid-template: [top] auto [bottom] / [left] 1fr [right] 2fr; }");
+
+        assert_eq!(
+            template,
+            CompiledDeclaration::GridTemplate(
+                Some(GridTemplate {
+                    components: vec![GridTemplateComponent::Single(GridTrackValue::Auto)],
+                    line_names: vec![vec!["top".into()], vec!["bottom".into()]],
+                }),
+                Some(GridTemplate {
+                    components: vec![
+                        GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
+                        GridTemplateComponent::Single(GridTrackValue::Fraction(2.0)),
+                    ],
+                    line_names: vec![vec!["left".into()], vec!["right".into()], vec![]],
+                }),
+                None,
+            )
+        );
+    }
+
+    #[test]
+    fn compiles_grid_template_shorthand_with_areas() {
+        let sheet = parse_stylesheet(
+            "window { grid-template: [top] \"hero hero\" auto [mid] \"main side\" 1fr [bottom] / 2fr 1fr; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(
+            style.grid_template_rows,
+            Some(GridTemplate {
+                components: vec![
+                    GridTemplateComponent::Single(GridTrackValue::Auto),
+                    GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
+                ],
+                line_names: vec![vec!["top".into()], vec!["mid".into()], vec!["bottom".into()]],
+            })
+        );
+        assert_eq!(
+            style.grid_template_columns,
+            Some(GridTemplate {
+                components: vec![
+                    GridTemplateComponent::Single(GridTrackValue::Fraction(2.0)),
+                    GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
+                ],
+                line_names: vec![vec![], vec![], vec![]],
+            })
+        );
+        assert_eq!(style.grid_template_areas.as_ref().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn grid_template_none_clears_existing_explicit_grid_fields() {
+        let sheet = parse_stylesheet(
+            "window { grid-template-columns: 1fr 2fr; grid-template-areas: \"main side\"; grid-template: none; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.grid_template_rows, None);
+        assert_eq!(style.grid_template_columns, None);
+        assert_eq!(style.grid_template_areas, None);
+    }
+
+    #[test]
+    fn grid_shorthand_supports_template_passthrough() {
+        let sheet = parse_stylesheet("window { grid: auto / 1fr 2fr; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(
+            style.grid_template_rows,
+            Some(GridTemplate {
+                components: vec![GridTemplateComponent::Single(GridTrackValue::Auto)],
+                line_names: vec![vec![], vec![]],
+            })
+        );
+        assert_eq!(style.grid_auto_flow, None);
+        assert_eq!(style.grid_auto_rows, None);
+        assert_eq!(style.grid_auto_columns, None);
+    }
+
+    #[test]
+    fn grid_shorthand_supports_auto_flow_rows() {
+        let sheet = parse_stylesheet("window { grid: auto-flow dense 40px / 1fr 2fr; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.grid_auto_flow, Some(GridAutoFlow::RowDense));
+        assert_eq!(
+            style.grid_auto_rows,
+            Some(vec![GridTrackValue::LengthPercentage(LengthPercentage::Px(40.0))])
+        );
+        assert_eq!(
+            style.grid_template_columns,
+            Some(GridTemplate {
+                components: vec![
+                    GridTemplateComponent::Single(GridTrackValue::Fraction(1.0)),
+                    GridTemplateComponent::Single(GridTrackValue::Fraction(2.0)),
+                ],
+                line_names: vec![vec![], vec![], vec![]],
+            })
+        );
+        assert_eq!(style.grid_auto_columns, None);
+    }
+
+    #[test]
+    fn grid_shorthand_supports_auto_flow_columns() {
+        let sheet = parse_stylesheet("window { grid: 50px 60px / auto-flow 1fr; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.grid_auto_flow, Some(GridAutoFlow::Column));
+        assert_eq!(
+            style.grid_template_rows,
+            Some(GridTemplate {
+                components: vec![
+                    GridTemplateComponent::Single(GridTrackValue::LengthPercentage(
+                        LengthPercentage::Px(50.0),
+                    )),
+                    GridTemplateComponent::Single(GridTrackValue::LengthPercentage(
+                        LengthPercentage::Px(60.0),
+                    )),
+                ],
+                line_names: vec![vec![], vec![], vec![]],
+            })
+        );
+        assert_eq!(style.grid_auto_rows, None);
+        assert_eq!(
+            style.grid_auto_columns,
+            Some(vec![
+                GridTrackValue::Fraction(1.0),
+            ])
+        );
+    }
+
+    #[test]
+    fn grid_none_clears_existing_grid_shorthand_fields() {
+        let sheet = parse_stylesheet(
+            "window { grid-template-columns: 1fr 2fr; grid-auto-columns: 10px; grid-auto-flow: column dense; grid: none; }",
+        )
+        .unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.grid_template_rows, None);
+        assert_eq!(style.grid_template_columns, None);
+        assert_eq!(style.grid_template_areas, None);
+        assert_eq!(style.grid_auto_flow, None);
+        assert_eq!(style.grid_auto_rows, None);
+        assert_eq!(style.grid_auto_columns, None);
     }
 
     #[test]

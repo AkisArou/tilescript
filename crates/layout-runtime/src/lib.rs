@@ -4598,8 +4598,8 @@ r#"workspace {
 
     #[test]
     fn resize_direction_respects_fixed_branch_constraints() {
-        let config_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dev/test/config.ts");
+        let config_path = isolated_test_config_path();
+        let workspace_id = WorkspaceId::from("3");
         let mut service =
             LayoutRuntimeService::new(LayoutRuntimePaths::from_authored_config(&config_path))
                 .expect("layout runtime service");
@@ -4613,21 +4613,21 @@ r#"workspace {
             "eDP-1".to_string(),
             1600,
             1000,
-            Some(WorkspaceId::from("6")),
+            Some(workspace_id.clone()),
         );
-        model.attach_workspace_to_output(WorkspaceId::from("6"), OutputId::from("eDP-1"));
+        model.attach_workspace_to_output(workspace_id.clone(), OutputId::from("eDP-1"));
         model.set_workspace_layout_space(
-            WorkspaceId::from("6"),
+            workspace_id.clone(),
             Some(tilescript_core::wm::DrawableSpace { width: 1600, height: 1000 }),
         );
         model.set_current_output(OutputId::from("eDP-1"));
-        model.set_current_workspace(WorkspaceId::from("6"));
+        model.set_current_workspace(workspace_id.clone());
 
         for id in ["master", "stack"] {
             let window_id = WindowId::from(id.to_string());
             model.insert_window(
                 window_id.clone(),
-                Some(WorkspaceId::from("6")),
+                Some(workspace_id.clone()),
                 Some(OutputId::from("eDP-1")),
             );
             model.set_window_mapped(window_id, true);
@@ -4643,7 +4643,7 @@ r#"workspace {
             .expect("resize result")
         );
 
-        let resize_state = model.workspace_resize_state(&WorkspaceId::from("6"));
+        let resize_state = model.workspace_resize_state(&workspace_id);
         assert!(resize_state.adjustments_by_partition_id.is_empty());
     }
 
