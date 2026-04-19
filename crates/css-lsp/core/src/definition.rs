@@ -1,10 +1,8 @@
-use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
-use lsp_types::{GotoDefinitionResponse, Location, Position, Url};
+use lsp_types::{GotoDefinitionResponse, Position, Url};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
-use crate::syntax::{
-    position_to_offset, range_contains, selector_reference_at_offset, to_lsp_range,
-};
+use crate::syntax::position_to_offset;
+use crate::syntax::selector_reference_at_offset;
 
 pub fn definition_for(
     uri: &Url,
@@ -12,7 +10,6 @@ pub fn definition_for(
     position: Position,
     project_index: &ProjectIndex,
 ) -> Option<GotoDefinitionResponse> {
-    let analysis = analyze_stylesheet(source);
     let offset = position_to_offset(source, position)?;
 
     if let Some(reference) = selector_reference_at_offset(source, offset) {
@@ -52,20 +49,7 @@ pub fn definition_for(
         };
     }
 
-    let reference = analysis.references.iter().find(|reference| {
-        reference.kind == CssReferenceKind::AnimationName
-            && range_contains(reference.range, offset, source)
-    })?;
-
-    let symbol = analysis
-        .symbols
-        .iter()
-        .find(|symbol| symbol.kind == CssSymbolKind::Keyframes && symbol.name == reference.name)?;
-
-    Some(GotoDefinitionResponse::Scalar(Location {
-        uri: uri.clone(),
-        range: to_lsp_range(symbol.selection_range),
-    }))
+    None
 }
 
 #[cfg(test)]
@@ -73,29 +57,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_animation_name_to_keyframes_definition() {
-        let uri = Url::parse("file:///test.css").unwrap();
-        let source = "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }";
-
-        let response = definition_for(
-            &uri,
-            source,
-            Position { line: 1, character: 26 },
-            &ProjectIndex::default(),
-        )
-        .unwrap();
-
-        let GotoDefinitionResponse::Scalar(location) = response else {
-            panic!("expected scalar definition");
-        };
-        assert_eq!(location.uri, uri);
-        assert_eq!(location.range.start.line, 0);
-    }
-
-    #[test]
     fn resolves_selector_id_to_layout_definition() {
         let uri = Url::parse("file:///test.css").unwrap();
-        let source = "window#root { color: red; }";
+        let source = "window#root { display: flex; }";
         let mut project_index = ProjectIndex::default();
         project_index.index_app_scope(
             std::path::PathBuf::from("/tmp/layouts/example/index.tsx"),

@@ -13,9 +13,7 @@ mod stylo_adapter;
 mod stylo_compile;
 
 pub use compile::{BoxSide, CompiledDeclaration, CssValueError};
-pub use compiled::{
-    CompiledKeyframeStep, CompiledKeyframesRule, CompiledStyleRule, CompiledStyleSheet,
-};
+pub use compiled::{CompiledStyleRule, CompiledStyleSheet};
 pub use parsing::{CssParseError, parse_stylesheet};
 pub use query::{matching_rules, selector_matches};
 pub use style::*;

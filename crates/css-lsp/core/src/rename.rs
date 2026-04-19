@@ -1,11 +1,8 @@
-use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
 use lsp_types::{Position, TextEdit, Url, WorkspaceEdit};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
 use crate::references::references_for;
-use crate::syntax::{
-    keyframes_name_at_offset, position_to_offset, selector_reference_at_offset, to_lsp_range,
-};
+use crate::syntax::{position_to_offset, selector_reference_at_offset};
 
 pub fn rename_for(
     uri: &Url,
@@ -15,7 +12,6 @@ pub fn rename_for(
     project_index: &ProjectIndex,
     documents: &[(Url, String)],
 ) -> Option<WorkspaceEdit> {
-    let analysis = analyze_stylesheet(source);
     let offset = position_to_offset(source, position)?;
     let path = crate::uri::path_from_url(uri);
 
@@ -53,43 +49,7 @@ pub fn rename_for(
         );
     }
 
-    let target_name = keyframes_name_at_offset(&analysis, source, offset)?;
-
-    let mut edits = Vec::new();
-
-    edits.extend(
-        analysis
-            .symbols
-            .iter()
-            .filter(|symbol| symbol.kind == CssSymbolKind::Keyframes && symbol.name == target_name)
-            .map(|symbol| TextEdit {
-                range: to_lsp_range(symbol.selection_range),
-                new_text: new_name.to_string(),
-            }),
-    );
-
-    edits.extend(
-        analysis
-            .references
-            .iter()
-            .filter(|reference| {
-                reference.kind == CssReferenceKind::AnimationName && reference.name == target_name
-            })
-            .map(|reference| TextEdit {
-                range: to_lsp_range(reference.range),
-                new_text: new_name.to_string(),
-            }),
-    );
-
-    if edits.is_empty() {
-        return None;
-    }
-
-    Some(WorkspaceEdit {
-        changes: Some([(uri.clone(), edits)].into_iter().collect()),
-        document_changes: None,
-        change_annotations: None,
-    })
+    None
 }
 
 fn rename_project_selector(
@@ -128,30 +88,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renames_keyframes_definition_and_uses() {
-        let uri = Url::parse("file:///test.css").unwrap();
-        let source = "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }\ngroup { animation-name: fade-in; }";
-
-        let edit = rename_for(
-            &uri,
-            source,
-            Position { line: 0, character: 12 },
-            "fade-out",
-            &ProjectIndex::default(),
-            &[(uri.clone(), source.to_string())],
-        )
-        .unwrap();
-
-        let changes = edit.changes.unwrap();
-        let edits = changes.get(&uri).unwrap();
-        assert_eq!(edits.len(), 3);
-        assert!(edits.iter().all(|edit| edit.new_text == "fade-out"));
-    }
-
-    #[test]
     fn renames_selector_id_across_css_and_tsx_scope() {
         let css_uri = Url::parse("file:///tmp/layouts/example/index.css").unwrap();
-        let css_source = "window#root { color: red; }\ngroup#root { color: blue; }";
+        let css_source = "window#root { display: flex; }\ngroup#root { gap: 8px; }";
         let mut project_index = ProjectIndex::default();
         project_index.index_app_scope(
             std::path::PathBuf::from("/tmp/layouts/example/index.tsx"),
@@ -187,7 +126,7 @@ mod tests {
     #[test]
     fn renames_selector_id_from_tsx_definition_across_scope() {
         let tsx_uri = Url::parse("file:///tmp/layouts/example/index.tsx").unwrap();
-        let css_source = "window#root { color: red; }\ngroup#root { color: blue; }";
+        let css_source = "window#root { display: flex; }\ngroup#root { gap: 8px; }";
         let tsx_source = r#"export default function layout() { return <workspace id="root" /> }"#;
         let mut project_index = ProjectIndex::default();
         project_index.index_app_scope(

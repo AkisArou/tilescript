@@ -1,7 +1,6 @@
 # CSS
 
-`tilescript` uses a `tilescript`-specific CSS subset for layout selection, window styling,
-and compositor-managed presentation.
+`tilescript` uses a `tilescript`-specific CSS subset for layout selection and layout geometry.
 
 The language source of truth lives in `crates/css` (`tilescript-css`).
 
@@ -18,7 +17,7 @@ Unsupported selectors and properties fail clearly. They are not silently ignored
 
 `tilescript-scene` consumes compiled stylesheet data for layout matching and geometry.
 
-`tilescript` compositor adapters consume the resulting layout and compositor-relevant style data.
+`tilescript` compositor adapters consume the resulting resolved layout tree.
 
 ## Pipeline
 
@@ -26,7 +25,7 @@ Unsupported selectors and properties fail clearly. They are not silently ignored
 2. `tilescript-css` parses and compiles the stylesheet.
 3. `tilescript-scene` and related runtime code match selectors against the resolved layout tree.
 4. Layout properties determine geometry.
-5. The compositor adapter consumes compositor-backed presentation details such as borders and motion.
+5. The compositor adapter consumes the resulting layout output.
 
 ## Selector Targets
 
@@ -138,7 +137,7 @@ The groups below summarize the supported surface.
 
 Named grid lines, named spans, and `repeat(...)` are supported.
 
-### Box Model And Borders
+### Box Model
 
 - `padding`
 - `padding-top`
@@ -150,75 +149,6 @@ Named grid lines, named spans, and `repeat(...)` are supported.
 - `margin-right`
 - `margin-bottom`
 - `margin-left`
-- `border-width`
-- `border-top-width`
-- `border-right-width`
-- `border-bottom-width`
-- `border-left-width`
-- `border-color`
-- `border-top-color`
-- `border-right-color`
-- `border-bottom-color`
-- `border-left-color`
-- `border-style`
-- `border-top-style`
-- `border-right-style`
-- `border-bottom-style`
-- `border-left-style`
-
-Runtime notes:
-
-- border properties are partial because compositor consumption is selective
-- `border-width` on `window` nodes can drive compositor-drawn border width where supported
-- `border-style` can suppress compositor border edges whose style is `none`
-- `border-color` is consumed for compositor borders where supported
-
-### Window Presentation
-
-- `appearance` partial
-- `background` partial
-- `background-color` partial
-- `color` partial
-- `opacity` partial
-- `border-radius` partial
-- `box-shadow` partial
-- `backdrop-filter` planned
-- `transform` partial
-
-Notes:
-
-- `appearance` accepts `auto` and `none`
-- `appearance` is a window decoration-policy hint
-- `opacity` affects compositor-managed presentation rather than arbitrary client content opacity
-- `transform` is typed and sampled, but runtime visual support is still partial
-
-### Motion
-
-Supported motion properties:
-
-- `animation`
-- `animation-name`
-- `animation-duration`
-- `animation-timing-function`
-- `animation-delay`
-- `animation-iteration-count`
-- `animation-direction`
-- `animation-fill-mode`
-- `animation-play-state`
-- `transition`
-- `transition-property`
-- `transition-duration`
-- `transition-timing-function`
-- `transition-delay`
-- `transition-behavior` partial
-- `@keyframes`
-
-Runtime notes:
-
-- motion values are parsed into typed data, not kept as raw CSS strings
-- `transition-behavior` is accepted for compatibility but ignored by runtime compilation
-- compositor-delegated animation support is narrower than the parsed CSS surface
-- see `docs/plan/animations.md` for the current delegated-animation design
 
 ## Analysis And Diagnostics
 
@@ -227,8 +157,7 @@ Runtime notes:
 That includes:
 
 - structured diagnostics with ranges
-- rule and `@keyframes` symbols
-- `animation-name` references
+- rule symbols
 
 Current analysis diagnostics include:
 
@@ -237,7 +166,6 @@ Current analysis diagnostics include:
 - unsupported properties
 - unsupported values
 - inapplicable properties
-- unknown `animation-name`
 - unsupported selector attribute keys
 
 ## Example
@@ -261,8 +189,11 @@ workspace {
 }
 
 window {
-  border-width: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 ```
+
+If the CSS surface grows later, it should grow with more layout primitives such as additional grid, sizing, spacing, alignment, overflow, and placement controls rather than presentation styling.
 
 For editor and project-aware behavior, see `docs/css-lsp.md`.

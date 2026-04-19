@@ -91,11 +91,6 @@ pub(super) fn compile_stylo_declaration(
         MarginRight(value) => from_value("margin-right", value).map(Some),
         MarginBottom(value) => from_value("margin-bottom", value).map(Some),
         MarginLeft(value) => from_value("margin-left", value).map(Some),
-        BorderTopWidth(value) => from_value("border-top-width", value).map(Some),
-        BorderRightWidth(value) => from_value("border-right-width", value).map(Some),
-        BorderBottomWidth(value) => from_value("border-bottom-width", value).map(Some),
-        BorderLeftWidth(value) => from_value("border-left-width", value).map(Some),
-        BoxShadow(value) => from_value("box-shadow", value).map(Some),
         _ => Ok(None),
     }
 }

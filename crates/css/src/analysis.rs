@@ -33,7 +33,6 @@ pub enum CssDiagnosticCode {
     InvalidSyntax,
     UnsupportedValue,
     InapplicableProperty,
-    UnknownAnimationName,
     UnsupportedAttributeKey,
 }
 
@@ -50,13 +49,11 @@ pub struct CssAnalysis {
     pub stylesheet: Option<CompiledStyleSheet>,
     pub diagnostics: Vec<CssDiagnostic>,
     pub symbols: Vec<CssSymbol>,
-    pub references: Vec<CssReference>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CssSymbolKind {
     Rule,
-    Keyframes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,18 +62,6 @@ pub struct CssSymbol {
     pub name: String,
     pub range: CssRange,
     pub selection_range: CssRange,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CssReferenceKind {
-    AnimationName,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CssReference {
-    pub kind: CssReferenceKind,
-    pub name: String,
-    pub range: CssRange,
 }
 
 #[derive(Debug, Clone)]
@@ -92,8 +77,6 @@ struct AuthoredRule {
 struct AuthoredDeclaration {
     property: String,
     property_range: CssRange,
-    value_text: String,
-    value_range: CssRange,
 }
 
 pub fn analyze_stylesheet(source: &str) -> CssAnalysis {
@@ -102,24 +85,21 @@ pub fn analyze_stylesheet(source: &str) -> CssAnalysis {
             let authored_rules = authored_rules(source, Some(&stylesheet));
             let diagnostics = semantic_diagnostics(&authored_rules, &stylesheet);
             let symbols = extract_symbols(source, &authored_rules);
-            let references = extract_references(&authored_rules);
-            CssAnalysis { stylesheet: Some(stylesheet), diagnostics, symbols, references }
+            CssAnalysis { stylesheet: Some(stylesheet), diagnostics, symbols }
         }
         Err(error) => {
             let authored_rules = authored_rules(source, None);
             let symbols = extract_symbols(source, &authored_rules);
-            let references = extract_references(&authored_rules);
             CssAnalysis {
                 stylesheet: None,
                 diagnostics: vec![diagnostic_from_parse_error(&error)],
                 symbols,
-                references,
             }
         }
     }
 }
 
-fn extract_symbols(source: &str, rules: &[AuthoredRule]) -> Vec<CssSymbol> {
+fn extract_symbols(_source: &str, rules: &[AuthoredRule]) -> Vec<CssSymbol> {
     let mut symbols = Vec::new();
 
     for rule in rules {
@@ -130,86 +110,15 @@ fn extract_symbols(source: &str, rules: &[AuthoredRule]) -> Vec<CssSymbol> {
             selection_range: rule.selector_range,
         });
     }
-
-    symbols.extend(keyframes_symbols(source));
-    symbols
-}
-
-fn extract_references(rules: &[AuthoredRule]) -> Vec<CssReference> {
-    let mut references = Vec::new();
-
-    for rule in rules {
-        for declaration in &rule.declarations {
-            if declaration.property != "animation-name" {
-                continue;
-            }
-
-            references.extend(animation_name_references(declaration));
-        }
-    }
-
-    references
-}
-
-fn animation_name_references(declaration: &AuthoredDeclaration) -> Vec<CssReference> {
-    let mut references = Vec::new();
-    let source_map = SourceMap::new(&declaration.value_text);
-
-    for (start, end, name) in split_named_values(&declaration.value_text) {
-        if name.eq_ignore_ascii_case("none") {
-            continue;
-        }
-
-        references.push(CssReference {
-            kind: CssReferenceKind::AnimationName,
-            name,
-            range: translate_range(source_map.range(start, end), declaration.value_range),
-        });
-    }
-
-    references
-}
-
-fn keyframes_symbols(source: &str) -> Vec<CssSymbol> {
-    let source_map = SourceMap::new(source);
-    let mut symbols = Vec::new();
-    let mut offset = 0;
-
-    while let Some(relative) = source[offset..].find("@keyframes") {
-        let start = offset + relative;
-        let name_start = start + "@keyframes".len();
-        let Some(open_brace) = find_top_level_token(source, name_start, &['{']) else {
-            break;
-        };
-        let Some(block_end) = find_matching_brace_end(source, open_brace) else {
-            break;
-        };
-
-        let raw_name = source[name_start..open_brace].trim();
-        let selection_start = name_start + leading_trimmed_len(&source[name_start..open_brace]);
-        let selection_end = open_brace - trailing_trimmed_len(&source[name_start..open_brace]);
-        if !raw_name.is_empty() {
-            symbols.push(CssSymbol {
-                kind: CssSymbolKind::Keyframes,
-                name: raw_name.trim_matches('"').trim_matches('\'').to_string(),
-                range: source_map.range(start, block_end),
-                selection_range: source_map.range(selection_start, selection_end),
-            });
-        }
-
-        offset = block_end;
-    }
-
     symbols
 }
 
 fn semantic_diagnostics(
     rules: &[AuthoredRule],
-    stylesheet: &CompiledStyleSheet,
+    _stylesheet: &CompiledStyleSheet,
 ) -> Vec<CssDiagnostic> {
     let mut diagnostics = selector_attribute_key_diagnostics(rules);
     diagnostics.extend(applicability_diagnostics(rules));
-    diagnostics.extend(animation_name_diagnostics(rules, stylesheet));
     diagnostics
 }
 
@@ -249,50 +158,6 @@ fn applicability_diagnostics(rules: &[AuthoredRule]) -> Vec<CssDiagnostic> {
     }
 
     diagnostics
-}
-
-fn animation_name_diagnostics(
-    rules: &[AuthoredRule],
-    stylesheet: &CompiledStyleSheet,
-) -> Vec<CssDiagnostic> {
-    let mut diagnostics = Vec::new();
-
-    for rule in rules {
-        for declaration in &rule.declarations {
-            if declaration.property != "animation-name" {
-                continue;
-            }
-
-            for (_, _, name) in split_named_values(&declaration.value_text) {
-                if name.is_empty() || name.eq_ignore_ascii_case("none") {
-                    continue;
-                }
-                if stylesheet.keyframes(&name).is_some() {
-                    continue;
-                }
-
-                diagnostics.push(CssDiagnostic {
-                    code: CssDiagnosticCode::UnknownAnimationName,
-                    severity: CssDiagnosticSeverity::Warning,
-                    message: format!("unknown animation-name `{name}`"),
-                    range: animation_name_reference_range(declaration, &name)
-                        .unwrap_or(declaration.value_range),
-                });
-            }
-        }
-    }
-
-    diagnostics
-}
-
-fn animation_name_reference_range(
-    declaration: &AuthoredDeclaration,
-    name: &str,
-) -> Option<CssRange> {
-    animation_name_references(declaration)
-        .into_iter()
-        .find(|reference| reference.name == name)
-        .map(|reference| reference.range)
 }
 
 fn authored_rules(source: &str, stylesheet: Option<&CompiledStyleSheet>) -> Vec<AuthoredRule> {
@@ -414,14 +279,10 @@ fn parse_declaration_segment(
 
     let name_start = trimmed_start + leading_trimmed_len(&source[trimmed_start..colon]);
     let name_end = colon - trailing_trimmed_len(&source[trimmed_start..colon]);
-    let value_start = colon + 1 + leading_trimmed_len(&source[colon + 1..trimmed_end]);
-    let value_end = trimmed_end;
 
     Some(AuthoredDeclaration {
         property: name.to_string(),
         property_range: source_map.range(name_start, name_end),
-        value_text: source[value_start..value_end].trim().to_string(),
-        value_range: source_map.range(value_start, value_end),
     })
 }
 
@@ -492,64 +353,6 @@ fn synthetic_window_node() -> ResolvedLayoutNode {
         window_id: None,
         children: Vec::new(),
     }
-}
-
-fn split_top_level_commas(input: &str) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut offset = 0;
-    let mut paren_depth = 0i32;
-    let mut bracket_depth = 0i32;
-    let bytes = input.as_bytes();
-
-    while offset < input.len() {
-        if let Some(comment_end) = starts_comment(bytes, offset) {
-            offset = comment_end;
-            continue;
-        }
-        if let Some(string_end) = starts_string(input, offset) {
-            offset = string_end;
-            continue;
-        }
-
-        match bytes[offset] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'[' => bracket_depth += 1,
-            b']' => bracket_depth -= 1,
-            b',' if paren_depth == 0 && bracket_depth == 0 => {
-                parts.push(&input[start..offset]);
-                start = offset + 1;
-            }
-            _ => {}
-        }
-
-        offset += 1;
-    }
-
-    parts.push(&input[start..]);
-    parts
-}
-
-fn split_named_values(input: &str) -> Vec<(usize, usize, String)> {
-    let mut values = Vec::new();
-    let mut start = 0;
-
-    for part in split_top_level_commas(input) {
-        let part_offset = start + leading_trimmed_len(part);
-        let trimmed = part.trim();
-        let trimmed_end = part_offset + trimmed.len();
-        if !trimmed.is_empty() {
-            values.push((
-                part_offset,
-                trimmed_end,
-                trimmed.trim_matches('"').trim_matches('\'').to_string(),
-            ));
-        }
-        start += part.len() + 1;
-    }
-
-    values
 }
 
 fn attribute_key_diagnostics_for_selector(rule: &AuthoredRule) -> Vec<CssDiagnostic> {
@@ -945,22 +748,21 @@ mod tests {
 
     #[test]
     fn class_names_containing_group_do_not_become_group_targets() {
-        let analysis =
-            analyze_stylesheet(".stack-group__item { border-width: 1px; border-color: #2f3647; }");
+        let analysis = analyze_stylesheet(".stack-group__item { width: 50%; height: 100%; }");
 
         assert!(!analysis.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == CssDiagnosticCode::InapplicableProperty
-                && diagnostic.message.contains("border-width")
+                && diagnostic.message.contains("width")
         }));
         assert!(!analysis.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == CssDiagnosticCode::InapplicableProperty
-                && diagnostic.message.contains("border-color")
+                && diagnostic.message.contains("height")
         }));
     }
 
     #[test]
-    fn accepts_text_align_on_window_rule() {
-        let analysis = analyze_stylesheet("window { text-align: center; }");
+    fn accepts_layout_property_on_window_rule() {
+        let analysis = analyze_stylesheet("window { display: flex; }");
 
         assert!(analysis.diagnostics.is_empty());
         assert_eq!(analysis.symbols.len(), 1);
@@ -968,14 +770,14 @@ mod tests {
 
     #[test]
     fn reports_exact_property_range_for_multiline_rule() {
-        let analysis = analyze_stylesheet("window {\n  text-align: center;\n}");
+        let analysis = analyze_stylesheet("window {\n  display: flex;\n}");
 
         assert!(analysis.diagnostics.is_empty());
     }
 
     #[test]
     fn rejects_titlebar_rule() {
-        let analysis = analyze_stylesheet("window::titlebar { text-align: center; }");
+        let analysis = analyze_stylesheet("window::titlebar { display: flex; }");
 
         assert_eq!(analysis.diagnostics.len(), 1);
         assert_eq!(analysis.diagnostics[0].code, CssDiagnosticCode::UnsupportedSelector);
@@ -1002,39 +804,14 @@ mod tests {
     }
 
     #[test]
-    fn reports_unknown_animation_name_on_value_range() {
-        let analysis = analyze_stylesheet("window { animation-name: fade-in; }");
-
-        assert_eq!(analysis.diagnostics.len(), 1);
-        assert_eq!(analysis.diagnostics[0].code, CssDiagnosticCode::UnknownAnimationName);
-        assert_eq!(analysis.diagnostics[0].message, "unknown animation-name `fade-in`");
-        assert_eq!(
-            analysis.diagnostics[0].range,
-            CssRange { start_line: 1, start_column: 26, end_line: 1, end_column: 33 }
-        );
-    }
-
-    #[test]
-    fn accepts_known_animation_name() {
-        let analysis = analyze_stylesheet(
-            "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } } window { animation-name: fade-in; }",
-        );
-
-        assert!(analysis.diagnostics.is_empty());
-        assert_eq!(analysis.symbols.len(), 2);
-    }
-
-    #[test]
-    fn extracts_rule_and_keyframes_symbols() {
-        let analysis = analyze_stylesheet(
-            "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { display: flex; }",
-        );
+    fn extracts_rule_symbols() {
+        let analysis = analyze_stylesheet("window { display: flex; }\ngroup { gap: 8px; }");
 
         assert_eq!(analysis.symbols.len(), 2);
         assert_eq!(analysis.symbols[0].kind, CssSymbolKind::Rule);
         assert_eq!(analysis.symbols[0].name, "window");
-        assert_eq!(analysis.symbols[1].kind, CssSymbolKind::Keyframes);
-        assert_eq!(analysis.symbols[1].name, "fade-in");
+        assert_eq!(analysis.symbols[1].kind, CssSymbolKind::Rule);
+        assert_eq!(analysis.symbols[1].name, "group");
     }
 
     #[test]

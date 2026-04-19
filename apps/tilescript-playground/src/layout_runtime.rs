@@ -507,7 +507,6 @@ fn collect_diagnostics_from_buffers(
                         CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
                         CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
                         CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
-                        CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
                         CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
                     },
                     message: diagnostic.message,
@@ -545,7 +544,6 @@ fn collect_diagnostics_from_buffers(
                                 CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
                                 CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
                                 CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
-                                CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
                                 CssDiagnosticCode::UnsupportedAttributeKey => {
                                     "unsupportedAttributeKey"
                                 }

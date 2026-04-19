@@ -1,7 +1,7 @@
 use cssparser::{Parser, ParserInput, Token};
 use lsp_types::{Position, Range};
 
-use tilescript_css::analysis::{CssAnalysis, CssRange, CssReferenceKind, CssSymbolKind};
+use tilescript_css::analysis::CssRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorContext {
@@ -130,28 +130,6 @@ pub fn range_contains(range: CssRange, offset: usize, source: &str) -> bool {
     );
 
     matches!((start, end), (Some(start), Some(end)) if start <= offset && offset <= end)
-}
-
-pub fn keyframes_name_at_offset(
-    analysis: &CssAnalysis,
-    source: &str,
-    offset: usize,
-) -> Option<String> {
-    if let Some(symbol) = analysis.symbols.iter().find(|symbol| {
-        symbol.kind == CssSymbolKind::Keyframes
-            && range_contains(symbol.selection_range, offset, source)
-    }) {
-        return Some(symbol.name.clone());
-    }
-
-    analysis
-        .references
-        .iter()
-        .find(|reference| {
-            reference.kind == CssReferenceKind::AnimationName
-                && range_contains(reference.range, offset, source)
-        })
-        .map(|reference| reference.name.clone())
 }
 
 pub fn identifier_bounds(source: &str, offset: usize) -> Option<(usize, usize)> {

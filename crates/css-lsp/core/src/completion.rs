@@ -1,10 +1,9 @@
-use tilescript_css::analysis::{CssSymbolKind, analyze_stylesheet};
-use tilescript_css::language::{
-    attribute_key_specs, property_spec, property_specs, pseudo_class_specs, pseudo_element_specs,
-};
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, InsertTextFormat,
     MarkupContent, MarkupKind, Position, Url,
+};
+use tilescript_css::language::{
+    attribute_key_specs, property_spec, property_specs, pseudo_class_specs, pseudo_element_specs,
 };
 
 use crate::project::ProjectIndex;
@@ -52,25 +51,6 @@ fn property_value_items(source: &str, offset: usize) -> Vec<CompletionItem> {
     let Some(property_name) = enclosing_property_name(source, offset) else {
         return Vec::new();
     };
-
-    if property_name == "animation-name" {
-        let analysis = analyze_stylesheet(source);
-        return analysis
-            .symbols
-            .iter()
-            .filter(|symbol| symbol.kind == CssSymbolKind::Keyframes)
-            .map(|symbol| CompletionItem {
-                label: symbol.name.clone(),
-                kind: Some(CompletionItemKind::REFERENCE),
-                documentation: Some(Documentation::MarkupContent(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: "Known `@keyframes` in the current document.".to_string(),
-                })),
-                insert_text_format: Some(InsertTextFormat::PLAIN_TEXT),
-                ..CompletionItem::default()
-            })
-            .collect();
-    }
 
     property_spec(&property_name)
         .map(|spec| {
@@ -195,7 +175,7 @@ mod tests {
         let CompletionResponse::Array(items) = response else {
             panic!("expected array response");
         };
-        assert!(items.iter().any(|item| item.label == "text-align"));
+        assert!(items.iter().any(|item| item.label == "display"));
     }
 
     #[test]
@@ -231,27 +211,11 @@ mod tests {
     }
 
     #[test]
-    fn completes_animation_names_from_known_keyframes() {
-        let response = completions_for(
-            &Url::parse("file:///test.css").unwrap(),
-            "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fa }",
-            Position { line: 1, character: 27 },
-            &ProjectIndex::default(),
-        )
-        .unwrap();
-
-        let CompletionResponse::Array(items) = response else {
-            panic!("expected array response");
-        };
-        assert!(items.iter().any(|item| item.label == "fade-in"));
-    }
-
-    #[test]
     fn completes_property_value_keywords() {
         let response = completions_for(
             &Url::parse("file:///test.css").unwrap(),
-            "window { text-align: ce }",
-            Position { line: 0, character: 22 },
+            "window { display: fl }",
+            Position { line: 0, character: 19 },
             &ProjectIndex::default(),
         )
         .unwrap();
@@ -259,7 +223,7 @@ mod tests {
         let CompletionResponse::Array(items) = response else {
             panic!("expected array response");
         };
-        assert!(items.iter().any(|item| item.label == "center"));
+        assert!(items.iter().any(|item| item.label == "flex"));
     }
 
     #[test]

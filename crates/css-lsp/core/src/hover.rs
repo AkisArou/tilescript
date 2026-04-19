@@ -1,9 +1,8 @@
-use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
+use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
 use tilescript_css::language::{
     SelectorTarget, StyleTarget, SupportStatus, attribute_key_spec, property_spec,
     pseudo_class_spec, pseudo_element_spec,
 };
-use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
 use crate::syntax::{
@@ -27,9 +26,6 @@ pub fn hover_for(
         return Some(hover(spec, range_for(source, start, end)?));
     }
     if let Some(spec) = property_hover(source, start, end, token, context) {
-        return Some(hover(spec, range_for(source, start, end)?));
-    }
-    if let Some(spec) = animation_name_hover(source, start, end, token, context) {
         return Some(hover(spec, range_for(source, start, end)?));
     }
     if let Some(spec) = pseudo_element_hover(source, start, end, token, context) {
@@ -95,43 +91,6 @@ fn property_hover(
         support_status_label(spec.status),
         style_targets_label(spec.applies_to),
     ))
-}
-
-fn animation_name_hover(
-    source: &str,
-    start: usize,
-    end: usize,
-    token: &str,
-    context: CursorContext,
-) -> Option<String> {
-    if context != CursorContext::PropertyValue
-        || !looks_like_animation_name_reference(source, start)
-    {
-        return None;
-    }
-
-    let analysis = analyze_stylesheet(source);
-    let reference = analysis.references.iter().find(|reference| {
-        reference.kind == CssReferenceKind::AnimationName
-            && reference.name == token
-            && range_matches(reference.range, source, start, end)
-    })?;
-
-    let symbol = analysis
-        .symbols
-        .iter()
-        .find(|symbol| symbol.kind == CssSymbolKind::Keyframes && symbol.name == reference.name);
-
-    Some(match symbol {
-        Some(_) => format!(
-            "`{}`\n\nReferences the `@keyframes {}` definition in this document.",
-            reference.name, reference.name
-        ),
-        None => format!(
-            "`{}`\n\nReferences an `animation-name`, but no matching `@keyframes` definition was found in this document.",
-            reference.name
-        ),
-    })
 }
 
 fn pseudo_element_hover(
@@ -213,38 +172,6 @@ fn looks_like_property_name(source: &str, start: usize, end: usize) -> bool {
     !inside_square_brackets(source, start)
 }
 
-fn looks_like_animation_name_reference(source: &str, start: usize) -> bool {
-    source[..start]
-        .rfind(['{', ';', '}'])
-        .and_then(|context_start| {
-            source[context_start + 1..start].find(':').map(|colon| (context_start, colon))
-        })
-        .is_some_and(|(context_start, colon)| {
-            source[context_start + 1..context_start + 1 + colon].trim() == "animation-name"
-        })
-}
-
-fn range_matches(
-    range: tilescript_css::analysis::CssRange,
-    source: &str,
-    start: usize,
-    end: usize,
-) -> bool {
-    range_for(source, start, end).is_some_and(|local| {
-        local
-            == Range {
-                start: Position {
-                    line: range.start_line.saturating_sub(1),
-                    character: range.start_column.saturating_sub(1),
-                },
-                end: Position {
-                    line: range.end_line.saturating_sub(1),
-                    character: range.end_column.saturating_sub(1),
-                },
-            }
-    })
-}
-
 fn looks_like_attribute_key(source: &str, start: usize, end: usize) -> bool {
     let Some(bracket_start) = enclosing_square_bracket_start(source, start) else {
         return false;
@@ -300,7 +227,7 @@ mod tests {
     fn hovers_property_name() {
         let hover = hover_for(
             &Url::parse("file:///test.css").unwrap(),
-            "window { text-align: center; }",
+            "window { display: flex; }",
             Position { line: 0, character: 10 },
             &ProjectIndex::default(),
         )
@@ -309,7 +236,7 @@ mod tests {
         let HoverContents::Markup(markup) = hover.contents else {
             panic!("expected markup hover");
         };
-        assert!(markup.value.contains("`text-align`"));
+        assert!(markup.value.contains("`display`"));
         assert!(markup.value.contains("Applies to: `workspace`, `group`, `window`"));
     }
 
@@ -346,22 +273,6 @@ mod tests {
     }
 
     #[test]
-    fn hovers_animation_name_reference() {
-        let hover = hover_for(
-            &Url::parse("file:///test.css").unwrap(),
-            "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }",
-            Position { line: 1, character: 27 },
-            &ProjectIndex::default(),
-        )
-        .unwrap();
-
-        let HoverContents::Markup(markup) = hover.contents else {
-            panic!("expected markup hover");
-        };
-        assert!(markup.value.contains("References the `@keyframes fade-in` definition"));
-    }
-
-    #[test]
     fn hovers_project_backed_selector_class() {
         let uri = Url::parse("file:///tmp/layouts/example/index.css").unwrap();
         let mut project_index = ProjectIndex::default();
@@ -374,13 +285,13 @@ mod tests {
             )],
             vec![(
                 std::path::PathBuf::from("/tmp/layouts/example/index.css"),
-                "window.shell { color: red; }".to_string(),
+                "window.shell { display: flex; }".to_string(),
             )],
         );
 
         let hover = hover_for(
             &uri,
-            "window.shell { color: red; }",
+            "window.shell { display: flex; }",
             Position { line: 0, character: 8 },
             &project_index,
         )

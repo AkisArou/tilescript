@@ -98,12 +98,11 @@ It indexes:
 - project-aware diagnostics for unknown selector ids and classes
 - context-aware completion for CSS language constructs
 - project-aware selector completion for known ids and classes
-- hover for properties, pseudos, attribute keys, keyframes, and project-backed selectors
+- hover for properties, pseudos, attribute keys, and project-backed selectors
 - document symbols
 - workspace symbols for project-backed ids and classes
-- definition for `animation-name` and selector ids/classes
-- references for `animation-name` and selector ids/classes
-- rename for `@keyframes`
+- definition for selector ids/classes
+- references for selector ids/classes
 - rename for selector ids/classes across CSS and TSX within scope
 - quick-fix code actions for unknown selector ids/classes
 

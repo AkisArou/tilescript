@@ -1,5 +1,5 @@
-use tilescript_css::analysis::{CssRange, CssSymbolKind, analyze_stylesheet};
 use lsp_types::{DocumentSymbol, Position, Range, SymbolKind};
+use tilescript_css::analysis::{CssRange, CssSymbolKind, analyze_stylesheet};
 
 pub fn document_symbols_for(source: &str) -> Vec<DocumentSymbol> {
     let analysis = analyze_stylesheet(source);
@@ -13,7 +13,6 @@ fn to_document_symbol(symbol: &tilescript_css::analysis::CssSymbol) -> DocumentS
         detail: None,
         kind: match symbol.kind {
             CssSymbolKind::Rule => SymbolKind::OBJECT,
-            CssSymbolKind::Keyframes => SymbolKind::FUNCTION,
         },
         tags: None,
         deprecated: None,
@@ -41,15 +40,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_rule_and_keyframes_symbols() {
-        let symbols = document_symbols_for(
-            "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { display: flex; }",
-        );
+    fn maps_rule_symbols() {
+        let symbols = document_symbols_for("window { display: flex; }\ngroup { gap: 8px; }");
 
         assert_eq!(symbols.len(), 2);
         assert_eq!(symbols[0].name, "window");
         assert_eq!(symbols[0].kind, SymbolKind::OBJECT);
-        assert_eq!(symbols[1].name, "fade-in");
-        assert_eq!(symbols[1].kind, SymbolKind::FUNCTION);
+        assert_eq!(symbols[1].name, "group");
+        assert_eq!(symbols[1].kind, SymbolKind::OBJECT);
     }
 }

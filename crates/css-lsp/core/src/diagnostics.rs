@@ -1,9 +1,9 @@
 use std::path::Path;
 
+use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, Url};
 use tilescript_css::analysis::{
     CssDiagnostic, CssDiagnosticCode, CssDiagnosticSeverity, CssSymbolKind, analyze_stylesheet,
 };
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString, Position, Range, Url};
 
 use crate::project::ProjectIndex;
 use crate::syntax::{position_to_offset, selector_references_in_segment};
@@ -51,7 +51,6 @@ fn diagnostic_code(code: CssDiagnosticCode) -> &'static str {
         CssDiagnosticCode::InvalidSyntax => "invalid-syntax",
         CssDiagnosticCode::UnsupportedValue => "unsupported-value",
         CssDiagnosticCode::InapplicableProperty => "inapplicable-property",
-        CssDiagnosticCode::UnknownAnimationName => "unknown-animation-name",
         CssDiagnosticCode::UnsupportedAttributeKey => "unsupported-attribute-key",
     }
 }

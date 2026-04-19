@@ -1,4 +1,3 @@
-use crate::CompiledKeyframesRule;
 use crate::css::{CssParseError, CssValueError, StyledLayoutTree, parse_stylesheet};
 pub use crate::layout_calc::{LaidOutNode, LaidOutTree};
 use crate::scene::{SceneRequest, SceneResponse};
@@ -95,13 +94,6 @@ impl SceneCache {
             self.scenes.insert(scene_key, response.clone());
         }
         Ok(response)
-    }
-
-    pub fn keyframes_for_layout(&self, layout_name: &str) -> Vec<CompiledKeyframesRule> {
-        self.stylesheets
-            .get(layout_name)
-            .map(|cached| cached.sheet.keyframes.clone())
-            .unwrap_or_default()
     }
 }
 

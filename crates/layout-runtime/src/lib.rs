@@ -1179,7 +1179,6 @@ fn css_scene_failure_diagnostic(
             CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
             CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
             CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
-            CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
             CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
         }
         .into(),
@@ -1243,7 +1242,6 @@ fn layout_diagnostics_from_stylesheet(
                 CssDiagnosticCode::InvalidSyntax => "invalidSyntax",
                 CssDiagnosticCode::UnsupportedValue => "unsupportedValue",
                 CssDiagnosticCode::InapplicableProperty => "inapplicableProperty",
-                CssDiagnosticCode::UnknownAnimationName => "unknownAnimationName",
                 CssDiagnosticCode::UnsupportedAttributeKey => "unsupportedAttributeKey",
             }
             .into(),

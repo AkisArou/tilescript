@@ -9,12 +9,12 @@ pub(crate) mod stylo_adapter {
 
 pub use crate::style::*;
 pub use crate::style_calc::compute_style;
+pub use taffy::{NodeComputedStyle, StyledLayoutTree, map_computed_style_to_taffy};
 pub use tilescript_css::compile;
 pub use tilescript_css::compile::CompiledDeclaration;
 pub use tilescript_css::compile::CssValueError;
 pub use tilescript_css::compiled::*;
 pub use tilescript_css::parsing::{CssParseError, parse_stylesheet};
-pub use taffy::{NodeComputedStyle, StyledLayoutTree, map_computed_style_to_taffy};
 
 #[cfg(test)]
 mod tests {
@@ -24,8 +24,6 @@ mod tests {
     use crate::css_matching::{matching_rules, selector_matches};
     use tilescript_core::WindowId;
     use tilescript_core::{LayoutNodeMeta, ResolvedLayoutNode};
-    use tilescript_css::FontFamilyName;
-
     fn runtime_window_with_meta(meta: LayoutNodeMeta) -> ResolvedLayoutNode {
         ResolvedLayoutNode::Window {
             meta,
@@ -83,13 +81,7 @@ mod tests {
     fn rejects_unsupported_property() {
         let error = parse_stylesheet("window { color: red; }").unwrap_err();
 
-        assert_eq!(
-            error,
-            CssParseError::CssValue(CssValueError::UnsupportedValue {
-                property: "color".into(),
-                value: "red".into(),
-            })
-        );
+        assert_eq!(error, CssParseError::UnsupportedProperty { property: "color".into() });
     }
 
     #[test]
@@ -193,45 +185,12 @@ mod tests {
     }
 
     #[test]
-    fn supports_window_appearance_values() {
-        let auto_sheet = parse_stylesheet("window { appearance: auto; }").unwrap();
-        let none_sheet = parse_stylesheet("window { appearance: none; }").unwrap();
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-
-        assert_eq!(
-            compute_style(&auto_sheet, &node).unwrap().appearance,
-            Some(AppearanceValue::Auto)
-        );
-        assert_eq!(
-            compute_style(&none_sheet, &node).unwrap().appearance,
-            Some(AppearanceValue::None)
-        );
-    }
-
-    #[test]
     fn rejects_titlebar_pseudo_styles() {
-        let error = parse_stylesheet("window::titlebar { text-align: center; }").unwrap_err();
+        let error = parse_stylesheet("window::titlebar { display: flex; }").unwrap_err();
 
         assert_eq!(
             error,
             CssParseError::UnsupportedSelector { selector: "window::titlebar".into() }
-        );
-    }
-
-    #[test]
-    fn parses_border_style_shorthand() {
-        let sheet = parse_stylesheet("window { border-style: solid none; }").unwrap();
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-        let style = compute_style(&sheet, &node).unwrap();
-
-        assert_eq!(
-            style.border_style,
-            Some(BoxEdges {
-                top: BorderStyleValue::Solid,
-                right: BorderStyleValue::None,
-                bottom: BorderStyleValue::Solid,
-                left: BorderStyleValue::None,
-            })
         );
     }
 
@@ -243,146 +202,6 @@ mod tests {
             error,
             CssParseError::UnsupportedProperty { property: "-tilescript-partition-axis".into() }
         );
-    }
-
-    #[test]
-    fn supports_color_property() {
-        let sheet = parse_stylesheet("window { color: rgba(12, 34, 56, 0.5); }").unwrap();
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-        let style = compute_style(&sheet, &node).unwrap();
-
-        assert_eq!(style.color, Some(ColorValue { red: 12, green: 34, blue: 56, alpha: 128 }));
-    }
-
-    #[test]
-    fn supports_text_align_and_text_transform_properties() {
-        let sheet = parse_stylesheet(
-            "window { text-align: end; text-transform: capitalize; font-family: serif; font-size: 85%; font-weight: 700; letter-spacing: normal; }",
-        )
-        .unwrap();
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-        let style = compute_style(&sheet, &node).unwrap();
-
-        assert_eq!(style.text_align, Some(TextAlignValue::End));
-        assert_eq!(style.text_transform, Some(TextTransformValue::Capitalize));
-        assert_eq!(style.font_family, Some(vec![FontFamilyName::Serif]));
-        assert_eq!(style.font_size, Some(LengthPercentage::Percent(85.0)));
-        assert_eq!(style.font_weight, Some(FontWeightValue::Bold));
-        assert_eq!(style.letter_spacing, Some(0.0));
-    }
-
-    #[test]
-    fn parses_transform_into_typed_operations() {
-        let declaration =
-            only_declaration("workspace { transform: translate(100%, 0%) scale(0.8, 1.2); }");
-
-        assert_eq!(
-            declaration,
-            CompiledDeclaration::Transform(TransformValue {
-                operations: vec![
-                    TransformOperationValue::Translate(TranslateTransformValue {
-                        x: LengthPercentage::Percent(100.0),
-                        y: LengthPercentage::Percent(0.0),
-                    }),
-                    TransformOperationValue::Scale(ScaleTransformValue { x: 0.8, y: 1.2 }),
-                ],
-            })
-        );
-    }
-
-    #[test]
-    fn parses_transform_none_as_empty_operation_list() {
-        let declaration = only_declaration("workspace { transform: none; }");
-
-        assert_eq!(
-            declaration,
-            CompiledDeclaration::Transform(TransformValue { operations: Vec::new() })
-        );
-    }
-
-    #[test]
-    fn parses_effect_properties_and_keyframes_used_by_root_stylesheet() {
-        let sheet = parse_stylesheet(
-            r#"
-            workspace {
-                transition-property: transform, opacity;
-                transition-duration: 220ms;
-                transition-timing-function: cubic-bezier(0.46, 1, 0.29, 0.99);
-            }
-
-            workspace:enter-from-right {
-                transform: translate(100%, 0%);
-                opacity: 0.98;
-            }
-
-            window {
-                border-width: 2px;
-                border-color: #222222;
-                opacity: 0.94;
-                border-radius: 14px 10px 18px 8px / 14px 10px 18px 8px;
-                box-shadow: 0 12px 28px 4px #00000066;
-                backdrop-filter: blur(12px);
-                animation: open-zoom 400ms cubic-bezier(0.46, 1, 0.29, 0.99) both;
-                transition: opacity 140ms ease-in-out, box-shadow 220ms ease-out;
-                appearance: none;
-            }
-
-            @keyframes open-zoom {
-                from { opacity: 0.15; transform: translate(0px, 24px) scale(0.3); }
-                to { opacity: 1; transform: translate(0px, 0px) scale(1); }
-            }
-
-            window:closing {
-                opacity: 0;
-                transition: all 300ms cubic-bezier(0.46, 1.0, 0.29, 0.99);
-            }
-            "#,
-        )
-        .unwrap();
-
-        let node = runtime_window_with_meta(LayoutNodeMeta::default());
-        let style = compute_style(&sheet, &node).unwrap();
-
-        assert_eq!(style.appearance, Some(AppearanceValue::None));
-        assert_eq!(style.opacity, Some(0.94));
-        assert_eq!(
-            style.border_color,
-            Some(ColorValue { red: 34, green: 34, blue: 34, alpha: 255 })
-        );
-        assert_eq!(
-            style.border_radius,
-            Some(BorderRadiusValue {
-                top_left: 14,
-                top_right: 10,
-                bottom_right: 18,
-                bottom_left: 8,
-            })
-        );
-        assert_eq!(style.animation_name, Some(vec!["open-zoom".into()]));
-        assert!(matches!(
-            style.transition_property.as_ref(),
-            Some(properties) if properties.len() == 2
-        ));
-        assert!(sheet.rules.iter().any(|rule| {
-            rule.declarations.iter().any(|declaration| {
-                matches!(
-                    declaration,
-                    CompiledDeclaration::Transform(TransformValue { operations })
-                    if operations.len() == 1
-                )
-            })
-        }));
-        assert_eq!(sheet.keyframes.len(), 1);
-        assert_eq!(sheet.keyframes[0].name, "open-zoom");
-        assert_eq!(sheet.keyframes[0].steps.len(), 2);
-        assert!(sheet.keyframes[0].steps.iter().flat_map(|step| step.declarations.iter()).any(
-            |declaration| matches!(
-                declaration,
-                CompiledDeclaration::Transform(TransformValue { operations })
-                if operations.len() == 2
-            )
-        ));
-        assert!(style.box_shadow.is_some());
     }
 
     #[test]

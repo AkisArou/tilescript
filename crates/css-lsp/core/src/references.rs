@@ -1,11 +1,8 @@
-use tilescript_css::analysis::{CssReferenceKind, CssSymbolKind, analyze_stylesheet};
+use tilescript_css::analysis::{CssSymbolKind, analyze_stylesheet};
 use lsp_types::{Location, Position, Url};
 
 use crate::project::{ProjectIndex, ProjectSelectorKind};
-use crate::syntax::{
-    keyframes_name_at_offset, position_to_offset, range_for, selector_reference_at_offset,
-    selector_references_in_segment, to_lsp_range,
-};
+use crate::syntax::{position_to_offset, range_for, selector_reference_at_offset, selector_references_in_segment};
 
 pub fn references_for(
     uri: &Url,
@@ -15,7 +12,6 @@ pub fn references_for(
     project_index: &ProjectIndex,
     documents: &[(Url, String)],
 ) -> Vec<Location> {
-    let analysis = analyze_stylesheet(source);
     let offset = match position_to_offset(source, position) {
         Some(offset) => offset,
         None => return Vec::new(),
@@ -52,36 +48,7 @@ pub fn references_for(
         );
     }
 
-    let Some(name) = keyframes_name_at_offset(&analysis, source, offset) else {
-        return Vec::new();
-    };
-
-    let mut locations = Vec::new();
-
-    if include_declaration {
-        locations.extend(
-            analysis
-                .symbols
-                .iter()
-                .filter(|symbol| symbol.kind == CssSymbolKind::Keyframes && symbol.name == name)
-                .map(|symbol| Location {
-                    uri: uri.clone(),
-                    range: to_lsp_range(symbol.selection_range),
-                }),
-        );
-    }
-
-    locations.extend(
-        analysis
-            .references
-            .iter()
-            .filter(|reference| {
-                reference.kind == CssReferenceKind::AnimationName && reference.name == name
-            })
-            .map(|reference| Location { uri: uri.clone(), range: to_lsp_range(reference.range) }),
-    );
-
-    locations
+    Vec::new()
 }
 
 fn selector_reference_locations(
@@ -189,46 +156,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_references_from_animation_name_use() {
-        let uri = Url::parse("file:///test.css").unwrap();
-        let source = "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }\ngroup { animation-name: fade-in; }";
+    fn finds_selector_references_without_non_selector_features() {
+        let source = "window#root { display: flex; }\ngroup#root { gap: 8px; }";
+        let mut project_index = ProjectIndex::default();
+        project_index.index_app_scope(
+            std::path::PathBuf::from("/tmp/layouts/example/index.tsx"),
+            vec![(
+                std::path::PathBuf::from("/tmp/layouts/example/index.tsx"),
+                r#"export default function layout() { return <workspace id="root" /> }"#
+                    .to_string(),
+            )],
+            vec![(std::path::PathBuf::from("/tmp/layouts/example/index.css"), source.to_string())],
+        );
 
         let references = references_for(
-            &uri,
+            &Url::parse("file:///tmp/layouts/example/index.css").unwrap(),
             source,
-            Position { line: 1, character: 26 },
+            Position { line: 0, character: 8 },
             true,
-            &ProjectIndex::default(),
-            &[(uri.clone(), source.to_string())],
+            &project_index,
+            &[],
         );
 
         assert_eq!(references.len(), 3);
     }
 
     #[test]
-    fn finds_references_from_keyframes_definition() {
-        let uri = Url::parse("file:///test.css").unwrap();
-        let source = "@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }\nwindow { animation-name: fade-in; }";
-
-        let references = references_for(
-            &uri,
-            source,
-            Position { line: 0, character: 12 },
-            false,
-            &ProjectIndex::default(),
-            &[(uri.clone(), source.to_string())],
-        );
-
-        assert_eq!(references.len(), 1);
-        assert_eq!(references[0].range.start.line, 1);
-    }
-
-    #[test]
     fn finds_css_and_layout_references_for_selector_id() {
         let css_uri = Url::parse("file:///tmp/layouts/example/index.css").unwrap();
         let other_css_uri = Url::parse("file:///tmp/layouts/example/extra.css").unwrap();
-        let css_source = "window#root { color: red; }";
-        let other_css_source = "group#root { color: blue; }";
+        let css_source = "window#root { display: flex; }";
+        let other_css_source = "group#root { gap: 8px; }";
         let tsx_source = r#"export default function layout() { return <workspace id="root" /> }"#;
         let mut project_index = ProjectIndex::default();
         project_index.index_app_scope(

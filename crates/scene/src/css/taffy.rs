@@ -144,9 +144,6 @@ pub fn map_computed_style_to_taffy(style: &ComputedStyle) -> TaffyStyle {
     if let Some(grid_column) = &style.grid_column {
         taffy_style.grid_column = map_grid_line(grid_column.clone());
     }
-    if let Some(border) = style.border {
-        taffy_style.border = map_box_edges(border, map_length_percentage);
-    }
     if let Some(padding) = style.padding {
         taffy_style.padding = map_box_edges(padding, map_length_percentage);
     }

@@ -8,9 +8,7 @@ use crate::stylo_adapter::{
 };
 
 use crate::compile::{CssValueError, compile_declaration, compile_declaration_from_value};
-use crate::compiled::{
-    CompiledKeyframeStep, CompiledKeyframesRule, CompiledStyleRule, CompiledStyleSheet,
-};
+use crate::compiled::{CompiledStyleRule, CompiledStyleSheet};
 use crate::grid::parse_grid_fallback_declarations;
 use crate::language::is_supported_property;
 use crate::parse_values::{CssValue, ParsedDeclaration};
@@ -43,8 +41,7 @@ pub enum CssParseError {
 struct LayoutCssRuleParser;
 
 pub fn parse_stylesheet(input: &str) -> Result<CompiledStyleSheet, CssParseError> {
-    let (sanitized, keyframes) = extract_keyframes_and_strip(input)?;
-    let mut input_buf = ParserInput::new(&sanitized);
+    let mut input_buf = ParserInput::new(input);
     let mut parser_input = Parser::new(&mut input_buf);
     let mut parser = LayoutCssRuleParser;
     let mut rules = Vec::new();
@@ -65,7 +62,7 @@ pub fn parse_stylesheet(input: &str) -> Result<CompiledStyleSheet, CssParseError
         }
     }
 
-    Ok(CompiledStyleSheet { rules, keyframes })
+    Ok(CompiledStyleSheet { rules })
 }
 
 impl<'i> AtRuleParser<'i> for LayoutCssRuleParser {
@@ -134,40 +131,6 @@ impl<'i> QualifiedRuleParser<'i> for LayoutCssRuleParser {
     }
 }
 
-fn extract_keyframes_and_strip(
-    input: &str,
-) -> Result<(String, Vec<CompiledKeyframesRule>), CssParseError> {
-    let mut result = String::with_capacity(input.len());
-    let mut keyframes = Vec::new();
-    let mut index = 0;
-
-    while let Some(relative) = input[index..].find("@keyframes") {
-        let start = index + relative;
-        result.push_str(&input[index..start]);
-
-        let open_brace_offset =
-            input[start..].find('{').ok_or(CssParseError::InvalidSyntax { line: 1, column: 1 })?;
-        let open_brace = start + open_brace_offset;
-        let end = matching_brace_end(input, open_brace)
-            .ok_or(CssParseError::InvalidSyntax { line: 1, column: 1 })?;
-        let name = input[start + "@keyframes".len()..open_brace]
-            .trim()
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
-        if name.is_empty() {
-            return Err(CssParseError::InvalidSyntax { line: 1, column: 1 });
-        }
-        let body = &input[open_brace + 1..end - 1];
-        keyframes.push(parse_keyframes_rule(name, body)?);
-        index = end;
-    }
-
-    result.push_str(&input[index..]);
-
-    Ok((result, keyframes))
-}
-
 fn compile_declarations_from_raw_block(
     raw_block: &str,
 ) -> Result<Vec<crate::compile::CompiledDeclaration>, CssParseError> {
@@ -190,9 +153,6 @@ fn compile_declarations_from_raw_block(
     for declaration in block.normal_declaration_iter() {
         let property = declaration.id().to_css_string();
         if !is_supported_property(&property) {
-            if is_ignored_background_expansion(&property) {
-                continue;
-            }
             return Err(CssParseError::UnsupportedProperty { property });
         }
 
@@ -215,42 +175,6 @@ fn compile_declarations_from_raw_block(
     }
 
     let fallback_declarations = fallback_declarations(raw_block)?;
-
-    if fallback_declarations.iter().any(|declaration| declaration.property == "appearance")
-        && !declarations.iter().any(|declaration| {
-            matches!(declaration, crate::compile::CompiledDeclaration::Appearance(_))
-        })
-    {
-        let fallback = parse_grid_fallback_declarations(raw_block)?;
-        declarations.extend(fallback.into_iter().filter(|declaration| {
-            matches!(declaration, crate::compile::CompiledDeclaration::Appearance(_))
-        }));
-    }
-
-    if fallback_declarations.iter().any(|declaration| declaration.property == "background")
-        && !declarations.iter().any(|declaration| {
-            matches!(declaration, crate::compile::CompiledDeclaration::Background(_))
-        })
-    {
-        let fallback = parse_grid_fallback_declarations(raw_block)?;
-        declarations.extend(fallback.into_iter().filter(|declaration| {
-            matches!(declaration, crate::compile::CompiledDeclaration::Background(_))
-        }));
-    }
-
-    if fallback_declarations.iter().any(|declaration| declaration.property == "border-color")
-        && !declarations.iter().any(|declaration| {
-            matches!(declaration, crate::compile::CompiledDeclaration::BorderColor(_))
-        })
-    {
-        append_fallback_declarations(&fallback_declarations, &mut declarations, &["border-color"])?;
-    }
-
-    append_fallback_declarations(
-        &fallback_declarations,
-        &mut declarations,
-        &["border-radius", "box-shadow"],
-    )?;
 
     if declarations.is_empty() && needs_grid_fallback(&fallback_declarations) {
         declarations = parse_grid_fallback_declarations(raw_block)?;
@@ -291,67 +215,6 @@ fn append_custom_tilescript_declarations(
 
     Ok(())
 }
-
-fn parse_keyframes_rule(name: String, body: &str) -> Result<CompiledKeyframesRule, CssParseError> {
-    let mut steps = Vec::new();
-    let mut index = 0;
-
-    while let Some(relative) = body[index..].find('{') {
-        let block_start = index + relative;
-        let selector_text = body[index..block_start].trim();
-        let block_end = matching_brace_end(body, block_start)
-            .ok_or(CssParseError::InvalidSyntax { line: 1, column: 1 })?;
-        let declarations =
-            compile_declarations_from_raw_block(&body[block_start + 1..block_end - 1])?;
-
-        for selector in
-            selector_text.split(',').map(str::trim).filter(|selector| !selector.is_empty())
-        {
-            steps.push(CompiledKeyframeStep {
-                offset: parse_keyframe_offset(selector)?,
-                declarations: declarations.clone(),
-            });
-        }
-
-        index = block_end;
-    }
-
-    steps.sort_by(|left, right| {
-        left.offset.partial_cmp(&right.offset).unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    Ok(CompiledKeyframesRule { name, steps })
-}
-
-fn parse_keyframe_offset(selector: &str) -> Result<f32, CssParseError> {
-    match selector {
-        "from" => Ok(0.0),
-        "to" => Ok(1.0),
-        _ => selector
-            .strip_suffix('%')
-            .and_then(|value| value.trim().parse::<f32>().ok())
-            .map(|value| (value / 100.0).clamp(0.0, 1.0))
-            .ok_or(CssParseError::UnsupportedSelector { selector: selector.to_string() }),
-    }
-}
-
-fn matching_brace_end(input: &str, open_brace: usize) -> Option<usize> {
-    let mut depth = 0i32;
-    for (offset, ch) in input[open_brace..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open_brace + offset + ch.len_utf8());
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
 fn selector_matches_slot(selectors: &selectors::parser::SelectorList<LayoutSelectorImpl>) -> bool {
     selector_matches(selectors, &synthetic_slot_node())
 }
@@ -366,61 +229,6 @@ fn synthetic_slot_node() -> tilescript_core::ResolvedLayoutNode {
         text: None,
         children: Vec::new(),
     }
-}
-
-fn is_ignored_background_expansion(property: &str) -> bool {
-    matches!(
-        property,
-        "background-position-x"
-            | "background-position-y"
-            | "background-repeat"
-            | "background-attachment"
-            | "background-image"
-            | "background-size"
-            | "background-origin"
-            | "background-clip"
-            | "border-image-source"
-            | "border-image-slice"
-            | "border-image-width"
-            | "border-image-outset"
-            | "border-image-repeat"
-            | "border-top-left-radius"
-            | "border-top-right-radius"
-            | "border-bottom-right-radius"
-            | "border-bottom-left-radius"
-    )
-}
-
-fn append_fallback_declarations(
-    fallback_declarations: &[ParsedDeclaration],
-    declarations: &mut Vec<crate::compile::CompiledDeclaration>,
-    properties: &[&str],
-) -> Result<(), CssParseError> {
-    for property in properties {
-        let property_name = *property;
-        let already_present =
-            declarations.iter().any(|declaration| match (property_name, declaration) {
-                ("border-radius", crate::compile::CompiledDeclaration::BorderRadius(_)) => true,
-                ("border-color", crate::compile::CompiledDeclaration::BorderColor(_)) => true,
-                ("box-shadow", crate::compile::CompiledDeclaration::BoxShadow(_)) => true,
-                _ => false,
-            });
-        if already_present {
-            continue;
-        }
-
-        if let Some(value) = fallback_declarations
-            .iter()
-            .find(|declaration| declaration.property == property_name)
-            .map(|declaration| declaration.value.clone())
-        {
-            let compiled = compile_declaration_from_value(property_name, &value)
-                .map_err(CssParseError::CssValue)?;
-            declarations.push(compiled);
-        }
-    }
-
-    Ok(())
 }
 
 fn needs_grid_fallback(fallback_declarations: &[ParsedDeclaration]) -> bool {
@@ -629,19 +437,18 @@ mod tests {
 
     #[test]
     fn rejects_window_titlebar_selectors() {
-        let parsed = parse_stylesheet("window::titlebar { text-align: center; }");
+        let parsed = parse_stylesheet("window::titlebar { display: flex; }");
         assert!(matches!(parsed, Err(CssParseError::UnsupportedSelector { .. })));
     }
 
     #[test]
     fn fallback_property_scan_ignores_comments_and_strings() {
-        let parsed = fallback_declarations(
-            "color: red; /* border-color: hotpink; */ background: rgb(1, 2, 3);",
-        )
-        .unwrap();
+        let parsed =
+            fallback_declarations("display: flex; /* color: red; */ width: calc(100% - 8px);")
+                .unwrap();
 
         assert_eq!(parsed.len(), 2);
-        assert_eq!(parsed[0].property, "color");
-        assert_eq!(parsed[1].property, "background");
+        assert_eq!(parsed[0].property, "display");
+        assert_eq!(parsed[1].property, "width");
     }
 }

@@ -1,5 +1,5 @@
 use tilescript_core::LayoutRect;
-use tilescript_css::{BorderStyleValue, ColorValue, LengthPercentage, OverflowValue};
+use tilescript_css::{LengthPercentage, OverflowValue};
 use tilescript_scene::ComputedStyle;
 
 pub fn pane_style(
@@ -50,77 +50,21 @@ pub fn body_style(layout_style: Option<&ComputedStyle>) -> String {
 }
 
 pub fn frame_style(layout_style: Option<&ComputedStyle>, focused: bool) -> String {
-    let background =
-        layout_style.and_then(|style| style.background).map(css_color).unwrap_or_else(|| {
-            if focused {
-                "var(--color-preview-frame-focused-bg)".to_string()
-            } else {
-                "var(--color-preview-frame-bg)".to_string()
-            }
-        });
-    let border_color = if focused {
-        "linear-gradient(180deg, var(--color-preview-frame-focus-from), var(--color-preview-frame-focus-to))".to_string()
+    let _ = layout_style;
+    let background = if focused {
+        "var(--color-preview-frame-focused-bg)"
     } else {
-        layout_style
-            .and_then(|style| style.border_color)
-            .or_else(|| {
-                layout_style
-                    .and_then(|style| style.border_side_colors)
-                    .and_then(|colors| colors.top)
-            })
-            .map(css_color)
-            .unwrap_or_else(|| "var(--color-preview-frame-border)".to_string())
+        "var(--color-preview-frame-bg)"
     };
-    let border_width = layout_style
-        .and_then(|style| style.border)
-        .map(|edges| {
-            length_to_px(edges.top)
-                .max(length_to_px(edges.right))
-                .max(length_to_px(edges.bottom))
-                .max(length_to_px(edges.left))
-        })
-        .unwrap_or(1)
-        .max(0);
-    let border_style = layout_style.and_then(|style| style.border_style);
-    let radius_css = layout_style
-        .and_then(|style| style.border_radius)
-        .map(|radius| {
-            format!(
-                "border-radius: {}px {}px {}px {}px;",
-                radius.top_left, radius.top_right, radius.bottom_right, radius.bottom_left
-            )
-        })
-        .unwrap_or_else(|| "border-radius: 7px;".to_string());
-    if matches!(border_style.map(|edges| edges.top), Some(BorderStyleValue::None))
-        || border_width == 0
-    {
-        return format!(
-            "background: {background}; {radius_css} box-shadow: 0 10px 30px var(--color-preview-frame-shadow);"
-        );
-    }
 
     if focused {
         return format!(
-            "border: {}px solid transparent; {radius_css} background: linear-gradient({background}, {background}) padding-box, {} border-box; box-shadow: 0 12px 34px var(--color-preview-frame-shadow-strong);",
-            border_width.max(2),
-            border_color,
+            "border: 2px solid transparent; border-radius: 7px; background: linear-gradient({background}, {background}) padding-box, linear-gradient(180deg, var(--color-preview-frame-focus-from), var(--color-preview-frame-focus-to)) border-box; box-shadow: 0 12px 34px var(--color-preview-frame-shadow-strong);",
         );
     }
 
     format!(
-        "background: {background}; border: {}px solid {}; {radius_css} box-shadow: 0 10px 30px var(--color-preview-frame-shadow);",
-        border_width.max(2),
-        border_color,
-    )
-}
-
-fn css_color(color: ColorValue) -> String {
-    format!(
-        "rgba({}, {}, {}, {:.3})",
-        color.red,
-        color.green,
-        color.blue,
-        f32::from(color.alpha) / 255.0
+        "background: {background}; border: 2px solid var(--color-preview-frame-border); border-radius: 7px; box-shadow: 0 10px 30px var(--color-preview-frame-shadow);",
     )
 }
 
