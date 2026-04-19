@@ -805,7 +805,8 @@ mod tests {
 
     #[test]
     fn extracts_rule_symbols() {
-        let analysis = analyze_stylesheet("window { display: flex; }\ngroup { gap: 8px; }");
+        let analysis =
+            analyze_stylesheet("window { display: flex; }\ngroup { gap: 8px; order: 2; }");
 
         assert_eq!(analysis.symbols.len(), 2);
         assert_eq!(analysis.symbols[0].kind, CssSymbolKind::Rule);

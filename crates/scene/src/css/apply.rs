@@ -12,6 +12,7 @@ impl ApplyCompiledDeclaration for ComputedStyle {
             CompiledDeclaration::Display(value) => self.display = Some(value),
             CompiledDeclaration::BoxSizing(value) => self.box_sizing = Some(value),
             CompiledDeclaration::AspectRatio(value) => self.aspect_ratio = Some(value),
+            CompiledDeclaration::Order(value) => self.order = Some(value),
             CompiledDeclaration::FlexDirection(value) => self.flex_direction = Some(value),
             CompiledDeclaration::FlexWrap(value) => self.flex_wrap = Some(value),
             CompiledDeclaration::FlexGrow(value) => self.flex_grow = Some(value),

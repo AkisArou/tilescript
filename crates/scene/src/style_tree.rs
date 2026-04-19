@@ -42,6 +42,9 @@ fn style_node(
         }
     };
 
+    let mut children = children;
+    children.sort_by_key(|child| child.computed.order.unwrap_or(0));
+
     Ok(NodeComputedStyle { node: node.clone(), computed, taffy_style, children })
 }
 
@@ -232,6 +235,7 @@ fn inferred_branch_default_share(
 mod tests {
     use crate::pipeline::{compile_stylesheet, compute_layout_from_request_with_sheet};
     use crate::scene::SceneRequest;
+    use crate::style_tree::build_styled_layout_tree_from_sheet;
     use tilescript_core::resize::{PartitionAdjustment, PartitionId, WorkspaceResizeState};
     use tilescript_core::runtime::prepared_layout::{PreparedStylesheet, PreparedStylesheets};
     use tilescript_core::{LayoutNodeMeta, LayoutSpace, ResolvedLayoutNode, WindowId, WorkspaceId};
@@ -346,5 +350,38 @@ mod tests {
         assert_eq!(before_w3.height, before_w4.height);
         assert_eq!(after_w3.height, after_w4.height);
         assert!(after_w4.height > before_w4.height);
+    }
+
+    #[test]
+    fn order_reorders_siblings_before_layout() {
+        let root = ResolvedLayoutNode::Workspace {
+            meta: LayoutNodeMeta::default(),
+            children: vec![
+                ResolvedLayoutNode::Window {
+                    meta: LayoutNodeMeta { id: Some("first".into()), ..LayoutNodeMeta::default() },
+                    window_id: Some(WindowId::from("w1")),
+                    children: vec![],
+                },
+                ResolvedLayoutNode::Window {
+                    meta: LayoutNodeMeta { id: Some("second".into()), ..LayoutNodeMeta::default() },
+                    window_id: Some(WindowId::from("w2")),
+                    children: vec![],
+                },
+            ],
+        };
+
+        let sheet = compile_stylesheet(
+            r#"
+            workspace { display: flex; flex-direction: row; }
+            #first { order: 2; width: 100px; }
+            #second { order: 1; width: 200px; }
+            "#,
+        )
+        .unwrap();
+
+        let styled = build_styled_layout_tree_from_sheet(&root, &sheet).unwrap();
+
+        assert_eq!(styled.root.children[0].node.meta().id.as_deref(), Some("second"));
+        assert_eq!(styled.root.children[1].node.meta().id.as_deref(), Some("first"));
     }
 }

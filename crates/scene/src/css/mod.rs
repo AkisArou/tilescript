@@ -276,6 +276,22 @@ mod tests {
     }
 
     #[test]
+    fn compiles_order_value() {
+        let declaration = only_declaration("window { order: -2; }");
+
+        assert_eq!(declaration, CompiledDeclaration::Order(-2));
+    }
+
+    #[test]
+    fn supports_order_property() {
+        let sheet = parse_stylesheet("window { order: 3; }").unwrap();
+        let node = runtime_window_with_meta(LayoutNodeMeta::default());
+        let style = compute_style(&sheet, &node).unwrap();
+
+        assert_eq!(style.order, Some(3));
+    }
+
+    #[test]
     fn compiles_grid_track_and_placement_values() {
         let tracks = only_declaration(
             "window { grid-template-columns: [left] 1fr repeat(2, [mid] 500px) minmax(100px, 2fr) [right]; }",

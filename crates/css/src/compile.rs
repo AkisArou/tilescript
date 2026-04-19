@@ -29,6 +29,7 @@ pub enum CompiledDeclaration {
     Display(Display),
     BoxSizing(BoxSizingValue),
     AspectRatio(f32),
+    Order(i32),
     FlexDirection(FlexDirectionValue),
     FlexWrap(FlexWrapValue),
     FlexGrow(f32),
@@ -74,6 +75,7 @@ impl CompiledDeclaration {
             Self::Display(_) => Some("display"),
             Self::BoxSizing(_) => Some("box-sizing"),
             Self::AspectRatio(_) => Some("aspect-ratio"),
+            Self::Order(_) => Some("order"),
             Self::FlexDirection(_) => Some("flex-direction"),
             Self::FlexWrap(_) => Some("flex-wrap"),
             Self::FlexGrow(_) => Some("flex-grow"),
@@ -147,6 +149,7 @@ pub fn compile_declaration_from_value(
         "aspect-ratio" => {
             Ok(CompiledDeclaration::AspectRatio(parse_aspect_ratio_direct(property, value)?))
         }
+        "order" => Ok(CompiledDeclaration::Order(parse_integer_direct(property, value)?)),
         "flex-direction" => {
             Ok(CompiledDeclaration::FlexDirection(parse_flex_direction_direct(property, value)?))
         }
@@ -502,6 +505,13 @@ fn parse_axis_gap_direct(
 
 fn parse_number_direct(property: &str, value: &CssValue) -> Result<f32, CssValueError> {
     value.text.trim().parse::<f32>().map_err(|_| CssValueError::UnsupportedValue {
+        property: property.into(),
+        value: value.text.clone(),
+    })
+}
+
+fn parse_integer_direct(property: &str, value: &CssValue) -> Result<i32, CssValueError> {
+    value.text.trim().parse::<i32>().map_err(|_| CssValueError::UnsupportedValue {
         property: property.into(),
         value: value.text.clone(),
     })
