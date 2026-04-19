@@ -850,8 +850,6 @@ impl WmModel {
                     window.workspace_id.as_ref() == Some(workspace_id)
                         && window.mapped
                         && !window.closing
-                        && !window.floating
-                        && !window.fullscreen
                 })
             })
             .collect::<Vec<_>>();
@@ -861,8 +859,7 @@ impl WmModel {
                 window.workspace_id.as_ref() == Some(workspace_id)
                     && window.mapped
                     && !window.closing
-                    && !window.floating
-                    && !window.fullscreen
+                    && !existing.contains(window_id)
             }) && !existing.contains(window_id)
             {
                 existing.push(window_id.clone());
@@ -1121,6 +1118,38 @@ mod tests {
         assert_eq!(
             model.tiled_window_order_by_workspace.get(&workspace_id),
             Some(&vec![window_id(1), window_id(2), window_id(4), window_id(3)])
+        );
+    }
+
+    #[test]
+    fn fullscreen_window_restores_original_tiled_position() {
+        let workspace_id = WorkspaceId("1".to_string());
+        let mut model = WmModel::default();
+        model.upsert_workspace(workspace_id.clone(), "1".to_string());
+        model.set_current_workspace(workspace_id.clone());
+
+        for id in [1, 2] {
+            model.insert_window(window_id(id), Some(workspace_id.clone()), None);
+            model.set_window_mapped(window_id(id), true);
+        }
+
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&workspace_id),
+            vec![window_id(1), window_id(2)]
+        );
+
+        model.set_window_fullscreen(window_id(1), true);
+        model.sync_tiled_window_order_for_workspace(&workspace_id);
+        assert_eq!(
+            model.tiled_window_order_by_workspace.get(&workspace_id),
+            Some(&vec![window_id(1), window_id(2)])
+        );
+
+        model.set_window_fullscreen(window_id(1), false);
+        model.sync_tiled_window_order_for_workspace(&workspace_id);
+        assert_eq!(
+            model.ordered_window_ids_for_workspace(&workspace_id),
+            vec![window_id(1), window_id(2)]
         );
     }
 

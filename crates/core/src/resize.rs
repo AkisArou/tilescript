@@ -513,6 +513,7 @@ mod tests {
                     },
                 ),
             ]),
+            sibling_order_by_container_id: BTreeMap::new(),
         };
 
         gc_resize_state(&mut state, &tree);
