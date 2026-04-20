@@ -189,10 +189,22 @@ fn layout_sort_key(left: &FileSpec, right: &FileSpec) -> std::cmp::Ordering {
         .map(|path| path.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    left_parent
+    layout_directory_priority(&left_parent)
+        .cmp(&layout_directory_priority(&right_parent))
+        .then_with(|| {
+            left_parent
         .cmp(&right_parent)
+        })
         .then_with(|| file_name_priority(&left.label).cmp(&file_name_priority(&right.label)))
         .then_with(|| left.label.cmp(&right.label))
+}
+
+fn layout_directory_priority(parent: &str) -> u8 {
+    if parent.ends_with("/layouts/master-stack") {
+        0
+    } else {
+        1
+    }
 }
 
 fn file_name_priority(label: &str) -> u8 {
