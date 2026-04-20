@@ -6,6 +6,8 @@ It lets you define workspace layouts in JSX/TSX, Lua, or Fennel together with CS
 
 > Current adapter target: `Hyprland`
 
+> Playground: <https://akisarou.github.io/tilescript/>
+
 ## Features
 
 - JSX/TSX, Lua, and Fennel layouts
