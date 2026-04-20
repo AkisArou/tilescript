@@ -1,24 +1,24 @@
 # tilescript
 
-`tilescript` is an authored layout runtime for Wayland compositors.
+`tilescript` is a layout runtime for Wayland compositors.
 
-It lets you define workspace layouts in JSX/TSX and CSS, then evaluates those layouts in Rust and hands the resulting placement decisions to a compositor adapter.
+It lets you define workspace layouts in JSX/TSX, Lua, or Fennel together with CSS, then evaluates those layouts in Rust and hands the resulting placement decisions to a compositor adapter.
 
 The current concrete adapter target is Hyprland.
 
 ## Features
 
-- JSX/TSX-authored layouts
-- CSS-driven layout and presentation semantics
+- JSX/TSX, Lua, and Fennel layouts
+- CSS-driven layout
 - runtime layout selection by workspace index, workspace name, and monitor
 - flex-inferred resize behavior with configurable resize step and minimum pane size
-- Rust-owned layout evaluation and placement logic
 - Hyprland plugin integration
 - CSS language server crates and a VS Code client package
 
-## Example
+## Examples
 
-`layouts/master-stack/index.tsx`
+<details open>
+<summary><code>layouts/master-stack/index.tsx</code></summary>
 
 ```tsx
 import type { LayoutContext } from "@tilescript/sdk/layout";
@@ -27,12 +27,12 @@ import "./index.css";
 
 export default function layout(ctx: LayoutContext) {
   return (
-    <workspace id="frame">
-      <slot id="master" take={1} class="master-slot" />
+    <workspace>
+      <slot take={1} class="master-slot" />
 
       {ctx.windows.length > 1 ? (
         <group class="stack-group">
-          <slot id="stack-slot" class="stack-group__item" />
+          <slot class="stack-slot" />
         </group>
       ) : null}
     </workspace>
@@ -40,188 +40,137 @@ export default function layout(ctx: LayoutContext) {
 }
 ```
 
+</details>
+
+<details>
+<summary><code>layouts/master-stack/index.lua</code></summary>
+
+```lua
+local h = require("tilescript")
+
+---@param ctx Tilescript.LayoutContext
+return function(ctx)
+  return h.workspace() {
+    h.slot({
+      take = 1,
+      class = "master-slot",
+    }),
+
+    h.when(#ctx.windows > 1) {
+      h.group({ class = "stack-group" }) {
+        h.slot({
+          class = "stack-slot",
+        }),
+      },
+    },
+  }
+end
+```
+
+</details>
+
+<details>
+<summary><code>layouts/master-stack/index.fnl</code></summary>
+
+```fennel
+(local h (require "tilescript"))
+
+(fn [ctx]
+  ((h.workspace)
+   [(h.slot {:take 1
+             :class "master-slot"})
+    ((h.when (> (# ctx.windows) 1))
+     [((h.group {:class "stack-group"})
+       [(h.slot {:class "stack-slot"})])])]))
+```
+
+</details>
+
 `layouts/master-stack/index.css`
 
 ```css
-#frame {
+workspace {
   display: flex;
   flex-direction: row;
   gap: 6px;
   padding: 6px;
   width: 100%;
   height: 100%;
-}
 
-.master-slot {
-  flex-basis: 0;
-  flex-grow: 3;
-  min-width: 0;
-  min-height: 0;
-}
+  .master-slot {
+    flex-basis: 0;
+    flex-grow: 3;
+    min-width: 0;
+    min-height: 0;
+  }
 
-.stack-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex-basis: 0;
-  flex-grow: 2;
-  min-width: 0;
-}
+  .stack-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-basis: 0;
+    flex-grow: 2;
+    min-width: 0;
 
-.stack-group__item {
-  flex-basis: 0;
-  flex-grow: 1;
-  min-height: 0;
-}
-```
-
-## Usage
-
-1. Create a `config.ts`.
-2. Add one or more layouts under `layouts/<name>/index.tsx`.
-3. Add sibling layout CSS in `layouts/<name>/index.css`.
-4. Load the plugin from your local `build/tilescript-hypr.so` output.
-5. Point the Hyprland plugin at your config directory.
-6. Reload layouts or reload the plugin after changes.
-
-## Hyprland Development
-
-For local plugin development, Hyprland is tracked as a git submodule at `third_party/Hyprland/`.
-
-Bootstrap the submodule:
-
-```sh
-make hypr-bootstrap
-```
-
-Build Hyprland in debug mode when needed:
-
-```sh
-make hypr-build
-```
-
-Build the nested-dev plugin against that Hyprland tree:
-
-```sh
-make hypr-plugin-dev
-```
-
-That copies the dev plugin to:
-
-```text
-${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr-dev.so
-```
-
-Launch nested Hyprland with the repo dev config:
-
-```sh
-make hypr-run-dev
-```
-
-This builds the dev plugin and launches `third_party/Hyprland/build/Hyprland --config dev/hypr/hyprland.conf`.
-
-If Hyprland is not built yet, run `make hypr-build` first.
-
-`dev/hypr/hyprland.conf` uses:
-
-- `plugin = $XDG_DATA_HOME/tilescript/tilescript-hypr-dev.so`
-- `config_path = ../../dev/test`
-
-For your normal daily-driver Hyprland session:
-
-```sh
-make hypr-plugin
-make hypr-plugin-snippet
-```
-
-`make hypr-plugin-snippet` prints the `plugin` block to paste into your normal Hyprland config. It does not modify files or load the plugin for you.
-
-`make hypr-plugin` copies the daily-driver plugin to:
-
-```text
-${XDG_DATA_HOME:-$HOME/.local/share}/tilescript/tilescript-hypr.so
-```
-
-When the plugin resolves your config root, it bootstraps missing files from `examples/js/` and syncs editor support files into `.sdk/` under that root.
-
-Example Hyprland config:
-
-```ini
-plugin = /absolute/path/to/tilescript-hypr.so
-
-plugin {
-  tilescript {
-    config_path = /absolute/path/to/your/config
+    .stack-slot {
+      flex-basis: 0;
+      flex-grow: 1;
+      min-height: 0;
+    }
   }
 }
 ```
 
-`config_path` should point to a config directory.
+## Config Layout
 
-The plugin looks for `config.ts`, `config.tsx`, `config.js`, `config.jsx`, or `config.lua` inside that directory.
+`tilescript` loads a config root directory.
 
-Planning notes:
+At minimum, that directory contains:
 
-- `docs/plan/lua.md`
-- `docs/plan/fennel.md`
+- a config entry such as `config.ts`, `config.tsx`, `config.js`, `config.jsx`, `config.lua`, or `config.fnl`
+- one or more layouts under `layouts/<name>/`
+- optional root `index.css` for shared stylesheet rules
 
-If `config_path` is omitted, the plugin uses `~/.config/tilescript`.
+Typical project layout:
 
-If that config root does not exist yet, the plugin bootstraps it from `examples/js/`.
-
-For editor support, your config `tsconfig.json` should extend `./.sdk/tsconfig.json`.
-
-For starter projects, see `examples/js/` and `examples/lua/`.
-
-## Runtime Status
-
-Use `hyprctl tilescript-hypr` to inspect plugin/runtime state.
-
-It includes:
-
-- current runtime workspace/output/focus state
-- whether layouts loaded successfully
-- selected layout name
-- blocking layout/config errors
-- structured CSS diagnostics
-
-Useful commands:
-
-```sh
-hyprctl tilescript-hypr
-hyprctl tilescript-hypr reload-layouts
-hyprctl tilescript-hypr debug-layout-workspace 1
+```text
+config.ts
+index.css
+layouts/
+  master-stack/
+    index.tsx
+    index.css
+  primary-stack/
+    index.lua
+    index.css
 ```
 
-## Playground
+To use it with Hyprland:
 
-Run the playground locally:
-
-```sh
-make playground
-```
-
-Build the static playground bundle for GitHub Pages:
-
-```sh
-make playground-build PLAYGROUND_PUBLIC_URL=/tilescript/
-```
-
-Local dev output is written to `apps/tilescript-playground/.dist-dev`.
-
-GitHub Pages output is written to `apps/tilescript-playground/.dist`.
-
-GitHub Pages deployment is configured in `.github/workflows/deploy-playground-pages.yml`.
-
-In the GitHub repo settings, set `Settings > Pages > Source` to `GitHub Actions`.
+1. Build the plugin with `make hypr-plugin`.
+2. Run `make hypr-plugin-snippet` and paste the printed `plugin` block into your Hyprland config.
+3. Set `config_path` to your config root directory.
+4. Reload Hyprland or reload the plugin after changing layouts or config.
 
 ## Docs
 
 - `docs/config.md`
+- `docs/hyprland.md`
 - `docs/jsx.md`
 - `docs/css.md`
 - `docs/css-lsp.md`
 - `docs/development.md`
-- `docs/plan/resizing.md`
-- `docs/plan/animations.md`
-- `docs/plan/lua.md`
+- `docs/playground.md`
+
+## Core Dependencies
+
+`tilescript` builds on a small set of foundational libraries:
+
+- `stylo`, `cssparser`, and `selectors` for CSS parsing and selector machinery
+- `taffy` for layout computation
+- `oxc` and `oxc_resolver` for JS/TS/TSX parsing and module graph analysis
+- `rquickjs` for the native JS runtime
+- `mlua` for the native Lua runtime
+- `leptos` and `leptos_router` for the browser playground UI
+- `wasm-bindgen` and `web-sys` for browser/WASM interop
+- `monaco-editor`, `monaco-vim`, and `wasmoon` for the playground editor and browser Lua execution

@@ -4,7 +4,7 @@ This document describes the architecture and project model for `tilescript-css-l
 
 ## Purpose
 
-`tilescript-css-lsp` provides editor features for the `tilescript` CSS language and its project-aware integration with authored TSX layouts.
+`tilescript-css-lsp` provides editor features for the `tilescript` CSS language and its project-aware integration with TSX layouts.
 
 It is CSS-focused.
 
@@ -53,7 +53,7 @@ Each layout app is rooted at a layout entry like `layouts/<name>/index.tsx`.
 Its scope includes:
 
 - the layout entry module
-- imported authored TS and TSX modules in that app graph
+- imported TS and TSX modules in that app graph
 - the layout `index.css`
 - imported CSS in that app graph
 
@@ -67,15 +67,15 @@ Selector-aware features use app scope boundaries.
 
 That means:
 
-- root `index.css` sees selectors authored in the config app scope
-- `layouts/master-stack/index.css` sees selectors authored in the `master-stack` app scope
+- root `index.css` sees selectors in the config app scope
+- `layouts/master-stack/index.css` sees selectors in the `master-stack` app scope
 - shared components imported by that layout are included in scope
 - non-imported files outside the app graph are not included
 - sibling layout selectors do not leak into each other
 
 ## TSX Indexing
 
-The LSP indexes authored selector data from TSX using `oxc`.
+The LSP indexes selector data from TSX using `oxc`.
 
 It extracts selector-relevant metadata from:
 

@@ -6,19 +6,16 @@
 - `crates/css` - CSS parser, compiler, metadata, and analysis
 - `crates/scene` - style matching and layout/scene computation
 - `crates/runtimes/js/core` - shared JS graph, compile, payload, and loader logic
-- `crates/runtimes/js/native` - native QuickJS authored config and layout runtime
+- `crates/runtimes/js/native` - native QuickJS config and layout runtime
 - `crates/layout-runtime` - end-to-end workspace evaluation and placement logic
 - `crates/ffi` - Rust bridge exposed to the Hyprland plugin
 - `apps/tilescript-playground` - browser playground modeled
 - `plugin/hyprland/src/plugin.cpp` - Hyprland-side plugin adapter
-- `packages/sdk/js` - authored config/layout SDK surface
+- `packages/sdk/js` - config/layout SDK surface
 - `packages/lsp/vscode` - VS Code client for `tilescript-css-lsp`
-- `dev/test-config` - local authored config fixture
+- `dev/test-config` - local config fixture
 - `examples/js` - JavaScript/TypeScript starter config
 - `examples/lua` - Lua starter config
-- `docs/plan/lua.md` - Lua runtime and authoring plan
-- `docs/plan/fennel.md` - Fennel authoring/runtime plan
-- `docs/plan/performance.md` - runtime caching, bytecode, and live reload plan
 
 ## Common Commands
 
@@ -154,7 +151,7 @@ hyprctl tilescript-hypr debug-layout-workspace 1
 
 ## Authoring Fixtures
 
-`dev/test-config/` is the main local authored-config fixture.
+`dev/test-config/` is the main local config fixture.
 
 Use it for:
 
@@ -186,12 +183,9 @@ The plugin bootstraps missing config roots from `examples/js/` and refreshes tha
 
 - `README.md`
 - `docs/config.md`
+- `docs/hyprland.md`
 - `docs/jsx.md`
 - `docs/css.md`
 - `docs/css-lsp.md`
 - `docs/development.md`
-- `docs/plan/resizing.md`
-- `docs/plan/animations.md`
-- `docs/plan/lua.md`
-- `docs/plan/fennel.md`
-- `docs/plan/performance.md`
+- `docs/playground.md`

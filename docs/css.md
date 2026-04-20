@@ -21,7 +21,7 @@ Unsupported selectors and properties fail clearly. They are not silently ignored
 
 ## Pipeline
 
-1. A selected config or layout app provides authored CSS.
+1. A selected config or layout app provides CSS.
 2. `tilescript-css` parses and compiles the stylesheet.
 3. `tilescript-scene` and related runtime code match selectors against the resolved layout tree.
 4. Layout properties determine geometry.
@@ -181,7 +181,7 @@ Named grid lines, named spans, and `repeat(...)` are supported.
 
 ## Analysis And Diagnostics
 
-`tilescript-css` exposes structured analysis for authored CSS.
+`tilescript-css` exposes structured analysis for project CSS.
 
 That includes:
 
