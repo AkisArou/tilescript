@@ -8,6 +8,8 @@ If `config_path` is omitted, the plugin falls back to `~/.config/tilescript` and
 
 If that config root does not exist yet, the plugin bootstraps it from the repo `examples/js/`.
 
+For starter projects in all supported authoring languages, see `examples/js/`, `examples/lua/`, and `examples/fennel/`.
+
 Example config shape:
 
 ```ts
@@ -91,7 +93,8 @@ Top-level runtime policy knobs for resize behavior.
 `tilescript` discovers layouts from layout entry files such as:
 
 - `layouts/master-stack/index.tsx`
-- `layouts/primary-stack/index.tsx`
+- `layouts/primary-stack/index.lua`
+- `layouts/dwindle/index.fnl`
 
 Associated CSS is read from the sibling `index.css` in the same layout directory.
 
@@ -104,6 +107,9 @@ components/
 layouts/
   master-stack/
     index.tsx
+    index.css
+  primary-stack/
+    index.lua
     index.css
 .sdk/
   tsconfig.json

@@ -233,8 +233,8 @@ If the CSS surface grows later, it should grow with more layout primitives such 
 
 Reference checked against `taffy 0.9.2` from `Cargo.lock`, specifically the public `taffy::style::Style` fields and `taffy::style::grid` types.
 
-| Property | Why we want it | Taffy 0.9.2 backing | Notes |
-| --- | --- | --- | --- |
+| Property  | Why we want it                 | Taffy 0.9.2 backing                        | Notes                                                                         |
+| --------- | ------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | `subgrid` | modern nested grid composition | no public `Style` support in `taffy 0.9.2` | not currently feasible without engine work or a Taffy upgrade that exposes it |
 
 Priority order for future layout-only expansion:

@@ -4,7 +4,7 @@
 
 It lets you define workspace layouts in JSX/TSX, Lua, or Fennel together with CSS, then evaluates those layouts in Rust and hands the resulting placement decisions to a window manager or compositor adapter.
 
-The current concrete adapter target is Hyprland.
+> Current adapter target: `Hyprland`
 
 ## Features
 
@@ -125,11 +125,15 @@ workspace {
 
 `tilescript` loads a config root directory.
 
+If `config_path` is omitted, the default config root is `~/.config/tilescript`.
+
 At minimum, that directory contains:
 
 - a config entry such as `config.{ts, tsx, js, jsx, lua, fnl}`.
 - one or more layouts under `layouts/<name>/`
 - optional root `index.css` for shared stylesheet rules
+
+For starter layouts and config skeletons, see **`examples/`**.
 
 Typical project layout:
 
@@ -169,6 +173,8 @@ plugin {
 Related keybindings:
 
 ```ini
+$mainMod = ALT
+
 bind = $mainMod, h, tilescript-hypr, focus, l
 bind = $mainMod, j, tilescript-hypr, focus, d
 bind = $mainMod, k, tilescript-hypr, focus, u

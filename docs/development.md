@@ -16,6 +16,7 @@
 - `dev/test-config` - local config fixture
 - `examples/js` - JavaScript/TypeScript starter config
 - `examples/lua` - Lua starter config
+- `examples/fennel` - Fennel starter config
 
 ## Common Commands
 
