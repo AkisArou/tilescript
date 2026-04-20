@@ -170,6 +170,15 @@ plugin {
     config_path = /absolute/path/to/your/tilescript-config/
   }
 }
+
+
+general {
+    # disable gaps. those should be better configured via CSS
+    gaps_in = 0
+    gaps_out = 0
+
+    layout = tilescript
+}
 ```
 
 Related keybindings:
